@@ -11,7 +11,6 @@
 
 #include "augusta/command.h"
 #include "augusta/harness.h"
-#include "augusta/input.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
 #include "augusta/weapon.h"
@@ -59,7 +58,7 @@ Look LookAt(const math::Vec3& from, const math::Vec3& to) {
   const math::Vec3 toward = to - from;
   const float pitch = std::atan2(toward.y, std::hypot(toward.x, toward.z));
   return Look{.yaw = std::atan2(-toward.x, -toward.z),
-              .pitch = std::clamp(pitch, -input::kMaxLookPitch, input::kMaxLookPitch)};
+              .pitch = std::clamp(pitch, -command::kMaxLookPitch, command::kMaxLookPitch)};
 }
 
 // The body of entity in the newest Authoritative State of view, if it is there.

@@ -2,6 +2,7 @@
 #define AUGUSTA_ASSETS_WIRE_FORMAT_H_
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -49,6 +50,17 @@ inline constexpr std::uint32_t kMaxScriptBytes = 1U * 1024 * 1024;
 inline constexpr std::uint32_t kMaxAudioBytes = 64U * 1024 * 1024;
 /// A cue's variants are a handful of takes of one sound; 255 is far more.
 inline constexpr std::uint32_t kMaxCueVariants = 255;
+/// An ozz-animation archive of a Skeleton or a Clip (ADR-0066): a Clip of 128
+/// Joints sampled at 60 Hz for a minute is far below it.
+inline constexpr std::uint32_t kMaxArchiveBytes = 64U * 1024 * 1024;
+/// A locomotion Clip has two Foot contacts (ADR-0062); 255 is far more.
+inline constexpr std::uint32_t kMaxFootContacts = 255;
+/// What a Clip's stride length, a Foot contact's ratio and a stance
+/// transition's duration may be (ADR-0066), alike for the encoder, which
+/// refuses any other, and the decoder, which finds a blob holding one corrupt.
+inline bool IsValidStrideLength(float meters) { return std::isfinite(meters) && meters >= 0.0F; }
+inline bool IsValidFootContactRatio(float ratio) { return std::isfinite(ratio) && ratio >= 0.0F && ratio <= 1.0F; }
+inline bool IsValidTransitionDuration(float seconds) { return std::isfinite(seconds) && seconds > 0.0F; }
 /// The sample widths a PCM WAV file can hold, the only ones an audio blob has.
 inline constexpr std::array<std::uint8_t, 4> kPcmBitsPerSample = {8, 16, 24, 32};
 

@@ -1,5 +1,6 @@
 #include "augusta/prediction.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 #include <vector>
@@ -13,6 +14,7 @@
 #include "augusta/physics.h"
 #include "augusta/tick.h"
 #include "augusta/weapon.h"
+#include "clips_fixture.h"
 
 // Exercises PredictionWorld's public Tick() surface end-to-end - the local
 // entity, its sequenced commands and its reconciliation against what the
@@ -49,7 +51,7 @@ Command Walking() {
 
 // Requirements: US-04
 TEST(PredictionWorldTest, TicksTheLocalEntityForwardEachCall) {
-  World world;
+  World world(augusta::clips_fixture::TestClips());
 
   State state;
   for (int i = 0; i < 30; ++i) {
@@ -61,7 +63,7 @@ TEST(PredictionWorldTest, TicksTheLocalEntityForwardEachCall) {
 
 // Requirements: US-03
 TEST(PredictionWorldTest, StartPutsTheLocalPlayerAtTheSpawnPointOnTheFloor) {
-  World world;
+  World world(augusta::clips_fixture::TestClips());
   ASSERT_TRUE(world.AddCollisionMesh(Floor()).has_value());
 
   world.Start(Vec3(5.0F, 0.0F, 7.0F), Parameters{});
@@ -76,7 +78,7 @@ TEST(PredictionWorldTest, StartPutsTheLocalPlayerAtTheSpawnPointOnTheFloor) {
 }
 
 TEST(PredictionWorldTest, StartReplacesTheStaminaRulesTheWorldWasBuiltWith) {
-  World world;
+  World world(augusta::clips_fixture::TestClips());
   Command sprint = Walking();
   sprint.movement.sprint = true;
   EXPECT_FLOAT_EQ(world.Tick(sprint, 0, std::nullopt, kFixedTick).local_body.stamina, 1.0F);
@@ -85,6 +87,61 @@ TEST(PredictionWorldTest, StartReplacesTheStaminaRulesTheWorldWasBuiltWith) {
               Parameters{.stamina = {.deplete_per_second = 1.0F, .regen_per_second = 0.0F, .forced_walk_below = 0.0F}});
 
   EXPECT_LT(world.Tick(sprint, 0, std::nullopt, kFixedTick).local_body.stamina, 1.0F);
+}
+
+// The Stride (ADR-0066): one byte, 256 steps to a cycle of two steps.
+constexpr int kStrideSteps = 256;
+
+// How far apart two Strides are, the short way round the cycle.
+int StrideDistance(int a, int b) {
+  const int forward = ((a - b) % kStrideSteps + kStrideSteps) % kStrideSteps;
+  return std::min(forward, kStrideSteps - forward);
+}
+
+// The local player's Stride advances as SimulationWorld advances a player's: by
+// the distance walked over its Character's Clips' stride length, 30 ticks at
+// 3 m/s walking half of the forward Clip's 3 m. Each tick's advance is rounded
+// to a whole step, so a tick may be up to half a step off.
+TEST(PredictionWorldTest, WalkingAdvancesTheLocalPlayersStrideByItsCharactersClips) {
+  World world(augusta::clips_fixture::TestClips());
+  ASSERT_TRUE(world.AddCollisionMesh(Floor()).has_value());
+  world.Start(Vec3{}, Parameters{});
+  Command still{};
+  for (int i = 0; i < kSettleTicks; ++i) {
+    world.Tick(still, 0, std::nullopt, kFixedTick);
+  }
+  Command ahead{};
+  ahead.movement.direction = Vec3(0.0F, 0.0F, -1.0F);
+  constexpr int kTicks = 30;
+
+  State state;
+  for (int i = 0; i < kTicks; ++i) {
+    state = world.Tick(ahead, 0, std::nullopt, kFixedTick);
+  }
+
+  EXPECT_LE(StrideDistance(state.local_body.stride, kStrideSteps / 2), (kTicks / 2) + 1);
+}
+
+// The local player's change of stance advances as SimulationWorld advances a
+// player's: over its Character's Clips' transition duration, 0.25 s from
+// standing to crouching, 17 steps of 255 a tick.
+TEST(PredictionWorldTest, ACrouchsProgressAdvancesOverTheLocalCharactersTransitionDuration) {
+  World world(augusta::clips_fixture::TestClips());
+  ASSERT_TRUE(world.AddCollisionMesh(Floor()).has_value());
+  world.Start(Vec3{}, Parameters{});
+  for (int i = 0; i < kSettleTicks; ++i) {
+    world.Tick(Command{}, 0, std::nullopt, kFixedTick);
+  }
+  Command crouch{};
+  crouch.movement.desired_stance = augusta::physics::Stance::kCrouching;
+
+  State state;
+  for (int i = 0; i < 4; ++i) {
+    state = world.Tick(crouch, 0, std::nullopt, kFixedTick);
+  }
+
+  EXPECT_EQ(state.local_body.previous_stance, augusta::physics::Stance::kStanding);
+  EXPECT_EQ(state.local_body.stance_progress, 4 * 17);
 }
 
 // A resting player on a floor, ticked with sequences 1, 2, ... and no input.
@@ -121,7 +178,7 @@ class ReconciliationTest : public ::testing::Test {
     return Acknowledgement{.sequence = sequence, .body = body};
   }
 
-  World world_;
+  World world_{augusta::clips_fixture::TestClips()};
   augusta::tick::Sequence sequence_ = 0;
   std::vector<BodyState> states_;
   State latest_;
@@ -176,6 +233,45 @@ TEST_F(ReconciliationTest, AStaminaThatDiffersIsCorrectedEvenWhereThePositionAgr
   const State state = Tick(ack);
 
   EXPECT_NEAR(state.local_body.stamina, kServerStamina, 0.01F);
+}
+
+// The fixture's body is still, so its Stride holds where the server put it.
+// Requirements: NFR-02
+TEST_F(ReconciliationTest, AStrideThatDiffersIsCorrectedEvenWhereEverythingElseAgrees) {
+  Acknowledgement ack = ServerAgreesWithTheClientExcept(sequence_, Vec3(0.0F, 0.0F, 0.0F));
+  ack.body.stride = 100;
+
+  const State state = Tick(ack);
+
+  EXPECT_EQ(state.local_body.stride, 100);
+}
+
+// The server has the body standing up out of a crouch, a change the client
+// never predicted: the body poses differently, so the client takes it. This
+// tick's Movement then advances the change by a tick of its Clips' 0.25 s
+// between standing and crouching: 17 steps of 255.
+// Requirements: NFR-02
+TEST_F(ReconciliationTest, AChangeOfStanceThatDiffersIsCorrectedEvenWhereEverythingElseAgrees) {
+  Acknowledgement ack = ServerAgreesWithTheClientExcept(sequence_, Vec3(0.0F, 0.0F, 0.0F));
+  ack.body.previous_stance = augusta::physics::Stance::kCrouching;
+  ack.body.stance_progress = 100;
+
+  const State state = Tick(ack);
+
+  EXPECT_EQ(state.local_body.previous_stance, augusta::physics::Stance::kCrouching);
+  EXPECT_EQ(state.local_body.stance_progress, 100 + 17);
+}
+
+// A step apart is rounding, as a millimetre of position is: not worth a replay.
+// Requirements: NFR-02
+TEST_F(ReconciliationTest, AStrideOneStepApartIsNotCorrected) {
+  Acknowledgement ack = ServerAgreesWithTheClientExcept(sequence_, Vec3(0.0F, 0.0F, 0.0F));
+  const std::uint8_t predicted = ack.body.stride;
+  ack.body.stride = static_cast<std::uint8_t>(predicted + 1);
+
+  const State state = Tick(ack);
+
+  EXPECT_EQ(state.local_body.stride, predicted);
 }
 
 // Sprinting forward: the rules the fixture's world runs on never drain, so
@@ -377,7 +473,7 @@ class WeaponPredictionTest : public ::testing::Test {
     return Acknowledgement{.sequence = sequence, .body = state.local_body, .rifle = state.rifle};
   }
 
-  World world_;
+  World world_{augusta::clips_fixture::TestClips()};
   augusta::tick::Sequence sequence_ = 0;
   std::vector<State> states_;
   State latest_;
@@ -392,7 +488,7 @@ TEST_F(WeaponPredictionTest, AMatchStartsWithAFullMagazineOfTheServersRifle) {
 }
 
 TEST(PredictionWorldTest, BeforeAMatchStartsNothingFires) {
-  World world;
+  World world(augusta::clips_fixture::TestClips());
 
   const State state = world.Tick(Firing(), 0, std::nullopt, kFixedTick);
 

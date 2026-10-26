@@ -16,10 +16,8 @@
 
 namespace augusta::hitbox {
 
-// The stance's lowering is LowerToStance's, as a scale of the vertical alone.
 math::Mat4 RootOf(const Pose& pose) {
-  const math::Vec3 lowered = physics::LowerToStance(math::Vec3(1.0F), pose.stance);
-  return math::ToMat4(pose.position, command::ViewRotation(pose.yaw, 0.0F), lowered);
+  return math::ToMat4(pose.position, command::ViewRotation(pose.yaw, 0.0F), math::Vec3(1.0F));
 }
 
 std::vector<PlacedHitbox> Place(std::span<const CharacterHitbox> hitboxes, std::span<const math::Mat4> joints) {

@@ -23,6 +23,11 @@
 /// server's Shots turn the same yaw and pitch into the same direction.
 namespace augusta::command {
 
+/// The steepest pitch, up or down, a player's view reaches, in radians: just
+/// short of straight up/down. The client's sampler clamps to it; a Character's
+/// Aim offset is authored at it (ADR-0066).
+inline constexpr float kMaxLookPitch = 1.55F;
+
 /// One tick's worth of player intent.
 struct Command {
   /// Movement direction, sprint, and desired stance for this tick -
@@ -32,7 +37,7 @@ struct Command {
   /// movement. Yaw 0 looks down -Z, the renderer camera's forward, and a
   /// positive yaw turns left (counter-clockwise seen from above, right-handed
   /// about +Y); the client's sampler keeps it within one turn. A positive
-  /// pitch looks up; the sampler clamps it to input::kMaxLookPitch either way,
+  /// pitch looks up; the sampler clamps it to kMaxLookPitch either way,
   /// short of straight up/down (no gimbal flip). ViewRotation turns the pair
   /// into a rotation. Determines aim direction for WeaponHandling (bullet
   /// origin/direction, US-07) as well as view for Camera (US-06).

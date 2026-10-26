@@ -165,6 +165,10 @@ find_package(utf8_range CONFIG REQUIRED)
 # Boost.Uuid: the Run ID, the Session ID and the Match ID (ADR-0035), whose
 # type the protocol's headers and every layer above name.
 find_package(boost_uuid CONFIG REQUIRED)
+# ozz-animation (ADR-0066): its runtime, with which the Animation module loads
+# and samples a Character's Clips, and its offline libraries, with which the
+# cooker builds them and the tests author their own.
+find_package(ozz-animation CONFIG REQUIRED)
 
 # NVTX (github.com/NVIDIA/NVTX) is header-only and not on vcpkg, so it's
 # vendored as a pinned git submodule (third_party/nvtx) instead. Not

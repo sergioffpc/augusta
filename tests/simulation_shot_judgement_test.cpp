@@ -16,6 +16,7 @@
 #include "augusta/physics.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
+#include "character_fixture.h"
 
 // SimulationWorld's Shot judgements (ADR-0038, ADR-0074): how it judged each
 // round, told once the round's flight ends, in a Development build alone.
@@ -95,10 +96,11 @@ CharacterHitbox Box(BodyPart part, const Vec3& low, const Vec3& high) {
 // A character 1.8 m tall that sees from inside its head, its torso 20 cm deep:
 // a round aimed at it down -Z strikes the torso's face 10 cm before its feet.
 Character Target() {
-  return Character{.eye = Vec3(0.0F, 1.6F, 0.0F),
-                   .hitboxes = {Box(BodyPart::kHead, Vec3(-0.1F, 1.5F, -0.1F), Vec3(0.1F, 1.8F, 0.1F)),
-                                Box(BodyPart::kTorso, Vec3(-0.2F, 0.9F, -0.1F), Vec3(0.2F, 1.5F, 0.1F)),
-                                Box(BodyPart::kLimb, Vec3(-0.2F, 0.0F, -0.1F), Vec3(0.2F, 0.9F, 0.1F))}};
+  return augusta::character_fixture::Rigged(
+      Character{.eye = Vec3(0.0F, 1.6F, 0.0F),
+                .hitboxes = {Box(BodyPart::kHead, Vec3(-0.1F, 1.5F, -0.1F), Vec3(0.1F, 1.8F, 0.1F)),
+                             Box(BodyPart::kTorso, Vec3(-0.2F, 0.9F, -0.1F), Vec3(0.2F, 1.5F, 0.1F)),
+                             Box(BodyPart::kLimb, Vec3(-0.2F, 0.0F, -0.1F), Vec3(0.2F, 0.9F, 0.1F))}});
 }
 
 // A rifle of 600 rounds a minute whose rounds fly straight, 10 m a tick.

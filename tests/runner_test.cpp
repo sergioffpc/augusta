@@ -26,6 +26,8 @@
 #include "augusta/prediction.h"
 #include "augusta/protocol.h"
 #include "augusta/supervisor.h"
+#include "clips_fixture.h"
+#include "scenario_fixture.h"
 
 // A harness::Runner running a real client session in real time against a real
 // server host, in one process over loopback: the test runs the host on its
@@ -72,7 +74,7 @@ CollisionMesh FloorAt(float y) {
 }
 
 augusta::prediction::World WorldWithFloor() {
-  augusta::prediction::World world;
+  augusta::prediction::World world(augusta::clips_fixture::TestClips());
   EXPECT_TRUE(world.AddCollisionMesh(FloorAt(kGroundHeight)).has_value());
   return world;
 }
@@ -119,7 +121,7 @@ class RunnerTest : public ::testing::Test {
                          .faults = nullptr},
               Scenario{.collision = {FloorAt(kGroundHeight)},
                        .spawn_points = {},
-                       .characters = {{.path = kCharacter, .hitboxes = {}}}}),
+                       .characters = {augusta::scenario_fixture::Rigged({.path = kCharacter, .hitboxes = {}})}}),
         session_(SessionConfig{.server = {.address = host_.ListenEndpoint().address}, .character = kCharacter},
                  WorldWithFloor()) {}
 

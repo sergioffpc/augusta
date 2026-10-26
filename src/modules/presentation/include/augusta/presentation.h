@@ -86,11 +86,11 @@ enum class Phase {
   /// Death has arrived it is a spectator until the match ends, and a Replay
   /// viewer is one from the Match's first tick: the camera follows the eye of a
   /// living player instead (Spectator and WatchedCamera, local_view.h; fire
-  /// moves it on), holds where it was while no one is left alive, and neither
-  /// turns with the local player's aim nor zooms; a Replay viewer's looks at
-  /// the watched player's pitch and zooms with its ADS (FrameInput::views). No
-  /// crosshair or hit marker shows. View bob is still future work. Not yet a
-  /// module of its own - see the header comment above.
+  /// moves it on), looks where that player looks and zooms with its ADS, as its
+  /// interpolated state has them, never with the local player's aim, and holds
+  /// where it was while no one is left alive. No crosshair or hit marker
+  /// shows. View bob is still future work. Not yet a module of its own - see
+  /// the header comment above.
   kCamera,
   /// Mechanism. Will drive skeletal/procedural animation from interpolated
   /// movement and weapon state, once per visible player character (local and
@@ -121,6 +121,10 @@ struct DynamicBody {
   physics::BodyState state{};
   /// Where the body faces: the yaw of its player's view, in radians (command::Command).
   float yaw = 0.0F;
+  /// Where its player's view looks up or down, in radians (command::Command).
+  float pitch = 0.0F;
+  /// Whether its player aims down sights.
+  bool ads = false;
 };
 
 /// Every dynamic body as of one server tick: an Authoritative State update, in
@@ -156,15 +160,6 @@ struct Shot {
   float yaw = 0.0F;
   /// Where it left for, as a view's pitch in radians (command::Command).
   float pitch = 0.0F;
-};
-
-/// Where one player of a Replay looked on its newest tick (ADR-0051) -
-/// World::RunFrame's input, in presentation's own terms (see there).
-struct PlayerView {
-  EntityId entity{};
-  /// In radians (command::Command).
-  float pitch = 0.0F;
-  bool ads = false;
 };
 
 /// What the server said when a match ended (US-14) - World::RunFrame's input,
@@ -223,10 +218,6 @@ struct FrameInput {
   /// Whether this client is a Replay viewer (ADR-0051): a spectator from the
   /// Match's first tick, with no body of its own, which local_entity names none.
   bool replay_viewer = false;
-  /// Every player's view on the Replay's newest tick, a Replay viewer's only:
-  /// the watched player's pitch and ADS, which its camera takes. Empty for any
-  /// other client, whose spectator looks level from the hip.
-  std::span<const PlayerView> views;
 };
 
 /// PresentationWorld's per-frame output - ADR-0024/ARCHITECTURE.md's

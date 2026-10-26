@@ -18,8 +18,8 @@ def SkelRoot "Character" (
 
     # The character's Skeleton (ADR-0040, ADR-0061): each joint named by its
     # path within it, with its rest transform relative to its parent. The root
-    # joint sits at the feet, facing -Z, as the cooker requires. Root and
-    # Pelvis carry no hitbox, but ship like every other joint.
+    # joint sits at the feet, facing -Z, as the cooker requires. Root, Pelvis
+    # and the hands carry no hitbox, but ship like every other joint.
     def Skeleton "Skeleton"
     {
         uniform token[] joints = [
@@ -31,6 +31,10 @@ def SkelRoot "Character" (
             "Root/Pelvis/Spine/RightShoulder",
             "Root/Pelvis/LeftHip",
             "Root/Pelvis/RightHip",
+            "Root/Pelvis/Spine/LeftShoulder/LeftElbow",
+            "Root/Pelvis/Spine/RightShoulder/RightElbow",
+            "Root/Pelvis/Spine/LeftShoulder/LeftElbow/LeftHand",
+            "Root/Pelvis/Spine/RightShoulder/RightElbow/RightHand",
         ]
         uniform matrix4d[] restTransforms = [
             ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1) ),
@@ -41,6 +45,10 @@ def SkelRoot "Character" (
             ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0.3, 0.3, 0, 1) ),
             ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (-0.12, 0, 0, 1) ),
             ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0.12, 0, 0, 1) ),
+            ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, -0.3, 0, 1) ),
+            ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, -0.3, 0, 1) ),
+            ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, -0.3, 0, 1) ),
+            ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, -0.3, 0, 1) ),
         ]
         # The same rest pose, each joint's composed into the character's space.
         uniform matrix4d[] bindTransforms = [
@@ -52,7 +60,194 @@ def SkelRoot "Character" (
             ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0.3, 1.6, 0, 1) ),
             ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (-0.12, 0.95, 0, 1) ),
             ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0.12, 0.95, 0, 1) ),
+            ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (-0.3, 1.3, 0, 1) ),
+            ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0.3, 1.3, 0, 1) ),
+            ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (-0.3, 1, 0, 1) ),
+            ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0.3, 1, 0, 1) ),
         ]
+    }
+
+    # The character's Clips by role (ADR-0066), each a UsdSkelAnimation in a
+    # file of its own under animations/: each stance's blend space, Aim
+    # offset and ADS grip, and `air`. Diagonals and Cosmetic layers' Clips
+    # are optional, and this character has none. Each pair of stances'
+    # transition duration is in seconds, either way.
+    def Scope "Clips"
+    {
+        float augusta:transitionDuration:standing_crouching = 0.25
+        float augusta:transitionDuration:standing_prone = 0.8
+        float augusta:transitionDuration:crouching_prone = 0.6
+
+        def SkelAnimation "air" (
+            references = @../animations/air.usda@
+        )
+        {
+        }
+
+        def Scope "standing"
+        {
+            def SkelAnimation "idle" (
+                references = @../animations/standing_idle.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "forward" (
+                references = @../animations/standing_forward.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "backward" (
+                references = @../animations/standing_backward.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "left" (
+                references = @../animations/standing_left.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "right" (
+                references = @../animations/standing_right.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "sprint" (
+                references = @../animations/standing_sprint.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "aim_down" (
+                references = @../animations/standing_aim_down.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "aim_center" (
+                references = @../animations/standing_aim_center.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "aim_up" (
+                references = @../animations/standing_aim_up.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "ads" (
+                references = @../animations/standing_ads.usda@
+            )
+            {
+            }
+        }
+
+        def Scope "crouching"
+        {
+            def SkelAnimation "idle" (
+                references = @../animations/crouching_idle.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "forward" (
+                references = @../animations/crouching_forward.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "backward" (
+                references = @../animations/crouching_backward.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "left" (
+                references = @../animations/crouching_left.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "right" (
+                references = @../animations/crouching_right.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "aim_down" (
+                references = @../animations/crouching_aim_down.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "aim_center" (
+                references = @../animations/crouching_aim_center.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "aim_up" (
+                references = @../animations/crouching_aim_up.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "ads" (
+                references = @../animations/crouching_ads.usda@
+            )
+            {
+            }
+        }
+
+        def Scope "prone"
+        {
+            def SkelAnimation "idle" (
+                references = @../animations/prone_idle.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "forward" (
+                references = @../animations/prone_forward.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "backward" (
+                references = @../animations/prone_backward.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "aim_down" (
+                references = @../animations/prone_aim_down.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "aim_center" (
+                references = @../animations/prone_aim_center.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "aim_up" (
+                references = @../animations/prone_aim_up.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "ads" (
+                references = @../animations/prone_ads.usda@
+            )
+            {
+            }
+        }
     }
 
     def Sphere "Eye"
@@ -65,6 +260,32 @@ def SkelRoot "Character" (
         float3[] extent = [(-0.05, -0.05, -0.05), (0.05, 0.05, 0.05)]
         uniform token purpose = "guide"
         double3 xformOp:translate = (0, 1.7, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Sphere "WeaponSocket" (
+        prepend apiSchemas = ["SkelBindingAPI"]
+    )
+    {
+        # Where the rifle's Grip hangs (ADR-0066): on the right hand, bound
+        # rigidly to its joint as a hitbox is, the rifle pointing along this
+        # prim's -Z. Its augusta:leftHand names the hand that reaches the
+        # rifle's Fore-end, its elbow and shoulder the arm the IK bends. A
+        # guide marker like the Eye.
+        uniform token[] skel:joints = ["Root/Pelvis/Spine/RightShoulder/RightElbow/RightHand"]
+        int[] primvars:skel:jointIndices = [0] (
+            elementSize = 1
+            interpolation = "constant"
+        )
+        float[] primvars:skel:jointWeights = [1] (
+            elementSize = 1
+            interpolation = "constant"
+        )
+        uniform token augusta:leftHand = "Root/Pelvis/Spine/LeftShoulder/LeftElbow/LeftHand"
+        double radius = 0.03
+        float3[] extent = [(-0.03, -0.03, -0.03), (0.03, 0.03, 0.03)]
+        uniform token purpose = "guide"
+        double3 xformOp:translate = (0.3, 1, 0)
         uniform token[] xformOpOrder = ["xformOp:translate"]
     }
 
@@ -148,8 +369,31 @@ def SkelRoot "Character" (
         double size = 1
         float3[] extent = [(-0.5, -0.5, -0.5), (0.5, 0.5, 0.5)]
         uniform token purpose = "guide"
-        double3 xformOp:translate = (-0.3, 1.3, 0)
-        float3 xformOp:scale = (0.15, 0.65, 0.15)
+        double3 xformOp:translate = (-0.3, 1.45, 0)
+        float3 xformOp:scale = (0.15, 0.3, 0.15)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+    }
+
+    def Cube "LeftForearmHitbox" (
+        prepend apiSchemas = ["SkelBindingAPI"]
+    )
+    {
+        custom bool augusta:hitbox = true
+        custom token augusta:bodyPart = "limb"
+        uniform token[] skel:joints = ["Root/Pelvis/Spine/LeftShoulder/LeftElbow"]
+        int[] primvars:skel:jointIndices = [0] (
+            elementSize = 1
+            interpolation = "constant"
+        )
+        float[] primvars:skel:jointWeights = [1] (
+            elementSize = 1
+            interpolation = "constant"
+        )
+        double size = 1
+        float3[] extent = [(-0.5, -0.5, -0.5), (0.5, 0.5, 0.5)]
+        uniform token purpose = "guide"
+        double3 xformOp:translate = (-0.3, 1.15, 0)
+        float3 xformOp:scale = (0.12, 0.3, 0.12)
         uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
     }
 
@@ -171,8 +415,31 @@ def SkelRoot "Character" (
         double size = 1
         float3[] extent = [(-0.5, -0.5, -0.5), (0.5, 0.5, 0.5)]
         uniform token purpose = "guide"
-        double3 xformOp:translate = (0.3, 1.3, 0)
-        float3 xformOp:scale = (0.15, 0.65, 0.15)
+        double3 xformOp:translate = (0.3, 1.45, 0)
+        float3 xformOp:scale = (0.15, 0.3, 0.15)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+    }
+
+    def Cube "RightForearmHitbox" (
+        prepend apiSchemas = ["SkelBindingAPI"]
+    )
+    {
+        custom bool augusta:hitbox = true
+        custom token augusta:bodyPart = "limb"
+        uniform token[] skel:joints = ["Root/Pelvis/Spine/RightShoulder/RightElbow"]
+        int[] primvars:skel:jointIndices = [0] (
+            elementSize = 1
+            interpolation = "constant"
+        )
+        float[] primvars:skel:jointWeights = [1] (
+            elementSize = 1
+            interpolation = "constant"
+        )
+        double size = 1
+        float3[] extent = [(-0.5, -0.5, -0.5), (0.5, 0.5, 0.5)]
+        uniform token purpose = "guide"
+        double3 xformOp:translate = (0.3, 1.15, 0)
+        float3 xformOp:scale = (0.12, 0.3, 0.12)
         uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
     }
 

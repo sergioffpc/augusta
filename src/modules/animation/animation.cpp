@@ -9,32 +9,13 @@
 
 namespace augusta::animation {
 
-namespace {
-
-void WorldAtRest(const assets::Skeleton& skeleton, const hitbox::Pose& pose, std::vector<math::Mat4>& world) {
+std::vector<math::Mat4> PoseAtRest(const assets::Skeleton& skeleton, const hitbox::Pose& pose) {
   const math::Mat4 root = hitbox::RootOf(pose);
-  world.clear();
+  std::vector<math::Mat4> world;
   world.reserve(skeleton.rest_transforms.size());
   for (const math::Mat4& rest : skeleton.rest_transforms) {
     world.push_back(root * rest);
   }
-}
-
-}  // namespace
-
-void PoseAtRest(const assets::Skeleton& skeleton, const hitbox::Pose& pose, SkeletonPose& posed) {
-  posed.root = pose;
-  posed.local.clear();
-  posed.local.reserve(skeleton.joints.size());
-  for (const assets::JointData& joint : skeleton.joints) {
-    posed.local.push_back(JointPose{.translation = joint.translation, .rotation = joint.rotation});
-  }
-  WorldAtRest(skeleton, pose, posed.world);
-}
-
-std::vector<math::Mat4> PoseAtRest(const assets::Skeleton& skeleton, const hitbox::Pose& pose) {
-  std::vector<math::Mat4> world;
-  WorldAtRest(skeleton, pose, world);
   return world;
 }
 

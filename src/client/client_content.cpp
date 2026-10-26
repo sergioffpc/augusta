@@ -1,12 +1,14 @@
 #include "client_content.h"
 
 #include <expected>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
 #include "augusta/assets.h"
+#include "augusta/clips.h"
 #include "augusta/cues.h"
 #include "augusta/failure.h"
 #include "augusta/logging.h"
@@ -54,6 +56,27 @@ std::expected<math::Vec3, failure::Failure> LoadEye(const assets::Pack& pack, st
                                           DescribeCharacterError(eye.error())));
   }
   return *eye;
+}
+
+// The Clips of character, the one this player asked to play, from pack: what its
+// predicted Stride advances by (ADR-0066). The server refuses a pack whose Clips
+// do not load, so a client refuses it too, naming the part as the server does.
+std::expected<std::shared_ptr<const animation::CharacterClips>, failure::Failure> LoadClips(
+    const assets::Pack& pack, std::string_view character) {
+  std::vector<failure::ContextField> context = {{.key = "character", .value = std::string(character)}};
+  const auto skeleton = pack.ResolveSkeleton(character);
+  if (!skeleton) {
+    return std::unexpected(
+        ContentFailure(pack, std::move(context), assets::DescribeResolveError(skeleton.error(), "skeleton")));
+  }
+  auto clips = animation::LoadClips(pack, character, *skeleton);
+  if (!clips) {
+    if (clips.error().part == animation::ClipPart::kClip) {
+      context.push_back({.key = "clip", .value = clips.error().role});
+    }
+    return std::unexpected(ContentFailure(pack, std::move(context), animation::DescribeClipLoadError(clips.error())));
+  }
+  return std::make_shared<const animation::CharacterClips>(*std::move(clips));
 }
 
 #if AUGUSTA_DEBUG_TOOLS
@@ -153,11 +176,17 @@ std::expected<Content, failure::Failure> LoadClientContent(const assets::Pack& p
     return std::unexpected(std::move(cue_sounds.error()));
   }
 
+  auto clips = LoadClips(pack, character);
+  if (!clips) {
+    return std::unexpected(std::move(clips.error()));
+  }
+
   return Content{.eye = *eye,
                  .scene = *std::move(scene),
                  .map = *std::move(map),
                  .load_character = *std::move(load_character),
-                 .cue_sounds = *std::move(cue_sounds)};
+                 .cue_sounds = *std::move(cue_sounds),
+                 .clips = *std::move(clips)};
 }
 
 }  // namespace augusta::client

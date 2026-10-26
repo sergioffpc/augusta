@@ -1,6 +1,7 @@
 #include "augusta/physics.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -52,6 +53,7 @@
 #include <pvdruntime/OmniPvdWriter.h>
 #endif
 
+#include "augusta/assets.h"
 #include "augusta/grid.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
@@ -362,9 +364,44 @@ BodyState OnWireGrid(BodyState state) {
   return state;
 }
 
+// stride advanced by moved's distance along the ground over stride_length,
+// rounded to a whole step and round the cycle; held without a stride length.
+std::uint8_t AdvanceStride(std::uint8_t stride, const math::Vec3& moved, float stride_length) {
+  if (!(stride_length > 0.0F)) {
+    return stride;
+  }
+  const float ground = math::Length(math::Vec3(moved.x, 0.0F, moved.z));
+  const std::int64_t steps = std::llround(ground / stride_length * static_cast<float>(kStrideSteps));
+  return static_cast<std::uint8_t>((stride + steps) % kStrideSteps);
+}
+
+// progress, the progress of a change of stance that takes duration seconds,
+// advanced by delta_time, rounded to a whole step and held at the change's end;
+// a change without a duration is over at once.
+std::uint8_t AdvanceStanceProgress(std::uint8_t progress, float delta_time, float duration) {
+  if (!(duration > 0.0F)) {
+    return kStanceProgressSteps;
+  }
+  const std::int64_t steps = std::llround(delta_time / duration * static_cast<float>(kStanceProgressSteps));
+  return static_cast<std::uint8_t>(std::min<std::int64_t>(progress + steps, kStanceProgressSteps));
+}
+
 PxExtendedVec3 ToFootPosition(const math::Vec3& position) { return {position.x, position.y, position.z}; }
 
 }  // namespace
+
+float TransitionDuration(const assets::StanceTransitionsData& transitions, Stance from, Stance to) {
+  if (from == to) {
+    return 0.0F;
+  }
+  if (from != Stance::kProne && to != Stance::kProne) {
+    return transitions.standing_crouching;
+  }
+  if (from != Stance::kCrouching && to != Stance::kCrouching) {
+    return transitions.standing_prone;
+  }
+  return transitions.crouching_prone;
+}
 
 float StanceHeight(Stance stance) { return HeightForStance(stance) + kCapsuleDiameter; }
 
@@ -389,9 +426,8 @@ struct BodyRecord {
   BodyState state;
   // Accumulated vertical speed for the simple constant-acceleration
   // gravity integration in Step - reset to 0 whenever the controller was
-  // grounded as of the previous Step.
+  // grounded as of the previous Step (state.grounded).
   float vertical_speed = 0.0F;
-  bool grounded = false;
 };
 
 struct World::Impl {
@@ -572,7 +608,7 @@ void World::DestroyBody(BodyHandle handle) {
   LOG_DEBUG("subsystem=physics event=body_destroyed handle={}", static_cast<std::uint32_t>(handle));
 }
 
-BodyState World::Step(BodyHandle handle, const MovementInput& input, float delta_time) {
+BodyState World::Step(BodyHandle handle, const MovementInput& input, float delta_time, const Pacing& pacing) {
   const auto body_it = impl_->bodies.find(handle);
   if (body_it == impl_->bodies.end()) {
     return {};
@@ -582,8 +618,16 @@ BodyState World::Step(BodyHandle handle, const MovementInput& input, float delta
 
   if (input.desired_stance != state.stance && impl_->CanChangeStance(record, state.stance, input.desired_stance)) {
     record.controller->resize(HeightForStance(input.desired_stance));
+    // Back to the stance a change under way left, the change turns round
+    // where it has got to; to any other, a new change starts.
+    state.stance_progress = input.desired_stance == state.previous_stance
+                                ? static_cast<std::uint8_t>(kStanceProgressSteps - state.stance_progress)
+                                : std::uint8_t{0};
+    state.previous_stance = state.stance;
     state.stance = input.desired_stance;
   }
+  state.stance_progress = AdvanceStanceProgress(
+      state.stance_progress, delta_time, TransitionDuration(pacing.transitions, state.previous_stance, state.stance));
 
   const math::Vec3 direction = math::Normalize(input.direction);
   const bool standing_and_moving = state.stance == Stance::kStanding && math::Length(direction) > 0.0F;
@@ -597,7 +641,7 @@ BodyState World::Step(BodyHandle handle, const MovementInput& input, float delta
   // Simple constant-acceleration gravity: reset the accumulated vertical
   // speed whenever the controller was grounded as of the previous Step,
   // otherwise keep accelerating downward.
-  if (record.grounded) {
+  if (state.grounded) {
     record.vertical_speed = 0.0F;
   }
   record.vertical_speed += kGravity * delta_time;
@@ -607,13 +651,14 @@ BodyState World::Step(BodyHandle handle, const MovementInput& input, float delta
 
   const PxControllerFilters filters;
   const PxControllerCollisionFlags flags = record.controller->move(displacement, kMinMoveDistance, delta_time, filters);
-  record.grounded = flags.isSet(PxControllerCollisionFlag::eCOLLISION_DOWN);
+  state.grounded = flags.isSet(PxControllerCollisionFlag::eCOLLISION_DOWN);
 
   // The controller is put back on the grid too, so the next Step starts from
   // exactly the position this one reports.
   const math::Vec3 new_position = math::SnapPosition(FromPx(record.controller->getFootPosition()));
   record.controller->setFootPosition(ToFootPosition(new_position));
   state.velocity = delta_time > 0.0F ? (new_position - state.position) / delta_time : math::Vec3{};
+  state.stride = AdvanceStride(state.stride, new_position - state.position, pacing.stride_length);
   state.position = new_position;
   state = OnWireGrid(state);
 
@@ -633,7 +678,6 @@ void World::SetState(BodyHandle handle, const BodyState& state) {
   record.controller->setFootPosition(ToFootPosition(on_grid.position));
   record.state = on_grid;
   record.vertical_speed = 0.0F;
-  record.grounded = false;
 }
 
 FallState World::Fall(BodyHandle handle) const {
@@ -641,7 +685,7 @@ FallState World::Fall(BodyHandle handle) const {
   if (body_it == impl_->bodies.end()) {
     return {};
   }
-  return FallState{.vertical_speed = body_it->second.vertical_speed, .grounded = body_it->second.grounded};
+  return FallState{.vertical_speed = body_it->second.vertical_speed};
 }
 
 BodyState World::Restore(BodyHandle handle, const BodyState& state, const FallState& fall) {
@@ -661,7 +705,6 @@ BodyState World::Restore(BodyHandle handle, const BodyState& state, const FallSt
   record.controller->setFootPosition(ToFootPosition(on_grid.position));
   record.state = on_grid;
   record.vertical_speed = fall.vertical_speed;
-  record.grounded = fall.grounded;
   return on_grid;
 }
 

@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <limits>
 #include <map>
 #include <numbers>
@@ -24,6 +25,8 @@
 #include "augusta/physics.h"
 #include "augusta/tick.h"
 #include "augusta/weapon.h"
+#include "character_fixture.h"
+#include "clips_fixture.h"
 
 // SimulationWorld on flat ground: players are entities with bodies, moved by
 // the commands of each tick.
@@ -54,8 +57,11 @@ constexpr EntityId kAlice = static_cast<EntityId>(1);
 constexpr EntityId kBob = static_cast<EntityId>(2);
 
 // The character of the tests that judge no hit: its eye, standing, relative to
-// its feet (ADR-0040), and no hitbox.
-const Character kCharacter{.eye = Vec3(0.0F, 1.5F, 0.0F), .hitboxes = {}};
+// its feet (ADR-0040), no hitbox, and Clips that hold it still, each locomotion
+// Clip of clips_fixture.h's strides (character_fixture.h).
+Character TestCharacter() {
+  return augusta::character_fixture::Rigged(Character{.eye = Vec3(0.0F, 1.5F, 0.0F), .hitboxes = {}});
+}
 
 CollisionMesh Floor() {
   constexpr float kExtent = 100.0F;
@@ -114,7 +120,7 @@ TEST_F(SimulationTest, AWallStopsAWalkingPlayer) {
                                     .indices = {0, 1, 2, 0, 2, 3}})
                   .has_value());
   // Dropped a little above the floor: a body placed exactly on it starts overlapping it.
-  world_.AddPlayer(kAlice, Vec3(0.0F, 0.5F, 0.0F), kCharacter);
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.5F, 0.0F), TestCharacter());
   Run(kSettleTicks, {});
 
   const State state = Run(120, {PlayerCommand{.entity = kAlice, .command = Walking(Vec3(1.0F, 0.0F, 0.0F))}});
@@ -126,8 +132,8 @@ TEST_F(SimulationTest, AWallStopsAWalkingPlayer) {
 TEST_F(SimulationTest, AnEmptyWorldHasAnEmptyState) { EXPECT_TRUE(world_.Tick({}, kTick).state.bodies.empty()); }
 
 TEST_F(SimulationTest, AddedPlayersAppearInTheStateOrderedById) {
-  world_.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F), kCharacter);
-  world_.AddPlayer(kAlice, Vec3(-5.0F, 0.0F, 0.0F), kCharacter);
+  world_.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F), TestCharacter());
+  world_.AddPlayer(kAlice, Vec3(-5.0F, 0.0F, 0.0F), TestCharacter());
 
   const State state = world_.Tick({}, kTick).state;
 
@@ -138,7 +144,7 @@ TEST_F(SimulationTest, AddedPlayersAppearInTheStateOrderedById) {
 
 // Requirements: US-03
 TEST_F(SimulationTest, APlayerStartsStandingWhereItSpawned) {
-  world_.AddPlayer(kAlice, Vec3(3.0F, 0.0F, -2.0F), kCharacter);
+  world_.AddPlayer(kAlice, Vec3(3.0F, 0.0F, -2.0F), TestCharacter());
   Run(kSettleTicks, {});
 
   const State state = world_.Tick({}, kTick).state;
@@ -150,8 +156,8 @@ TEST_F(SimulationTest, APlayerStartsStandingWhereItSpawned) {
 
 // Requirements: US-04
 TEST_F(SimulationTest, AForwardCommandMovesThatPlayerOnly) {
-  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
-  world_.AddPlayer(kBob, Vec3(0.0F, 0.0F, 10.0F), kCharacter);
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), TestCharacter());
+  world_.AddPlayer(kBob, Vec3(0.0F, 0.0F, 10.0F), TestCharacter());
   Run(kSettleTicks, {});
   const float start = Body(world_.Tick({}, kTick).state, kAlice).position.x;
   const float bob_start = Body(world_.Tick({}, kTick).state, kBob).position.x;
@@ -164,7 +170,7 @@ TEST_F(SimulationTest, AForwardCommandMovesThatPlayerOnly) {
 
 // Requirements: US-04
 TEST_F(SimulationTest, StanceCommandsChangeTheStanceAndTheSpeed) {
-  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), TestCharacter());
   Run(kSettleTicks, {});
   const auto walk_at = [&](Stance stance) {
     const State state =
@@ -184,7 +190,7 @@ TEST_F(SimulationTest, StanceCommandsChangeTheStanceAndTheSpeed) {
 
 // Requirements: US-04
 TEST_F(SimulationTest, APlayerWithNoCommandStopsAndKeepsItsStance) {
-  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), TestCharacter());
   Run(kSettleTicks, {});
   Run(kWalkTicks / 2,
       {PlayerCommand{.entity = kAlice, .command = Walking(Vec3(1.0F, 0.0F, 0.0F), Stance::kCrouching)}});
@@ -195,9 +201,104 @@ TEST_F(SimulationTest, APlayerWithNoCommandStopsAndKeepsItsStance) {
   EXPECT_EQ(Body(state, kAlice).stance, Stance::kCrouching);
 }
 
+// Every side learns where a body looks and whether it aims down sights from
+// the state alone (ADR-0066), on the grid the pitch travels on (ADR-0038).
+TEST_F(SimulationTest, APlayersStateCarriesThePitchAndAdsOfTheCommandItApplied) {
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), TestCharacter());
+  world_.AddPlayer(kBob, Vec3(0.0F, 0.0F, 10.0F), TestCharacter());
+  Command aiming;
+  aiming.pitch = -0.1234567F;
+  aiming.ads = true;
+
+  const State state = world_.Tick({PlayerCommand{.entity = kAlice, .command = aiming}}, kTick).state;
+
+  ASSERT_EQ(state.bodies.size(), 2U);
+  EXPECT_EQ(state.bodies[0].pitch, augusta::math::SnapAngle(-0.1234567F));
+  EXPECT_TRUE(state.bodies[0].ads);
+  EXPECT_EQ(state.bodies[1].pitch, 0.0F);
+  EXPECT_FALSE(state.bodies[1].ads);
+}
+
+// As it keeps where it faces.
+TEST_F(SimulationTest, APlayerWithNoCommandKeepsItsPitchAndAds) {
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), TestCharacter());
+  Command aiming;
+  aiming.pitch = 0.5F;
+  aiming.ads = true;
+  world_.Tick({PlayerCommand{.entity = kAlice, .command = aiming}}, kTick);
+
+  const State state = Run(3, {});
+
+  ASSERT_EQ(state.bodies.size(), 1U);
+  EXPECT_EQ(state.bodies[0].pitch, 0.5F);
+  EXPECT_TRUE(state.bodies[0].ads);
+}
+
+// The Stride (ADR-0066): one byte, 256 steps to a cycle of two steps.
+constexpr int kStrideSteps = 256;
+
+// How far apart two Strides are, the short way round the cycle.
+int StrideDistance(int a, int b) {
+  const int forward = ((a - b) % kStrideSteps + kStrideSteps) % kStrideSteps;
+  return std::min(forward, kStrideSteps - forward);
+}
+
+// Movement advances a player's Stride by the distance it walks over the stride
+// length of its stance's blend space there: 30 ticks at 3 m/s walk 1.5 m. Each
+// tick's advance is rounded to a whole step, so a tick may be up to half a step off.
+TEST_F(SimulationTest, AWalkingPlayersStrideAdvancesByTheDistanceOverItsClipsStrideLength) {
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), TestCharacter());
+  const std::uint8_t start = Body(Run(kSettleTicks, {}), kAlice).stride;
+  constexpr int kTicks = 30;
+
+  const State state = Run(kTicks, {PlayerCommand{.entity = kAlice, .command = Walking(Vec3(0.0F, 0.0F, -1.0F))}});
+
+  // Ahead, half of the forward Clip's 3 m stride.
+  EXPECT_LE(StrideDistance(Body(state, kAlice).stride, start + (kStrideSteps / 2)), (kTicks / 2) + 1);
+}
+
+TEST_F(SimulationTest, AStrafingPlayersStrideAdvancesByItsSideClipsStrideLength) {
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), TestCharacter());
+  const std::uint8_t start = Body(Run(kSettleTicks, {}), kAlice).stride;
+  constexpr int kTicks = 30;
+
+  const State state = Run(kTicks, {PlayerCommand{.entity = kAlice, .command = Walking(Vec3(1.0F, 0.0F, 0.0F))}});
+
+  // To its right, 1.5 m of the right Clip's 2.4 m stride.
+  const int expected = start + static_cast<int>(1.5F / augusta::clips_fixture::kStandingRight * kStrideSteps);
+  EXPECT_LE(StrideDistance(Body(state, kAlice).stride, expected), (kTicks / 2) + 1);
+}
+
+TEST_F(SimulationTest, AStillPlayerHoldsItsStride) {
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), TestCharacter());
+  Run(kSettleTicks, {});
+  const std::uint8_t walked =
+      Body(Run(10, {PlayerCommand{.entity = kAlice, .command = Walking(Vec3(0.0F, 0.0F, -1.0F))}}), kAlice).stride;
+
+  const State state = Run(kSettleTicks, {});
+
+  EXPECT_EQ(Body(state, kAlice).stride, walked);
+}
+
+// Movement advances a player's change of stance over its Clips' transition
+// duration for the two stances: 0.25 s from standing to crouching, 17 steps of
+// 255 a tick, as PredictionWorld advances the local player's.
+TEST_F(SimulationTest, ACrouchingPlayersProgressAdvancesOverItsClipsTransitionDuration) {
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), TestCharacter());
+  Run(kSettleTicks, {});
+  Command crouch{};
+  crouch.movement.desired_stance = Stance::kCrouching;
+
+  const State state = Run(4, {PlayerCommand{.entity = kAlice, .command = crouch}});
+
+  EXPECT_EQ(Body(state, kAlice).stance, Stance::kCrouching);
+  EXPECT_EQ(Body(state, kAlice).previous_stance, Stance::kStanding);
+  EXPECT_EQ(Body(state, kAlice).stance_progress, 4 * 17);
+}
+
 // Requirements: US-15
 TEST_F(SimulationTest, ACommandForAPlayerNotInTheWorldIsIgnored) {
-  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), TestCharacter());
 
   const State state = Run(kSettleTicks, {PlayerCommand{.entity = kBob, .command = Walking(Vec3(1.0F, 0.0F, 0.0F))}});
 
@@ -206,8 +307,8 @@ TEST_F(SimulationTest, ACommandForAPlayerNotInTheWorldIsIgnored) {
 }
 
 TEST_F(SimulationTest, ARemovedPlayerLeavesTheState) {
-  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
-  world_.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F), kCharacter);
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), TestCharacter());
+  world_.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F), TestCharacter());
   Run(kSettleTicks, {});
 
   world_.RemovePlayer(kAlice);
@@ -218,7 +319,7 @@ TEST_F(SimulationTest, ARemovedPlayerLeavesTheState) {
 }
 
 TEST_F(SimulationTest, RemovingAPlayerNotInTheWorldChangesNothing) {
-  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), TestCharacter());
 
   world_.RemovePlayer(kBob);
 
@@ -226,8 +327,8 @@ TEST_F(SimulationTest, RemovingAPlayerNotInTheWorldChangesNothing) {
 }
 
 TEST_F(SimulationTest, AddingAPlayerTwiceKeepsOne) {
-  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
-  world_.AddPlayer(kAlice, Vec3(9.0F, 0.0F, 0.0F), kCharacter);
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), TestCharacter());
+  world_.AddPlayer(kAlice, Vec3(9.0F, 0.0F, 0.0F), TestCharacter());
 
   EXPECT_EQ(world_.Tick({}, kTick).state.bodies.size(), 1U);
 }
@@ -254,12 +355,13 @@ Command Firing() {
 // Alice alone on the floor with a rifle, settled before each test.
 class FireTest : public ::testing::Test {
  protected:
-  explicit FireTest(const Parameters& parameters = WithTheTestRifle()) : world_(parameters, kTickRate) {
+  explicit FireTest(const Parameters& parameters = WithTheTestRifle(), const augusta::weapon::Markers& rifle = {})
+      : world_(parameters, kTickRate, {}, rifle) {
     EXPECT_TRUE(world_.AddCollisionMesh(Floor()).has_value());
   }
 
   void SetUp() override {
-    world_.AddPlayer(kAlice, Vec3(0.0F, 0.5F, 0.0F), kCharacter);
+    world_.AddPlayer(kAlice, Vec3(0.0F, 0.5F, 0.0F), TestCharacter());
     for (int i = 0; i < kSettleTicks; ++i) {
       world_.Tick({}, kTick);
     }
@@ -317,7 +419,7 @@ TEST_F(FireTest, ATapOfFireFiresExactlyOneRound) {
 
 // Requirements: US-07
 TEST_F(FireTest, AShotNamesThePlayerWhoFiredIt) {
-  world_.AddPlayer(kBob, Vec3(5.0F, 0.5F, 0.0F), kCharacter);
+  world_.AddPlayer(kBob, Vec3(5.0F, 0.5F, 0.0F), TestCharacter());
 
   const State state = world_.Tick({PlayerCommand{.entity = kBob, .command = Firing()}}, kTick).state;
 
@@ -497,8 +599,8 @@ class ExtremeFireTest : public ::testing::Test {
   ExtremeFireTest() : world_(Extreme(), kSlowTickRate) {
     EXPECT_TRUE(augusta::parameters::Validate(Extreme()).has_value());
     EXPECT_TRUE(world_.AddCollisionMesh(Floor()).has_value());
-    world_.AddPlayer(kAlice, Vec3(0.0F, 0.5F, 0.0F), kCharacter);
-    world_.AddPlayer(kBob, Vec3(5.0F, 0.5F, 0.0F), kCharacter);
+    world_.AddPlayer(kAlice, Vec3(0.0F, 0.5F, 0.0F), TestCharacter());
+    world_.AddPlayer(kBob, Vec3(5.0F, 0.5F, 0.0F), TestCharacter());
   }
 
   State BothFire() {
@@ -916,11 +1018,12 @@ constexpr float kLegsHeight = 0.45F;
 // legs on its axis, and a right arm (a limb) beside the torso, at +X when it
 // faces yaw 0.
 Character Target() {
-  return Character{.eye = Vec3(0.0F, 1.6F, 0.0F),
-                   .hitboxes = {Box(BodyPart::kHead, Vec3(-0.1F, 1.5F, -0.1F), Vec3(0.1F, 1.8F, 0.1F)),
-                                Box(BodyPart::kTorso, Vec3(-0.2F, 0.9F, -0.1F), Vec3(0.2F, 1.5F, 0.1F)),
-                                Box(BodyPart::kLimb, Vec3(-0.2F, 0.0F, -0.1F), Vec3(0.2F, 0.9F, 0.1F)),
-                                Box(BodyPart::kLimb, Vec3(0.3F, 0.9F, -0.1F), Vec3(0.4F, 1.5F, 0.1F))}};
+  return augusta::character_fixture::Rigged(
+      Character{.eye = Vec3(0.0F, 1.6F, 0.0F),
+                .hitboxes = {Box(BodyPart::kHead, Vec3(-0.1F, 1.5F, -0.1F), Vec3(0.1F, 1.8F, 0.1F)),
+                             Box(BodyPart::kTorso, Vec3(-0.2F, 0.9F, -0.1F), Vec3(0.2F, 1.5F, 0.1F)),
+                             Box(BodyPart::kLimb, Vec3(-0.2F, 0.0F, -0.1F), Vec3(0.2F, 0.9F, 0.1F)),
+                             Box(BodyPart::kLimb, Vec3(0.3F, 0.9F, -0.1F), Vec3(0.4F, 1.5F, 0.1F))}});
 }
 
 // Alice and Bob, 10 m apart, on the floor: Alice, at the origin, shoots at Bob,
@@ -941,7 +1044,10 @@ class HitTest : public ::testing::Test {
     return parameters;
   }
 
-  HitTest() : world_(WithDamage(), kTickRate) { EXPECT_TRUE(world_.AddCollisionMesh(Floor()).has_value()); }
+  explicit HitTest(const augusta::weapon::Markers& rifle = {}, const Parameters& parameters = WithDamage())
+      : world_(parameters, kTickRate, {}, rifle) {
+    EXPECT_TRUE(world_.AddCollisionMesh(Floor()).has_value());
+  }
 
   void SetUp() override {
     world_.AddPlayer(kAlice, Vec3(0.0F, 0.5F, 0.0F), Target());
@@ -980,8 +1086,10 @@ class HitTest : public ::testing::Test {
 
   // A one-tick press of fire by Alice, aimed at the point offset from Bob's
   // feet as the State of a tick shows them, which is the Seen time it reports.
-  Command FiringAt(const Vec3& offset) {
-    const State state = Tick(Command{});
+  Command FiringAt(const Vec3& offset) { return FiringAt(offset, Tick(Command{})); }
+
+  // As FiringAt, at Bob's feet as state, the newest tick's, shows them.
+  static Command FiringAt(const Vec3& offset, const State& state) {
     const Vec3 eye = Entity(state, kAlice).body.position + Target().eye;
     const Vec3 aim = Entity(state, kBob).body.position + offset - eye;
     Command command = Firing();
@@ -1198,19 +1306,6 @@ TEST_F(HitTest, AShotPastTheTargetHitsNoOne) {
   EXPECT_TRUE(ShootAt(Vec3(0.0F, 2.0F, 0.0F)).empty());
 }
 
-// Crouched, a body 2.1 m tall standing is 1.3 m tall, and its hitboxes with it.
-// Requirements: US-11
-TEST_F(HitTest, ACrouchedTargetsHitboxesAreLoweredWithItsBody) {
-  bob_.movement.desired_stance = Stance::kCrouching;
-  Wait(kSettleTicks);
-
-  EXPECT_TRUE(ShootAt(Vec3(0.0F, kHeadHeight, 0.0F)).empty());
-  const std::vector<Hit> lowered = ShootAt(Vec3(0.0F, kHeadHeight * 1.3F / 2.1F, 0.0F));
-
-  ASSERT_EQ(lowered.size(), 1U);
-  EXPECT_EQ(lowered[0].part, BodyPart::kHead);
-}
-
 // Its right arm is at +X while it faces yaw 0, and at -X once it has turned half a turn.
 // Requirements: US-11
 TEST_F(HitTest, ATargetsHitboxesTurnWithWhereItFaces) {
@@ -1227,29 +1322,6 @@ TEST_F(HitTest, ATargetsHitboxesTurnWithWhereItFaces) {
   ASSERT_EQ(turned.size(), 1U);
   EXPECT_EQ(turned[0].part, BodyPart::kLimb);
   EXPECT_EQ(Entity(Tick(Command{}), kBob).yaw, augusta::math::SnapAngle(std::numbers::pi_v<float>));
-}
-
-// Bob crouches on one tick. A Seen time between the tick before and that one shows
-// him as the nearer of the two has him, as a client does.
-// Requirements: US-11, NFR-02
-TEST_F(HitTest, ASeenTimeBetweenTwoStancesIsJudgedInTheStanceOfTheNearerTick) {
-  bob_.movement.desired_stance = Stance::kCrouching;
-  augusta::tick::Tick crouched = 0;
-  for (int i = 0; i < kSettleTicks && crouched == 0; ++i) {
-    const State state = Tick(Command{});
-    if (Entity(state, kBob).body.stance == Stance::kCrouching) {
-      crouched = state.tick;
-    }
-  }
-  ASSERT_NE(crouched, 0U);
-  const Vec3 standing_head(0.0F, kHeadHeight, 0.0F);
-
-  const std::vector<Hit> nearer_standing = ShootAt(standing_head, crouched - 1, 0.4F);
-  const std::vector<Hit> nearer_crouched = ShootAt(standing_head, crouched - 1, 0.6F);
-
-  ASSERT_EQ(nearer_standing.size(), 1U);
-  EXPECT_EQ(nearer_standing[0].part, BodyPart::kHead);
-  EXPECT_TRUE(nearer_crouched.empty());
 }
 
 // Bob faces just short of half a turn one way, then just short of it the
@@ -1397,7 +1469,8 @@ constexpr float kHandHeight = 1.4F;
 // Shoulder Joint, 20 cm right of its feet at 1.4 m, is turned a quarter turn
 // about Z, so the Hand Joint 1.8 m down the arm sits kHandSide to the right of
 // its feet. Its torso is bound to its root Joint and its hand to the Hand
-// Joint, each Hitbox in its own Joint's space.
+// Joint, each Hitbox in its own Joint's space. Its Clips hold it in that Rest
+// pose in every stance (character_fixture.h), its weapon socket on its Hand.
 Character Reaching() {
   using augusta::assets::JointData;
   using augusta::math::Mat4;
@@ -1407,18 +1480,20 @@ Character Reaching() {
   const Mat4 hand = shoulder * augusta::math::ToMat4(Vec3(0.0F, -1.8F, 0.0F), Quat(1.0F, 0.0F, 0.0F, 0.0F), Vec3(1.0F));
   CharacterHitbox palm = Box(BodyPart::kLimb, Vec3(-0.1F), Vec3(0.1F));
   palm.joint = 2;
-  return Character{
-      .eye = Vec3(0.0F, 1.6F, 0.0F),
-      .hitboxes = {Box(BodyPart::kTorso, Vec3(-0.2F, 0.9F, -0.1F), Vec3(0.2F, 1.5F, 0.1F)), palm},
-      .skeleton = {.joints = {JointData{.name = "Root"},
-                              JointData{.name = "Root/Shoulder",
-                                        .parent = 0,
-                                        .translation = Vec3(0.2F, kHandHeight, 0.0F),
-                                        .rotation = quarter_turn_about_z},
-                              JointData{
-                                  .name = "Root/Shoulder/Hand", .parent = 1, .translation = Vec3(0.0F, -1.8F, 0.0F)}},
-                   .rest_transforms = {Mat4(1.0F), shoulder, hand}},
-  };
+  return augusta::character_fixture::Rigged(
+      Character{
+          .eye = Vec3(0.0F, 1.6F, 0.0F),
+          .hitboxes = {Box(BodyPart::kTorso, Vec3(-0.2F, 0.9F, -0.1F), Vec3(0.2F, 1.5F, 0.1F)), palm},
+          .skeleton =
+              {.joints = {JointData{.name = "Root"},
+                          JointData{.name = "Root/Shoulder",
+                                    .parent = 0,
+                                    .translation = Vec3(0.2F, kHandHeight, 0.0F),
+                                    .rotation = quarter_turn_about_z},
+                          JointData{.name = "Root/Shoulder/Hand", .parent = 1, .translation = Vec3(0.0F, -1.8F, 0.0F)}},
+               .rest_transforms = {Mat4(1.0F), shoulder, hand}},
+      },
+      palm.joint);
 }
 
 // HitTest's Alice and Bob, Bob playing Reaching: Alice's rounds are judged
@@ -1447,18 +1522,19 @@ TEST_F(PosedHitTest, AHitboxIsJudgedWhereItsJointHoldsIt) {
   EXPECT_EQ(torso[0].part, BodyPart::kTorso);
 }
 
-// Crouched, a body 2.1 m tall standing is 1.3 m tall: the Skeleton's root
-// lowers the hand with it, as far out to the side as it was.
+// The stance does not scale the Skeleton's root (ADR-0040): how low a body is
+// is its stance's Clips', and Bob's hold his Rest pose in every stance, so
+// crouched his hand is where it was standing.
 // Requirements: US-11
-TEST_F(PosedHitTest, TheSkeletonsRootLowersItsHitboxesWithACrouchedBody) {
+TEST_F(PosedHitTest, TheStanceDoesNotScaleTheSkeletonsRoot) {
   bob_.movement.desired_stance = Stance::kCrouching;
   Wait(kSettleTicks);
+  ASSERT_EQ(Entity(Tick(Command{}), kBob).body.stance, Stance::kCrouching);
 
-  EXPECT_TRUE(ShootAt(Vec3(kHandSide, kHandHeight, 0.0F)).empty());
-  const std::vector<Hit> lowered = ShootAt(Vec3(kHandSide, kHandHeight * 1.3F / 2.1F, 0.0F));
+  const std::vector<Hit> hand = ShootAt(Vec3(kHandSide, kHandHeight, 0.0F));
 
-  ASSERT_EQ(lowered.size(), 1U);
-  EXPECT_EQ(lowered[0].part, BodyPart::kLimb);
+  ASSERT_EQ(hand.size(), 1U);
+  EXPECT_EQ(hand[0].part, BodyPart::kLimb);
 }
 
 // Requirements: US-11
@@ -1478,8 +1554,8 @@ TEST_F(PosedHitTest, TheSkeletonsRootTurnsItsHitboxesWithWhereItFaces) {
 // one before, Lag compensation turns his root's facing along the shorter arc
 // and composes his Joints, the Rest pose's on both ticks, onto it (ADR-0044):
 // his hand an eighth of a turn round, still kHandSide from his feet, and not on
-// the chord between where the two ticks held it. The Rest pose being his only
-// pose, no Joint's own interpolation is exercised.
+// the chord between where the two ticks held it. His Clips holding the Rest pose
+// alone, no Joint's own interpolation is exercised.
 // Requirements: US-11, NFR-02
 TEST_F(PosedHitTest, ASeenTimeBetweenTwoFacingsTurnsTheRootAlongTheArcInTheRestPose) {
   bob_.yaw = -std::numbers::pi_v<float> / 2.0F;
@@ -1494,6 +1570,401 @@ TEST_F(PosedHitTest, ASeenTimeBetweenTwoFacingsTurnsTheRootAlongTheArcInTheRestP
   ASSERT_EQ(arc.size(), 1U);
   EXPECT_EQ(arc[0].part, BodyPart::kLimb);
   EXPECT_TRUE(chord.empty());
+}
+
+// The Walker (clips_fixture.h), its Hitboxes on its Joints: a head on its Head
+// Joint, a torso up from its Pelvis and a leg down each of its legs, 1 m long.
+// Standing, its head is 1.6 m to 1.9 m up and its torso 1 m to 1.6 m;
+// crouched, its Pelvis 0.6 m up, its head is 1.2 m to 1.5 m.
+Character Walker() {
+  namespace fixture = augusta::clips_fixture;
+  CharacterHitbox head = Box(BodyPart::kHead, Vec3(-0.1F, 0.0F, -0.1F), Vec3(0.1F, 0.3F, 0.1F));
+  head.joint = fixture::kWalkerHead;
+  CharacterHitbox torso = Box(BodyPart::kTorso, Vec3(-0.2F, 0.0F, -0.1F), Vec3(0.2F, 0.6F, 0.1F));
+  torso.joint = fixture::kWalkerPelvis;
+  CharacterHitbox left_leg = Box(BodyPart::kLimb, Vec3(-0.07F, -1.0F, -0.07F), Vec3(0.07F, 0.0F, 0.07F));
+  left_leg.joint = fixture::kWalkerLeftLeg;
+  CharacterHitbox right_leg = left_leg;
+  right_leg.joint = fixture::kWalkerRightLeg;
+  return Character{.eye = Vec3(0.0F, 1.7F, 0.0F),
+                   .hitboxes = {head, torso, left_leg, right_leg},
+                   .skeleton = fixture::WalkerSkeleton(),
+                   .clips = fixture::WalkerClips()};
+}
+
+// HitTest's Alice and Bob, Bob playing the Walker: Alice's rounds are judged
+// against his Hitboxes as his Clips pose them (ADR-0066).
+class AnimatedHitTest : public HitTest {
+ protected:
+  void SetUp() override {
+    world_.AddPlayer(kAlice, Vec3(0.0F, 0.5F, 0.0F), Target());
+    world_.AddPlayer(kBob, Vec3(0.0F, 0.5F, -10.0F), Walker());
+    bob_ = Command{};
+    Wait(kSettleTicks);
+  }
+
+  // Puts Bob back 3 m to Alice's right, walks him ahead at his forward walk's
+  // speed facing -X, across Alice's line of fire, and ticks with Alice idle
+  // until his Stride is within a few steps of one of strides: that tick's
+  // State, Bob within a few meters of straight ahead of Alice. Fails the test
+  // if no tick of two cycles gets there.
+  State UntilWalkingBobsStrideNears(std::initializer_list<int> strides) {
+    constexpr int kNear = 3;
+    world_.RemovePlayer(kBob);
+    world_.AddPlayer(kBob, Vec3(3.0F, 0.5F, -10.0F), Walker());
+    bob_ = Walking(Vec3(-1.0F, 0.0F, 0.0F));
+    bob_.yaw = std::numbers::pi_v<float> / 2.0F;
+    Wait(kSettleTicks);
+    for (int i = 0; i < 2 * kTickRate; ++i) {
+      const State state = Tick(Command{});
+      for (const int stride : strides) {
+        if (StrideDistance(Entity(state, kBob).body.stride, stride) <= kNear) {
+          return state;
+        }
+      }
+    }
+    ADD_FAILURE() << "Bob's Stride never neared it";
+    return Tick(Command{});
+  }
+
+  // Puts Bob back height meters above the floor, 8 m ahead of Alice, facing -X
+  // across her line of fire, to fall: within the 10 m a round flies on the tick
+  // it is fired, so each round is judged on its Seen time's tick alone.
+  void DropBob(float height) {
+    world_.RemovePlayer(kBob);
+    world_.AddPlayer(kBob, Vec3(0.0F, height, -8.0F), Walker());
+    bob_ = Command{};
+    bob_.yaw = std::numbers::pi_v<float> / 2.0F;
+  }
+};
+
+// Requirements: US-11
+TEST_F(AnimatedHitTest, AShotAtAStandingHeadsHeightHitsAStandingPlayerAndMissesACrouchedOne) {
+  const Vec3 standing_head(0.0F, 1.75F, 0.0F);
+  const std::vector<Hit> standing = ShootAt(standing_head);
+
+  bob_.movement.desired_stance = Stance::kCrouching;
+  Wait(kSettleTicks);
+  const std::vector<Hit> crouched = ShootAt(standing_head);
+  const std::vector<Hit> crouched_head = ShootAt(Vec3(0.0F, 1.35F, 0.0F));
+
+  ASSERT_EQ(standing.size(), 1U);
+  EXPECT_EQ(standing[0].part, BodyPart::kHead);
+  EXPECT_TRUE(crouched.empty());
+  ASSERT_EQ(crouched_head.size(), 1U);
+  EXPECT_EQ(crouched_head[0].part, BodyPart::kHead);
+}
+
+// Bob crouches, his Pelvis going down from 1 m to 0.6 m over the Walker's
+// 0.25 s from standing to crouching: 17 steps of progress a tick, 119 of 255
+// on the 7th tick and 136 on the 8th. A Seen time halfway between those two
+// ticks is judged against Joints Lag compensation interpolates between them
+// (ADR-0044), the change exactly halfway: his Pelvis 0.8 m up, his head 1.4 m
+// to 1.7 m and his torso 0.8 m to 1.4 m. A Shot at 1.55 m, which would hit his
+// standing torso and miss his crouched head, hits his head there; one at
+// 1.8 m, his standing head, misses.
+// Requirements: US-11, NFR-02
+TEST_F(AnimatedHitTest, HalfwayThroughAChangeOfStanceAShotHitsTheBodyHalfwayDown) {
+  bob_.movement.desired_stance = Stance::kCrouching;
+  augusta::tick::Tick past_halfway = 0;
+  for (int i = 0; i < kSettleTicks && past_halfway == 0; ++i) {
+    const State state = Tick(Command{});
+    const auto& body = Entity(state, kBob).body;
+    if (body.stance == Stance::kCrouching && body.stance_progress >= 128) {
+      ASSERT_EQ(body.stance_progress, 136);
+      past_halfway = state.tick;
+    }
+  }
+  ASSERT_NE(past_halfway, 0U);
+
+  const std::vector<Hit> between = ShootAt(Vec3(0.0F, 1.55F, 0.0F), past_halfway - 1, 0.5F);
+  const std::vector<Hit> standing_head = ShootAt(Vec3(0.0F, 1.8F, 0.0F), past_halfway - 1, 0.5F);
+
+  ASSERT_EQ(between.size(), 1U);
+  EXPECT_EQ(between[0].part, BodyPart::kHead);
+  EXPECT_TRUE(standing_head.empty());
+}
+
+// Bob walks ahead at his forward walk's speed, facing -X, so his legs swing
+// across Alice's line of fire. At a Foot contact (a Stride of 0 or 128) one leg
+// is 30 degrees ahead: 0.6 m down it is 0.3 m ahead of his hips, 0.48 m up. A
+// quarter of a cycle later his legs pass each other, straight down. Each round
+// is judged where the Stride had him on the tick its Seen time names.
+// Requirements: US-11
+TEST_F(AnimatedHitTest, AShotAtAWalkingPlayersLegHitsItWhereTheStrideHasIt) {
+  const Vec3 ahead_of_his_hips(-0.3F, 0.48F, 0.0F);
+  const Vec3 under_his_hips(0.0F, 0.48F, 0.0F);
+
+  const std::vector<Hit> stepping = Shoot(FiringAt(ahead_of_his_hips, UntilWalkingBobsStrideNears({0, 128})));
+  const std::vector<Hit> passing = Shoot(FiringAt(ahead_of_his_hips, UntilWalkingBobsStrideNears({64, 192})));
+  const std::vector<Hit> passing_under = Shoot(FiringAt(under_his_hips, UntilWalkingBobsStrideNears({64, 192})));
+
+  ASSERT_EQ(stepping.size(), 1U);
+  EXPECT_EQ(stepping[0].part, BodyPart::kLimb);
+  EXPECT_TRUE(passing.empty());
+  ASSERT_EQ(passing_under.size(), 1U);
+  EXPECT_EQ(passing_under[0].part, BodyPart::kLimb);
+}
+
+// The Aimer: the Holder (clips_fixture.h) with its Hitboxes on the Joints its
+// Aim offset and ADS grip move: a head on its Head Joint and a torso up from
+// its Pelvis, as the Walker's, and an arm 0.6 m down its right arm. Standing
+// upright, its torso is 1 m to 1.6 m up, its arm hangs from 1.45 m, and its head
+// is above 1.6 m.
+Character Aimer() {
+  namespace fixture = augusta::clips_fixture;
+  CharacterHitbox head = Box(BodyPart::kHead, Vec3(-0.1F, 0.0F, -0.1F), Vec3(0.1F, 0.3F, 0.1F));
+  head.joint = fixture::kHolderHead;
+  CharacterHitbox torso = Box(BodyPart::kTorso, Vec3(-0.2F, 0.0F, -0.1F), Vec3(0.2F, 0.6F, 0.1F));
+  torso.joint = fixture::kHolderPelvis;
+  CharacterHitbox arm = Box(BodyPart::kLimb, Vec3(-0.05F, -0.6F, -0.05F), Vec3(0.05F, 0.0F, 0.05F));
+  arm.joint = fixture::kHolderRightArm;
+  return Character{.eye = Vec3(0.0F, 1.7F, 0.0F),
+                   .hitboxes = {head, torso, arm},
+                   .skeleton = fixture::HolderSkeleton(),
+                   .clips = fixture::HolderClips()};
+}
+
+// The Holder (clips_fixture.h) as a Character: the Aimer's head and torso, its
+// right arm, and its left forearm, a box 10 cm across from its elbow to 5 cm
+// past its hand.
+Character Holder() {
+  namespace fixture = augusta::clips_fixture;
+  CharacterHitbox head = Box(BodyPart::kHead, Vec3(-0.1F, 0.0F, -0.1F), Vec3(0.1F, 0.3F, 0.1F));
+  head.joint = fixture::kHolderHead;
+  CharacterHitbox torso = Box(BodyPart::kTorso, Vec3(-0.2F, 0.0F, -0.1F), Vec3(0.2F, 0.6F, 0.1F));
+  torso.joint = fixture::kHolderPelvis;
+  CharacterHitbox right_arm =
+      Box(BodyPart::kLimb, Vec3(-0.05F, -fixture::kHolderArm, -0.05F), Vec3(0.05F, 0.0F, 0.05F));
+  right_arm.joint = fixture::kHolderRightArm;
+  CharacterHitbox left_forearm =
+      Box(BodyPart::kLimb, Vec3(-0.05F, -fixture::kHolderForearm - 0.05F, -0.05F), Vec3(0.05F, 0.0F, 0.05F));
+  left_forearm.joint = fixture::kHolderLeftForearm;
+  return Character{.eye = fixture::kHolderEye,
+                   .hitboxes = {head, torso, right_arm, left_forearm},
+                   .skeleton = fixture::HolderSkeleton(),
+                   .clips = fixture::HolderClips()};
+}
+
+// HitTest's Alice and Bob, Bob playing the Aimer and facing -X, across Alice's
+// line of fire: as his Aim offset bends him ahead or back, or his ADS grip
+// raises his arm ahead, they move to Alice's left or right (ADR-0066).
+class AimedHitTest : public HitTest {
+ protected:
+  void SetUp() override {
+    world_.AddPlayer(kAlice, Vec3(0.0F, 0.5F, 0.0F), Target());
+    world_.AddPlayer(kBob, Vec3(0.0F, 0.5F, -10.0F), Aimer());
+    bob_ = Command{};
+    bob_.yaw = std::numbers::pi_v<float> / 2.0F;
+    Wait(kSettleTicks);
+  }
+
+  // Bob looks at pitch, in ADS if ads, from the next tick on.
+  void BobAims(float pitch, bool ads = false) {
+    bob_.pitch = pitch;
+    bob_.ads = ads;
+    Wait(1);
+  }
+
+  // The point along Bob's bent torso, along from his Pelvis, pelvis high,
+  // bent ahead by bend (back, if negative): ahead of him is -X.
+  static Vec3 AlongTorso(float pelvis, float bend, float along) {
+    return Vec3(-along * std::sin(bend), pelvis + (along * std::cos(bend)), 0.0F);
+  }
+};
+
+// Half a metre up his torso, bent 45 degrees ahead or back, the point is 0.35 m
+// ahead of or behind his upright torso, which is 0.1 m deep.
+// Requirements: US-11
+TEST_F(AimedHitTest, APlayerAimingDownIsHitWhereItsTorsoBendsAndAimingUpWhereItLeansBack) {
+  namespace fixture = augusta::clips_fixture;
+  const Vec3 bent_ahead = AlongTorso(fixture::kPelvisStanding, fixture::kStandingAimBend, 0.5F);
+  const Vec3 leant_back = AlongTorso(fixture::kPelvisStanding, -fixture::kStandingAimBend, 0.5F);
+
+  const std::vector<Hit> level = ShootAt(bent_ahead);
+  BobAims(-augusta::command::kMaxLookPitch);
+  const std::vector<Hit> down = ShootAt(bent_ahead);
+  BobAims(augusta::command::kMaxLookPitch);
+  const std::vector<Hit> up = ShootAt(leant_back);
+
+  EXPECT_TRUE(level.empty());
+  ASSERT_EQ(down.size(), 1U);
+  EXPECT_EQ(down[0].part, BodyPart::kTorso);
+  ASSERT_EQ(up.size(), 1U);
+  EXPECT_EQ(up[0].part, BodyPart::kTorso);
+}
+
+// His ADS grip swings his arm up 90 degrees, straight ahead of his shoulder,
+// 1.45 m up: 0.45 m ahead of it, only the raised arm is there.
+// Requirements: US-11
+TEST_F(AimedHitTest, InADSAPlayersArmIsHitWhereTheGripRaisesIt) {
+  namespace fixture = augusta::clips_fixture;
+  const Vec3 ahead_of_his_shoulder(-0.45F, fixture::kPelvisStanding + fixture::kHolderShoulderAbovePelvis, 0.0F);
+
+  const std::vector<Hit> hip = ShootAt(ahead_of_his_shoulder);
+  BobAims(0.0F, true);
+  const std::vector<Hit> ads = ShootAt(ahead_of_his_shoulder);
+
+  EXPECT_TRUE(hip.empty());
+  ASSERT_EQ(ads.size(), 1U);
+  EXPECT_EQ(ads[0].part, BodyPart::kLimb);
+}
+
+// Crouched, his Aim offset bends him 75 degrees ahead, where standing's would
+// bend him 45: 0.55 m up his torso, 0.53 m ahead and 0.74 m up, where his
+// standing bend would leave nothing.
+// Requirements: US-11
+TEST_F(AimedHitTest, ACrouchedPlayerAimingDownBendsByItsCrouchingAimOffset) {
+  namespace fixture = augusta::clips_fixture;
+  bob_.movement.desired_stance = Stance::kCrouching;
+  Wait(kSettleTicks);
+  BobAims(-augusta::command::kMaxLookPitch);
+
+  const std::vector<Hit> crouching_bend =
+      ShootAt(AlongTorso(fixture::kPelvisCrouching, fixture::kCrouchingAimBend, 0.55F));
+  const std::vector<Hit> standing_bend =
+      ShootAt(AlongTorso(fixture::kPelvisCrouching, fixture::kStandingAimBend, 0.55F));
+
+  ASSERT_EQ(crouching_bend.size(), 1U);
+  EXPECT_EQ(crouching_bend[0].part, BodyPart::kTorso);
+  EXPECT_TRUE(standing_bend.empty());
+}
+
+// Off the ground, Bob's air Clip (clips_fixture.h) tucks his left leg level
+// with his hips, 1 m up, 1 m ahead of him, and swings his right behind him as
+// he falls faster; under his hips, where a standing leg hangs, he has none.
+// Requirements: US-11
+TEST_F(AnimatedHitTest, AShotAtAFallingPlayerHitsTheLegHisAirClipTucksAndMissesWhereAStandingLegHangs) {
+  DropBob(8.0F);
+  // Falling at about 5 m/s, the fall the air Clip ends at.
+  Wait(30);
+  const Vec3 tucked(-0.5F, 1.0F, 0.0F);
+  const Vec3 under_his_hips(0.0F, 0.48F, 0.0F);
+
+  const std::vector<Hit> at_the_tuck = ShootAt(tucked);
+  const std::vector<Hit> under = ShootAt(under_his_hips);
+
+  ASSERT_FALSE(Entity(Tick(Command{}), kBob).body.grounded);
+  ASSERT_EQ(at_the_tuck.size(), 1U);
+  EXPECT_EQ(at_the_tuck[0].part, BodyPart::kLimb);
+  EXPECT_TRUE(under.empty());
+}
+
+// Bob falls 3 m to the floor. Each round is judged on the tick its Seen time
+// names: the tick before he lands, in the air, has no leg under his hips; the
+// tick he lands, his idle has both there, with nothing of the air Clip left.
+// Requirements: US-11
+TEST_F(AnimatedHitTest, ThePoseSwitchesToTheGroundsOnTheTickAPlayerLands) {
+  DropBob(3.0F);
+  augusta::tick::Tick landed = 0;
+  bool was_in_the_air = false;
+  for (int i = 0; i < 2 * kTickRate && landed == 0; ++i) {
+    const State state = Tick(Command{});
+    if (!Entity(state, kBob).body.grounded) {
+      was_in_the_air = true;
+    } else if (was_in_the_air) {
+      landed = state.tick;
+    }
+  }
+  ASSERT_NE(landed, 0U);
+  const Vec3 under_his_hips(0.0F, 0.48F, 0.0F);
+
+  const std::vector<Hit> landing = ShootAt(under_his_hips, landed, 0.0F);
+  const std::vector<Hit> before = ShootAt(under_his_hips, landed - 1, 0.0F);
+
+  ASSERT_EQ(landing.size(), 1U);
+  EXPECT_EQ(landing[0].part, BodyPart::kLimb);
+  EXPECT_TRUE(before.empty());
+}
+
+// HitTest's Alice and Bob, with the test rifle (clips_fixture.h's
+// HolderRifle), Bob playing the Holder and facing -X, his left side to Alice:
+// his left hand reaches his rifle's Fore-end, kHolderForeEnd ahead of his right
+// hand, which hangs kHolderArm below his right shoulder (ADR-0066).
+class HeldHitTest : public HitTest {
+ protected:
+  explicit HeldHitTest(const augusta::weapon::Markers& rifle = augusta::clips_fixture::HolderRifle(),
+                       const Parameters& parameters = WithDamage())
+      : HitTest(rifle, parameters) {}
+
+  void SetUp() override {
+    world_.AddPlayer(kAlice, Vec3(0.0F, 0.5F, 0.0F), Target());
+    world_.AddPlayer(kBob, Vec3(0.0F, 0.5F, -10.0F), Holder());
+    bob_ = Command{};
+    bob_.yaw = std::numbers::pi_v<float> / 2.0F;
+    Wait(kSettleTicks);
+  }
+
+  // The Fore-end from his feet: ahead of him is -X, his right -Z.
+  static Vec3 ForeEnd() {
+    namespace fixture = augusta::clips_fixture;
+    return Vec3(-fixture::kHolderForeEnd,
+                fixture::kPelvisStanding + fixture::kHolderShoulderAbovePelvis - fixture::kHolderArm,
+                -fixture::kHolderShoulderSide);
+  }
+};
+
+// Where his left hand holds the rifle, only his left forearm, bent there by the
+// IK, is.
+// Requirements: US-11
+TEST_F(HeldHitTest, AShotAtTheLeftForearmHitsItWhereTheIKBendsItToTheRifle) {
+  const std::vector<Hit> hits = ShootAt(ForeEnd());
+
+  ASSERT_EQ(hits.size(), 1U);
+  EXPECT_EQ(hits[0].target, kBob);
+  EXPECT_EQ(hits[0].part, BodyPart::kLimb);
+}
+
+// HeldHitTest with a rifle whose Fore-end is kHolderForeEnd behind its Grip:
+// his left hand reaches back for it, and nothing of him is where the test
+// rifle's Fore-end would be.
+class BackwardRifleHitTest : public HeldHitTest {
+ protected:
+  static augusta::weapon::Markers Backward() {
+    augusta::weapon::Markers rifle = augusta::clips_fixture::HolderRifle();
+    rifle.fore_end = augusta::math::ToMat4(Vec3(0.0F, 0.0F, augusta::clips_fixture::kHolderForeEnd),
+                                           augusta::math::Quat(1.0F, 0.0F, 0.0F, 0.0F), Vec3(1.0F));
+    return rifle;
+  }
+
+  BackwardRifleHitTest() : HeldHitTest(Backward()) {}
+};
+
+// Requirements: US-11
+TEST_F(BackwardRifleHitTest, TheLeftForearmIsWhereTheRiflesForeEndIsAndNowhereElse) {
+  EXPECT_TRUE(ShootAt(ForeEnd()).empty());
+}
+
+// HeldHitTest with a rifle whose first round kicks it kKick up.
+class RecoiledHitTest : public HeldHitTest {
+ protected:
+  static constexpr float kKick = 0.25F;
+
+  static Parameters WithAKick() {
+    Parameters parameters = WithDamage();
+    parameters.rifle.recoil_pattern = {{.pitch = kKick, .yaw = 0.0F}};
+    return parameters;
+  }
+
+  RecoiledHitTest() : HeldHitTest(augusta::clips_fixture::HolderRifle(), WithAKick()) {}
+};
+
+// Bob's round kicks his rifle up, and it stays so, the rifle recovering
+// nothing: the Recoil offset turns the rifle he holds, not his body, so his left
+// forearm is still where the IK bent it to the Fore-end of the rifle unkicked
+// (ADR-0064).
+// Requirements: US-07, US-11
+TEST_F(RecoiledHitTest, ARecoilKickTurnsNothingOfTheBodyThatHoldsTheRifle) {
+  bob_.fire = true;
+  Wait(1);
+  bob_.fire = false;
+  ASSERT_NEAR(Entity(Tick(Command{}), kBob).rifle.recoil.pitch, kKick, 1e-6F);
+
+  const std::vector<Hit> hits = ShootAt(ForeEnd());
+
+  ASSERT_EQ(hits.size(), 1U);
+  EXPECT_EQ(hits[0].target, kBob);
+  EXPECT_EQ(hits[0].part, BodyPart::kLimb);
 }
 
 TEST_F(SimulationTest, AStateNamesItsTickFromOne) {
@@ -1515,8 +1986,9 @@ TEST(HitboxHistoryTest, TheHistoryHoldsTheCapsWorthOfTicksAtTheTickRate) {
 // A character that is one upright sliver, 2 cm across and 1.8 m tall: a round
 // strikes it only where it is judged to be, to the centimetre.
 Character Sliver() {
-  return Character{.eye = Vec3(0.0F, 1.6F, 0.0F),
-                   .hitboxes = {Box(BodyPart::kTorso, Vec3(-0.01F, 0.0F, -0.01F), Vec3(0.01F, 1.8F, 0.01F))}};
+  return augusta::character_fixture::Rigged(
+      Character{.eye = Vec3(0.0F, 1.6F, 0.0F),
+                .hitboxes = {Box(BodyPart::kTorso, Vec3(-0.01F, 0.0F, -0.01F), Vec3(0.01F, 1.8F, 0.01F))}});
 }
 
 // Alice, at the origin, shoots down -Z at Bob, who walks across her view along
@@ -1803,6 +2275,156 @@ TEST_F(HitTest, ABulletWhoseShooterLeftStillHits) {
   ASSERT_EQ(hits.size(), 1U);
   EXPECT_EQ(hits[0].shooter, kAlice);
   EXPECT_EQ(hits[0].target, kBob);
+}
+
+// Alice playing the Holder (clips_fixture.h), holding its rifle on the weapon
+// socket of her posed right hand (ADR-0064, ADR-0066): the rifle's Grip on her
+// hand, its Muzzle kHolderMuzzle along the hand's -Z, its Sight on the Grip.
+class HeldRifleTest : public FireTest {
+ protected:
+  static constexpr float kTolerance = 0.005F;
+
+  explicit HeldRifleTest(const Parameters& parameters = WithTheTestRifle())
+      : FireTest(parameters, augusta::clips_fixture::HolderRifle()) {}
+
+  void SetUp() override {
+    world_.AddPlayer(kAlice, Vec3(0.0F, 0.5F, 0.0F), Holder());
+    for (int i = 0; i < kSettleTicks; ++i) {
+      world_.Tick({}, kTick);
+    }
+  }
+
+  static Command Aiming(float yaw, float pitch, bool ads) {
+    Command command{};
+    command.yaw = yaw;
+    command.pitch = pitch;
+    command.ads = ads;
+    return command;
+  }
+
+  // Where Alice's rifle is after a tick of command.
+  augusta::simulation::HeldRifle HeldAfter(const Command& command) {
+    Tick(command);
+    const auto held = world_.HeldRifleOf(kAlice);
+    EXPECT_TRUE(held.has_value());
+    return held.value_or(augusta::simulation::HeldRifle{});
+  }
+
+  static Vec3 PositionOf(const augusta::math::Mat4& marker) { return augusta::math::TranslationOf(marker); }
+
+  // Where a marker points: its -Z, as the barrel does.
+  static Vec3 PointingOf(const augusta::math::Mat4& marker) { return augusta::math::Normalize(-Vec3(marker[2])); }
+
+  // Her right shoulder, from her feet, facing -Z, her Pelvis pelvis high.
+  static Vec3 RightShoulder(float pelvis) {
+    namespace fixture = augusta::clips_fixture;
+    return Vec3(fixture::kHolderShoulderSide, pelvis + fixture::kHolderShoulderAbovePelvis, 0.0F);
+  }
+
+  static void ExpectNear(const Vec3& actual, const Vec3& expected) {
+    EXPECT_NEAR(actual.x, expected.x, kTolerance);
+    EXPECT_NEAR(actual.y, expected.y, kTolerance);
+    EXPECT_NEAR(actual.z, expected.z, kTolerance);
+  }
+};
+
+// From the hip her arm hangs, the hand kHolderArm below the shoulder, and the
+// rifle points ahead from it.
+// Requirements: US-06
+TEST_F(HeldRifleTest, TheRifleHangsFromTheWeaponSocketOfThePosedRightHand) {
+  namespace fixture = augusta::clips_fixture;
+  const Vec3 hand = Feet() + RightShoulder(fixture::kPelvisStanding) + Vec3(0.0F, -fixture::kHolderArm, 0.0F);
+
+  const auto held = HeldAfter(Aiming(0.0F, 0.0F, false));
+
+  ExpectNear(PositionOf(held.sight), hand);
+  ExpectNear(PositionOf(held.muzzle), hand + Vec3(0.0F, 0.0F, -fixture::kHolderMuzzle));
+  ExpectNear(PointingOf(held.muzzle), Vec3(0.0F, 0.0F, -1.0F));
+}
+
+// Standing, her ADS grip shoulders the rifle: its Sight on her Eye, and its
+// barrel along her view, the Muzzle kHolderMuzzle ahead of the Eye (ADR-0064).
+// Requirements: US-06
+TEST_F(HeldRifleTest, InAdsTheSightIsOnTheEyeAndTheBarrelAlongTheView) {
+  namespace fixture = augusta::clips_fixture;
+  const Vec3 eye = Feet() + fixture::kHolderEye;
+  const Vec3 view(0.0F, 0.0F, -1.0F);
+
+  const auto held = HeldAfter(Aiming(0.0F, 0.0F, true));
+
+  ExpectNear(PositionOf(held.sight), eye);
+  ExpectNear(PointingOf(held.sight), view);
+  ExpectNear(PointingOf(held.muzzle), view);
+  ExpectNear(PositionOf(held.muzzle), eye + (fixture::kHolderMuzzle * view));
+}
+
+// Crouched, her crouching Clips hold her Pelvis lower, and the hand with it.
+// Requirements: US-06
+TEST_F(HeldRifleTest, TheRifleFollowsTheHandDownIntoACrouch) {
+  namespace fixture = augusta::clips_fixture;
+  Command crouched = Aiming(0.0F, 0.0F, false);
+  crouched.movement.desired_stance = Stance::kCrouching;
+  for (int i = 0; i < kSettleTicks; ++i) {
+    Tick(crouched);
+  }
+  const Vec3 hand = Feet() + RightShoulder(fixture::kPelvisCrouching) + Vec3(0.0F, -fixture::kHolderArm, 0.0F);
+
+  const auto held = HeldAfter(crouched);
+
+  ExpectNear(PositionOf(held.muzzle), hand + Vec3(0.0F, 0.0F, -fixture::kHolderMuzzle));
+}
+
+// Facing a quarter turn to her left (yaw +pi/2 looks down -X), her right is -Z.
+// Requirements: US-06
+TEST_F(HeldRifleTest, TheRifleTurnsWithTheBody) {
+  namespace fixture = augusta::clips_fixture;
+  const float quarter_turn = std::numbers::pi_v<float> / 2.0F;
+  const Vec3 shoulder = RightShoulder(fixture::kPelvisStanding);
+  const Vec3 hand = Feet() + Vec3(0.0F, shoulder.y - fixture::kHolderArm, -shoulder.x);
+
+  const auto held = HeldAfter(Aiming(quarter_turn, 0.0F, false));
+
+  ExpectNear(PositionOf(held.muzzle), hand + Vec3(-fixture::kHolderMuzzle, 0.0F, 0.0F));
+  ExpectNear(PointingOf(held.muzzle), Vec3(-1.0F, 0.0F, 0.0F));
+}
+
+// Requirements: US-06
+// Requirements: US-07
+TEST_F(HeldRifleTest, APlayerNotInTheWorldHoldsNoRifle) { EXPECT_FALSE(world_.HeldRifleOf(kBob).has_value()); }
+
+// HeldRifleTest with a rifle whose first round kicks it kKickPitch up and
+// kKickYaw left, and recovers nothing.
+class RecoiledRifleTest : public HeldRifleTest {
+ protected:
+  static constexpr float kKickPitch = 0.25F;
+  static constexpr float kKickYaw = 0.125F;
+
+  static Parameters WithAKick() {
+    Parameters parameters = WithTheTestRifle();
+    parameters.rifle.recoil_pattern = {{.pitch = kKickPitch, .yaw = kKickYaw}};
+    return parameters;
+  }
+
+  RecoiledRifleTest() : HeldRifleTest(WithAKick()) {}
+};
+
+// From the hip, the kick turns her rifle about its Grip, where her hand still
+// holds it: its Muzzle points along her view turned by the kick, as the round
+// leaves (ADR-0064).
+// Requirements: US-07
+TEST_F(RecoiledRifleTest, ARecoilKickTurnsTheRifleAboutItsGrip) {
+  namespace fixture = augusta::clips_fixture;
+  const Vec3 hand = Feet() + RightShoulder(fixture::kPelvisStanding) + Vec3(0.0F, -fixture::kHolderArm, 0.0F);
+  Command firing = Aiming(0.0F, 0.0F, false);
+  firing.fire = true;
+  Tick(firing);
+  const Vec3 kicked = augusta::command::ViewDirection(kKickYaw, kKickPitch);
+
+  const auto held = HeldAfter(Aiming(0.0F, 0.0F, false));
+
+  ExpectNear(PositionOf(held.sight), hand);
+  ExpectNear(PointingOf(held.muzzle), kicked);
+  ExpectNear(PositionOf(held.muzzle), hand + (fixture::kHolderMuzzle * kicked));
 }
 
 }  // namespace

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <ranges>
 #include <span>
@@ -11,6 +12,7 @@
 
 #include "augusta/math.h"
 #include "augusta/physics.h"
+#include "augusta/pose.h"
 #include "augusta/tick.h"
 
 namespace augusta::presentation {
@@ -22,8 +24,43 @@ namespace {
 // use below.
 constexpr float kMidpointFraction = 0.5F;
 
-RemoteBody AsRemote(const physics::BodyState& body, float yaw) {
-  return RemoteBody{.position = body.position, .velocity = body.velocity, .yaw = yaw, .stance = body.stance};
+RemoteBody AsRemote(const physics::BodyState& body, const Aim& aim) {
+  return RemoteBody{.position = body.position,
+                    .velocity = body.velocity,
+                    .yaw = aim.yaw,
+                    .pitch = aim.pitch,
+                    .stance = body.stance,
+                    .ads = aim.ads,
+                    .stride = body.stride,
+                    .previous_stance = body.previous_stance,
+                    .stance_progress = body.stance_progress,
+                    .grounded = body.grounded};
+}
+
+// The Stride t of the way from from to to, the shorter way round its cycle.
+std::uint8_t LerpStride(std::uint8_t from, std::uint8_t to, float t) {
+  constexpr int kHalfCycle = physics::kStrideSteps / 2;
+  // How far on to is from from, from -kHalfCycle to kHalfCycle - 1 steps.
+  const int on = ((to - from + kHalfCycle + physics::kStrideSteps) % physics::kStrideSteps) - kHalfCycle;
+  const auto moved = static_cast<int>(std::lround(static_cast<float>(on) * t));
+  return static_cast<std::uint8_t>((from + moved + physics::kStrideSteps) % physics::kStrideSteps);
+}
+
+// The body t of the way from earlier to later, each with where its player
+// aimed: what RemoteBody says moves between them, the rest the nearer's.
+RemoteBody Between(const physics::BodyState& earlier, const Aim& earlier_aim, const physics::BodyState& later,
+                   const Aim& later_aim, float t) {
+  RemoteBody body = t < kMidpointFraction ? AsRemote(earlier, earlier_aim) : AsRemote(later, later_aim);
+  body.position = math::Lerp(earlier.position, later.position, t);
+  body.velocity = math::Lerp(earlier.velocity, later.velocity, t);
+  body.yaw = math::LerpAngle(earlier_aim.yaw, later_aim.yaw, t);
+  body.pitch = std::lerp(earlier_aim.pitch, later_aim.pitch, t);
+  body.stride = LerpStride(earlier.stride, later.stride, t);
+  if (earlier.stance == later.stance && earlier.previous_stance == later.previous_stance) {
+    body.stance_progress = static_cast<std::uint8_t>(std::lround(
+        std::lerp(static_cast<float>(earlier.stance_progress), static_cast<float>(later.stance_progress), t)));
+  }
+  return body;
 }
 
 }  // namespace
@@ -72,6 +109,18 @@ SeenTime SeenTimeAt(double sample_time, double tick_duration, tick::Tick oldest_
   return SeenTime{.tick = static_cast<tick::Tick>(whole), .fraction = static_cast<float>(ticks - whole)};
 }
 
+animation::PoseInput PoseInputOf(const RemoteBody& body) {
+  physics::BodyState state;
+  state.position = body.position;
+  state.velocity = body.velocity;
+  state.stance = body.stance;
+  state.stride = body.stride;
+  state.previous_stance = body.previous_stance;
+  state.stance_progress = body.stance_progress;
+  state.grounded = body.grounded;
+  return animation::PoseInput{.body = state, .yaw = body.yaw, .pitch = body.pitch, .ads = body.ads};
+}
+
 RemoteInterpolator::History::History(const Update& first) {
   slots_.reserve(kUpdatesKept);
   slots_.push_back(first);
@@ -90,8 +139,8 @@ const RemoteInterpolator::Update& RemoteInterpolator::History::operator[](std::s
   return slots_[(oldest_ + index) % slots_.size()];
 }
 
-void RemoteInterpolator::Record(EntityId entity, double server_time, const physics::BodyState& body, float yaw) {
-  const Update update{.server_time = server_time, .body = body, .yaw = yaw};
+void RemoteInterpolator::Record(EntityId entity, double server_time, const physics::BodyState& body, const Aim& aim) {
+  const Update update{.server_time = server_time, .body = body, .aim = aim};
   const auto [found, added] = index_.try_emplace(entity, bodies_.size());
   if (added) {
     bodies_.push_back(Buffered{.entity = entity, .updates = History(update)});
@@ -136,19 +185,14 @@ std::vector<RemotePlayer> RemoteInterpolator::Sample(double sample_time) const {
         indices.begin());
     RemoteBody body;
     if (later == 0) {
-      body = AsRemote(updates[0].body, updates[0].yaw);
+      body = AsRemote(updates[0].body, updates[0].aim);
     } else if (later == updates.Size()) {
-      body = AsRemote(updates.Newest().body, updates.Newest().yaw);
+      body = AsRemote(updates.Newest().body, updates.Newest().aim);
     } else {
       const Update& earlier = updates[later - 1];
       const Update& next = updates[later];
       const auto t = static_cast<float>((sample_time - earlier.server_time) / (next.server_time - earlier.server_time));
-      body = RemoteBody{
-          .position = math::Lerp(earlier.body.position, next.body.position, t),
-          .velocity = math::Lerp(earlier.body.velocity, next.body.velocity, t),
-          .yaw = math::LerpAngle(earlier.yaw, next.yaw, t),
-          .stance = t < kMidpointFraction ? earlier.body.stance : next.body.stance,
-      };
+      body = Between(earlier.body, earlier.aim, next.body, next.aim, t);
     }
     result.push_back(RemotePlayer{.entity = buffered.entity, .body = body, .character = {}});
   }

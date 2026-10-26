@@ -41,12 +41,13 @@ namespace augusta::host {
 
 /// Each of characters as SimulationWorld takes it, by its path: its Skeleton,
 /// and its hitboxes each in its Joint's space, for SimulationWorld's Posing
-/// phase to pose (ADR-0061). Throws as the hitbox overloads do.
+/// phase to pose (ADR-0061), and its Clips, shared, for its Movement to advance
+/// each Stride by (ADR-0066). Throws as the hitbox overloads do.
 [[nodiscard]] std::unordered_map<std::string, simulation::Character> ToSimulation(
     const std::vector<scenario::Character>& characters);
 
-/// SimulationWorld on parameters at tick_rate_hz, with scenario's collision and
-/// the scenario's Game policy. Throws failure::ClassifiedFailure
+/// SimulationWorld on parameters at tick_rate_hz, with scenario's collision, its
+/// rifle's markers and the scenario's Game policy. Throws failure::ClassifiedFailure
 /// (failure::Code::kInvalidContent) if a map mesh is not a whole triangle list.
 [[nodiscard]] simulation::World BuildSimulation(const parameters::Parameters& parameters, std::uint8_t tick_rate_hz,
                                                 const scenario::Scenario& scenario, policy::Policy policy);

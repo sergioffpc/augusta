@@ -30,7 +30,6 @@ target_link_libraries(
     Boost::uuid
     augusta_version
   # nvtx3-cpp: runner.cpp names the Prediction and Network I/O loops for Nsight Systems.
-  # augusta_input: intent.cpp aims within the pitch a player may look at.
-  PRIVATE augusta_input augusta_logging nvtx3-cpp
+  PRIVATE augusta_logging nvtx3-cpp
 )
 augusta_set_module_scope(augusta_harness CLIENT_ONLY)

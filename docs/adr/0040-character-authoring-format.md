@@ -46,6 +46,41 @@ two joints of one name, a rest transform missing), and one whose root joint is
 not at the character's root, each naming the character's prim, or its
 skeleton's.
 
+A character names its **Clips** (ADR-0066) by role under `Character/Clips`: each
+a UsdSkel `SkelAnimation` prim at its role's path, usually a reference to the
+Clip's own file under `authoring/animations/`, so characters whose skeletons
+share its joints share it. A stance's roles are under the stance's name
+(`standing/idle`, `crouching/forward`, `prone/aim_up`, `standing/ads`...) and
+the rest at the top (`air`, and the Cosmetic layers' `reload`, `recoil`,
+`flinch` and `land`). A Clip is authored in its character's units and axes,
+moving as tools make it, and a locomotion Clip names its Foot contacts in
+`augusta:footContacts`, a token time-sampled at each contact's time code with
+the foot that lands, `left` or `right` (ADR-0062). The `Clips` prim authors the
+transition duration of each pair of stances in seconds, either way:
+`augusta:transitionDuration:standing_crouching`, `standing_prone` and
+`crouching_prone`. The cooker converts the skeleton and each Clip into
+ozz-animation's archives, joint for joint in the stage's corrected space, and
+for each locomotion Clip measures its stride length, how far its root moves
+along the ground from its first time code to its last, then removes that
+progress, and where it started, from its root, so it plays in place with its
+sway and height kept. It refuses, naming the Clip's prim under the character's:
+a required role with no Clip, a Clip that is not a `SkelAnimation` or whose
+joints are not exactly its skeleton's, a locomotion Clip without exactly one
+left and one right Foot contact within it or whose root does not move along the
+ground, an idle with a Foot contact or whose root does, and a pair of stances
+without a positive transition duration.
+
+A character holds the rifle by its **weapon socket** (ADR-0066), the
+`WeaponSocket` child of `Character`: bound rigidly to its right hand's joint as
+a hitbox is, placed where the rifle's Grip goes, pointing the way the rifle does
+along its -Z, and naming its left hand's joint in `augusta:leftHand`, the hand
+that reaches the rifle's Fore-end, whose parent and grandparent are the elbow
+and shoulder it bends. The cooker writes it at
+`<character name>/Character/WeaponSocket` in both packs, its frame in its
+joint's rest space, and refuses a character without one, one bound to no joint
+or to one its skeleton lacks, and a left hand missing, unknown or without a
+parent and a grandparent, naming the socket's prim or the character's.
+
 A character is hittable through its **hitboxes**, authored in its own stage
 under `Character`: each is geometry (a `UsdGeomMesh`, `Cube` or `Capsule`,
 usually a guide so it is never drawn) marked `augusta:hitbox`, and names the
@@ -56,16 +91,16 @@ joint: `SkelBindingAPI`, its `skel:joints` naming that joint and a constant
 `primvars:skel:jointIndices` of `[0]`, with `Character` the `SkelRoot` binding
 the skeleton. They are placed relative to the feet, standing, on a character
 that faces -Z, where a view of yaw 0 looks. The skeleton's root carries the
-stance and the facing (ADR-0061): the server poses it lowered with the stance as
-the client lowers the eye, scaling the vertical by the stance's height, and
-turned about the vertical axis by the yaw its body faces (ADR-0038), and every
-joint and the hitboxes bound to it move with the root, so no character authors
-hitboxes per stance or per facing. Every hit on a player resolves to a body part
-(US-11), so the cooker refuses a hitbox without a body part or with another
-name, and a character without at least one hitbox for each of the three; and
-every hitbox moves with a joint, so it refuses a hitbox authored under no joint,
-or under one its skeleton lacks, naming the hitbox's prim. Each hitbox is a blob
-at its own prim's path under the character (e.g.
+facing (ADR-0061): the server poses it where the body stands, turned about the
+vertical axis by the yaw its body faces (ADR-0038), never scaled by the stance;
+how low the body is in a stance is that stance's Clips' (ADR-0066), which move
+its joints. Every joint and the hitboxes bound to it move with the root and the
+Clips, so no character authors hitboxes per stance or per facing. Every hit on a
+player resolves to a body part (US-11), so the cooker refuses a hitbox without a
+body part or with another name, and a character without at least one hitbox for
+each of the three; and every hitbox moves with a joint, so it refuses a hitbox
+authored under no joint, or under one its skeleton lacks, naming the hitbox's
+prim. Each hitbox is a blob at its own prim's path under the character (e.g.
 `soldier/Character/HeadHitbox`): its body part as one byte, its joint's name as
 a string, then its geometry as a mesh blob, composed into its joint's rest
 space, so placing it is its joint's transform times its own, with no rest pose
@@ -91,9 +126,9 @@ character's blobs are addressed under its name (e.g.
 its own stage root. The two meet only where a character's name is one of the
 map's root prims, and the cooker refuses that scenario, so they never collide.
 Client/server split follows ADR-0019's existing rule unchanged: mesh/texture
-data is client-pack-only, hitbox geometry, the skeleton and the eye ship to both
-packs — the server needs them for hit detection and for where a Shot leaves
-from, same as level collision.
+data is client-pack-only, hitbox geometry, the skeleton, the Clips the Hitbox
+pose uses and the eye ship to both packs — the server needs them for hit
+detection and for where a Shot leaves from, same as level collision.
 
 A scenario's packs carry exactly the characters its manifest names (ADR-0041),
 not every character under `authoring/characters/`.

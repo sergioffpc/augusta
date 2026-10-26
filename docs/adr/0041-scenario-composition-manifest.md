@@ -13,6 +13,7 @@ number of scenarios.
 authoring/
   maps/firebase.usda
   characters/soldier.usda
+  rifles/rifle.usda
   sounds/gunshot.wav ...
   scripts/parameters/rules_of_engagement.lua
   scripts/rules/last_man_standing.lua
@@ -23,6 +24,7 @@ authoring/
 map: maps/firebase.usda
 characters:
   soldier: characters/soldier.usda
+rifle: rifles/rifle.usda
 sounds:
   gunshot:
     variants: [sounds/gunshot.wav, sounds/gunshot_2.wav]
@@ -45,6 +47,9 @@ scripts:
   in the pack, and it is the scenario's, not the stage's: moving, renaming or
   converting a stage between `.usda` and `.usdc` never renames the character a
   client asks for, and one stage can be composed under different names.
+- `rifle` names exactly one rifle's USD stage (ADR-0064), the one every player
+  holds. It is required: every server places its players' Muzzles from the
+  rifle's markers, so a scenario without one is refused when cooked.
 - `sounds` maps every one of the client's cues to its sound (ADR-0020,
   ADR-0031). It is required, and so is every cue: the client plays them all, so
   a scenario lacking one is refused when it is cooked rather than found silent

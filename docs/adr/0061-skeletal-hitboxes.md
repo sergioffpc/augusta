@@ -4,12 +4,10 @@ A player's Hitboxes move with its skeleton: an arm reaching out is hit where it
 is drawn. Client and server evaluate the same Hitbox pose from the same state,
 so a Shot is judged against the body the shooter saw (ADR-0044).
 
-Today's Hitboxes are rigid in the character's space: the server scales them down
-with the stance and turns them by the body's yaw (ADR-0040), and the Hitbox
-history keeps position, stance and facing (ADR-0044). That holds until
-characters have a skeleton, which ADR-0040 leaves open. This decision resolves
-the skeleton format and takes effect with it: the change that brings it amends
-ADR-0019, ADR-0023, ADR-0040 and ADR-0044 to match.
+Rigid Hitboxes in the character's space, scaled down with the stance and turned
+by the body's yaw, with a Hitbox history of position, stance and facing, hold
+only until characters have a skeleton. This decision resolves the skeleton
+format; ADR-0019, ADR-0023, ADR-0040 and ADR-0044 are amended to match.
 
 ## Decisions
 
@@ -89,40 +87,33 @@ ADR-0019, ADR-0023, ADR-0040 and ADR-0044 to match.
   time falls between: the root's position linearly, its facing along the shorter
   arc and its stance the nearer tick's; each joint's position linearly and its
   rotation along the shorter arc; then composes the joints onto the root from
-  the root down (ADR-0044). The root is kept apart because it carries the
-  stance's lowering, a scale of the vertical alone: composed into a turned joint
-  that is a sheared transform, with no position and rotation to interpolate.
+  the root down (ADR-0044). The root is kept apart because it is the body's
+  position and facing, which interpolate as a client shows them.
 - **Culling stays conservative.** The reach that discards a candidate before its
-  triangles are tested (ADR-0044) is computed when the character is loaded, as
-  the furthest a Hitbox can be from the root in the rest pose, plus its margin,
-  and it scales with the stance like the root. Clips make it the furthest over
-  every clip, which is an amendment to make with them.
-- **The skeleton lands before any clip.** The first change brings the format,
-  the rest pose, the Hitbox bound to its joint, the Posing phase and the
-  history, with the pose always the rest pose. Until a clip exists, the stance
-  and the facing are carried by the skeleton's root exactly as they are today —
-  the vertical alone scaled by the stance's height, as the eye is lowered, and
-  the rotation by yaw of ADR-0040 — so no shot lands differently on the day the
-  format arrives. ADR-0040's scaling and turning give way to the pose only where
-  a clip replaces them (ADR-0066).
-- **No replicated state is added.** In the rest pose there is nothing to
-  remember: position, yaw and stance are already in the Authoritative State. The
-  protocol, the Authoritative State update and the Match capture are untouched
-  until Clips bring memory of their own (ADR-0066).
-- **No pose on the client at first.** The module is `SHARED` so that it cannot
-  depend on anything client-only, but in the first change SimulationWorld is the
-  one consumer that poses players. The other is a Development build's client
-  (ADR-0074), which places a character's Hitboxes in its root space by the rest
-  pose once, when the character loads, for the Hitboxes Debug overlay to place
-  by each player's pose as the root: a loader, not a World, posing no player.
-  PresentationWorld's Animation phase stays as it is until Clips and skinning
-  arrive, because without skinning nothing the client draws moves with a pose.
-- **Skinning comes with the Clips.** Drawing a posed character is ADR-0066's,
-  not part of the first change. The renderer rebuilds every remote player's
-  vertices on the CPU each frame, rotated by yaw and translated, with no
-  per-instance transform, which GPU skinning needs first. Until then the server
-  judges hits against a posed body while the client draws an unposed one — which
-  is what happens today, and the server is authoritative either way.
+  triangles are tested (ADR-0044) is taken from the pose being judged: each
+  Hitbox's furthest point from its joint, measured when the character is loaded,
+  added to how far that pose holds the joint from the root, plus a margin. It
+  holds whatever a Clip does with the joints, with nothing to measure over every
+  Clip.
+- **The root carries the position and the facing alone.** The skeleton's root is
+  where the body's position puts it, turned about the vertical by its yaw
+  (ADR-0040); the stance does not scale it. How low a body is in a stance is
+  that stance's Clips' (ADR-0066), which every character has.
+- **A client can pose a player; it draws none posed before skinning.** The
+  module is `SHARED` so that it cannot depend on anything client-only, and a
+  client poses a player from its interpolated state as the server does (below).
+  SimulationWorld is the one World that poses players, until skinning gives
+  PresentationWorld's Animation phase a posed body to draw (ADR-0066). A
+  Development build's client (ADR-0074) places a character's Hitboxes in its
+  root space by the rest pose once, when the character loads, for the Hitboxes
+  Debug overlay to place by each player's pose as the root: a loader, not a
+  World, posing no player.
+- **Skinning is ADR-0066's.** Drawing a posed character is decided there, apart
+  from the Hitbox pose. The renderer rebuilds every remote player's vertices on
+  the CPU each frame, rotated by yaw and translated, with no per-instance
+  transform, which GPU skinning needs first. Until then the server judges hits
+  against a posed body while the client draws an unposed one, and the server is
+  authoritative either way.
 - **Where skinning data will live.** Skin bindings — the joints and weights of
   each vertex (ADR-0066) — are an optional section of the mesh blob, written
   into the client's pack alone (ADR-0019); the server judges Shots against
@@ -143,6 +134,15 @@ ADR-0019, ADR-0023, ADR-0040 and ADR-0044 to match.
 - **No bit-exact agreement across platforms.** The Windows client and the Linux
   server may differ in the last bits of a pose. The server's is authoritative,
   the client's only draws, and tests comparing them use a tolerance.
+- **A client poses the interpolated state.** Between two Authoritative State
+  updates a client interpolates every input of the pose and poses the result:
+  position, velocity, pitch and the progress of a change of stance both updates
+  are of linearly, the facing along the shorter arc, the Stride the shorter way
+  round its cycle, and the stance, a change of stance otherwise, the ground and
+  ADS from the nearer update. The server judges between two ticks by
+  interpolating their posed Joints (ADR-0044) instead. On a tick the two agree
+  but for the wire's grids; between two, within a few centimetres where a Clip
+  turns a Joint back, and not while a discrete input changes between them.
 
 ## Considered Options
 

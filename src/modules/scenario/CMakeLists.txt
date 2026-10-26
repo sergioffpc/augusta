@@ -19,7 +19,7 @@ add_library(augusta_scenario STATIC content.cpp)
 target_include_directories(augusta_scenario PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(
   augusta_scenario
-  PUBLIC augusta_assets augusta_failure augusta_gameplay augusta_math augusta_physics augusta_policy
+  PUBLIC augusta_animation augusta_assets augusta_failure augusta_gameplay augusta_math augusta_physics augusta_policy
   PRIVATE augusta_logging augusta_policy_loader augusta_scenario_parameters_loader
 )
 augusta_set_module_scope(augusta_scenario SERVER_ONLY)

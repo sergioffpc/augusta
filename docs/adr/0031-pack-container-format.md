@@ -31,6 +31,31 @@ cooker (ADR-0030) turns the cleaned/validated OpenUSD stage into it.
   the skeleton), its parent's index (u32, `0xFFFFFFFF` for a root) and its rest
   transform relative to that parent as a scene node's transform is stored.
   Written to both the client and server pack, the same in each.
+- Character animation (ADR-0040, ADR-0066): the same skeleton as ozz-animation's
+  `Skeleton` archive, the archive itself with no framing, at
+  `<character name>/Character/Skeleton.ozz` (a `.` no prim name holds, so no
+  prim's blob takes its path); each Clip at its role's prim path, e.g.
+  `<character name>/Character/Clips/standing/forward`: its stride length in
+  meters (f32, 0 for a Clip that is not locomotion), a u8 Foot contact count and
+  each contact's foot (u8, 0 left, 1 right) and time as a ratio of the Clip
+  (f32, 0 to 1), then ozz-animation's `Animation` archive as the rest of the
+  blob, a track per joint of the `Skeleton` archive, in its order; and the
+  stance transitions at `<character name>/Character/Clips`: the
+  standing-crouching, standing-prone and crouching-prone durations in seconds
+  (3x f32), each positive. The skeleton archive, the transitions and every Clip
+  the Hitbox pose uses are written to both packs; a Cosmetic layer's Clip to the
+  client pack alone.
+- Rifle (ADR-0064): the Grip, Muzzle, Sight and ForeEnd children of the default
+  prim of the stage the manifest names as its `rifle`, each its frame in the
+  rifle's space as a translation and a rotation, stored as a spawn point's are,
+  one blob at the fixed path `Rifle` in that order. No rifle mesh is written.
+  Written to both the client and server pack: the server places every Muzzle
+  from it.
+- Weapon socket (ADR-0066): a character's `WeaponSocket` prim, at its path under
+  the character (`<character name>/Character/WeaponSocket`): its right hand's
+  Joint's name as a string, its frame in that Joint's space as a translation and
+  a rotation, stored as a spawn point's are, then its left hand's Joint's name
+  as a string. Written to both packs: both pose the rifle and the left arm.
 - Cue sounds (ADR-0020): an audio clip is associated with a client cue, not with
   a USD prim or a script. The cue catalogue is fixed in code, in the client and
   the cooker alike: gunshot, hit marker, hit taken, death, match won, match
@@ -94,7 +119,7 @@ changes its runtime path; nothing here guards against that.
 2. **Data section** — every asset blob, back-to-back, in traversal order.
    Offsets are recorded as each blob is written.
 3. **Index** — one entry per blob: type tag
-   (Mesh/Texture/Audio/Collision/SpawnPoint/Hitbox/Prop/Ragdoll/Scene/Script/Characters/Eye/CueSound/Skeleton),
+   (Mesh/Texture/Audio/Collision/SpawnPoint/Hitbox/Prop/Ragdoll/Scene/Script/Characters/Eye/CueSound/Skeleton/AnimationSkeleton/Clip/StanceTransitions/Rifle),
    path, offset, size. Written after the data section, since it needs the
    recorded offsets.
 4. **Trailer** — BLAKE3 hash of everything from byte 0 through the end of the

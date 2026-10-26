@@ -7,6 +7,7 @@
 #include "augusta/ballistics.h"
 #include "augusta/body_part.h"
 #include "augusta/command.h"
+#include "augusta/math.h"
 
 /// \file
 /// augusta::weapon holds the rifle and its ammunition (US-06, US-10, US-12),
@@ -79,6 +80,40 @@ struct RecoilOffset {
 
   bool operator==(const RecoilOffset&) const = default;
 };
+
+/// The rifle's authored markers (ADR-0064), each in the rifle's own space, each
+/// pointing along its -Z: the Grip, where the holding hand holds it; the Muzzle,
+/// the end of its barrel, pointing the way the barrel does; the Sight, the
+/// point the Eye looks through in ADS, pointing along its line of sight; and the
+/// Fore-end, where the left hand holds it (ADR-0066). By default all four at the
+/// rifle's origin.
+struct Markers {
+  math::Mat4 grip{1.0F};
+  math::Mat4 muzzle{1.0F};
+  math::Mat4 sight{1.0F};
+  math::Mat4 fore_end{1.0F};
+
+  bool operator==(const Markers&) const = default;
+};
+
+/// Where the Muzzle of the rifle markers describes is, held by hand at its
+/// Grip: hand times the Grip's inverse times the Muzzle (ADR-0064). The one
+/// function the server and the client place a Muzzle with, whatever the hand:
+/// a posed one's (its weapon socket, ADR-0066) or a tracked one's.
+[[nodiscard]] math::Mat4 PlaceMuzzle(const math::Mat4& hand, const Markers& markers);
+
+/// Where the Sight of the rifle markers describes is, held by hand at its Grip,
+/// as PlaceMuzzle places the Muzzle.
+[[nodiscard]] math::Mat4 PlaceSight(const math::Mat4& hand, const Markers& markers);
+
+/// Where the Fore-end of the rifle markers describes is, held by hand at its
+/// Grip, as PlaceMuzzle places the Muzzle: where the left hand reaches.
+[[nodiscard]] math::Mat4 PlaceForeEnd(const math::Mat4& hand, const Markers& markers);
+
+/// hand, which holds the rifle at its Grip, turned about the Grip by recoil:
+/// as recoil turns a view of yaw and pitch, which a Shot leaves along
+/// (ADR-0064). Only the rifle turns; the body that holds it does not.
+[[nodiscard]] math::Mat4 Recoiled(const math::Mat4& hand, float yaw, float pitch, const RecoilOffset& recoil);
 
 /// One player's rifle between two ticks.
 struct State {

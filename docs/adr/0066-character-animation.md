@@ -24,9 +24,14 @@ ship in both packs, Cosmetic layers' Clips in the client's alone (ADR-0019).
 collision rules. Locomotion Clips are authored moving; the cooker measures each
 one's stride length from its root's translation and removes it, so the Clip
 plays in place. A player's Stride, one cycle of two steps, advances by the
-distance its body moves divided by that stride length, never by time, so the
-feet do not slide at any speed and the Stride follows from the movement alone.
-Standing still, it holds where it was.
+distance its body moves along the ground divided by the stride length of its
+stance's blend space at its velocity, never by time, so the feet do not slide at
+any speed and the Stride follows from the movement alone. Standing still, it
+holds where it was. Movement advances it, in SimulationWorld and in the owner's
+PredictionWorld alike, from the stance and velocity the last tick left, in the
+space the tick's yaw faces, each tick's advance rounded to a 256th of the cycle,
+the byte it travels as; so a client loads its own Character's Clips to predict
+it, and Reconciliation corrects it as it corrects the position.
 
 **A blend space per stance, no state machine.** Each stance has a 2D blend space
 over the body's velocity in its own space: idle, forward, backward, the sides,
@@ -39,9 +44,12 @@ its own, which ADR-0061 rules out.
 **Stance changes blend by a replicated progress.** A change of stance blends the
 previous stance's pose into the new one's over a duration the Character authors
 for each pair of stances. The previous stance and the progress are gameplay
-state, replicated and captured. The collider still changes height at once, as
-today, and Movement's rules do not change; the Hitboxes are where the body is
-drawn, halfway through when the change is.
+state, replicated and captured; Movement advances the progress by time over that
+duration, never by a clock of its own. A change back to the stance a change
+still under way left turns that change round where it has got to; a change to a
+third stance starts afresh from the stance it leaves. The collider still changes
+height at once, as today, and Movement's rules do not change; the Hitboxes are
+where the body is drawn, halfway through when the change is.
 
 **In the air.** A body off the ground (`kGrounded`, ADR-0062) takes its `air`
 Clip, sampled by its vertical velocity from rising to falling, in place of the
@@ -50,10 +58,25 @@ crossfade needs a time of its own.
 
 **Aim and grip.** An Aim offset, additive poses authored at the view's lowest,
 level and highest pitch, bends the body by its pitch; the body turns by its yaw
-as today, with no turning in place. The weapon hangs from a socket on the right
-hand, so its Muzzle follows the pose (ADR-0064), and the left hand reaches its
-fore-end by two-bone IK. The grip, ADS and the left hand's IK are Hitbox pose
-and run on both sides, so a player's view pitch and ADS are replicated.
+as today, with no turning in place. Each of them and the stance's ADS grip is
+authored as a whole pose, and the level one is the reference the others add
+their difference from: the lowest or highest by how far the pitch is toward it,
+the ADS grip whole while ADS is set, each added onto the locomotion pose, or the
+air Clip's off the ground. The weapon hangs from a **weapon socket** on the
+right hand, so its Muzzle follows the pose (ADR-0064), and the left hand reaches
+its **Fore-end** by two-bone IK. The Character authors the socket as its
+`WeaponSocket` prim, bound rigidly to its right hand's Joint as a Hitbox is, its
+frame where the rifle's Grip goes, naming its left hand's Joint in
+`augusta:leftHand`; that Joint's parent and grandparent are the elbow and the
+shoulder the IK turns. The rifle authors its Fore-end as a marker beside its
+Grip. The cooker refuses a Character without a socket, one bound to no Joint of
+its Skeleton, and a left hand missing, unknown or without an elbow and a
+shoulder, and a rifle without a Fore-end, naming them. The elbow bends the way
+the pose bent it, toward the side of the line from the shoulder to the hand it
+was on, so the Clips decide where it points; a Fore-end out of the arm's reach
+leaves the arm straight toward it. The grip, ADS and the left hand's IK are
+Hitbox pose and run on both sides, so a player's view pitch and ADS are
+replicated.
 
 **Desktop and VR.** A Desktop player's pose is evaluated from its Clips; a VR
 player's is its bounded Tracked pose (ADR-0063). From there both take one path:

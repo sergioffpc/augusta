@@ -4,6 +4,8 @@ What each authored prim becomes in the client and server packs (ADR-0019,
 ADR-0032), and how malformed geometry is refused.
 """
 
+from dataclasses import dataclass
+from dataclasses import field
 import math
 import shutil
 import struct
@@ -15,12 +17,15 @@ from augusta_pack.sounds import CueSound
 from augusta_pack.sounds import CueSounds
 from augusta_pack.sounds import Sound
 from conftest import decode_audio
+from conftest import decode_clip
 from conftest import decode_cue_sound
 from conftest import decode_hitbox
 from conftest import decode_mesh
 from conftest import decode_skeleton
 from conftest import decode_spawn_point
+from conftest import decode_stance_transitions
 from conftest import decode_texture
+from conftest import decode_weapon_socket
 from conftest import encode_png
 from conftest import FIXTURES_DIR
 from conftest import KTX2_SUPERCOMPRESSION_ZSTD
@@ -34,6 +39,10 @@ from conftest import VK_FORMAT_BC7_SRGB_BLOCK
 from pxr import Gf
 import pytest
 
+# A rifle stage with its four markers, for every cook that is not about the
+# rifle (ADR-0064).
+RIFLE_FIXTURE = FIXTURES_DIR / "rifle_fixture.usda"
+
 
 def cook_stage(stage_name, tmp_path, key_pair):
     """Cooks one fixture stage as a map with no characters.
@@ -46,6 +55,7 @@ def cook_stage(stage_name, tmp_path, key_pair):
     cook_scenario(
         FIXTURES_DIR / stage_name,
         [],
+        RIFLE_FIXTURE,
         client_path,
         server_path,
         key_pair.private_key,
@@ -186,6 +196,7 @@ def cook_texture(texture_format, tmp_path, key_pair, png=None):
     cook_scenario(
         stage_dir / "texture_fixture.usda",
         [],
+        RIFLE_FIXTURE,
         client_path,
         tmp_path / "server.apak",
         key_pair.private_key,
@@ -288,6 +299,7 @@ def test_a_texture_whose_image_is_missing_is_refused(tmp_path, key_pair):
         cook_scenario(
             stage_dir / "texture_fixture.usda",
             [],
+            RIFLE_FIXTURE,
             tmp_path / "client.apak",
             tmp_path / "server.apak",
             key_pair.private_key,
@@ -309,6 +321,7 @@ def test_a_texture_whose_image_is_not_a_png_or_jpeg_is_refused(
         cook_scenario(
             stage_dir / "texture_fixture.usda",
             [],
+            RIFLE_FIXTURE,
             tmp_path / "client.apak",
             tmp_path / "server.apak",
             key_pair.private_key,
@@ -324,6 +337,7 @@ def test_scripts_go_into_the_server_pack_only(tmp_path, key_pair):
     cook_scenario(
         FIXTURES_DIR / "mesh_fixture.usda",
         [],
+        RIFLE_FIXTURE,
         client_path,
         server_path,
         key_pair.private_key,
@@ -347,6 +361,7 @@ def cook_sounds(sounds, tmp_path, key_pair):
     cook_scenario(
         FIXTURES_DIR / "mesh_fixture.usda",
         [],
+        RIFLE_FIXTURE,
         tmp_path / "client.apak",
         tmp_path / "server.apak",
         key_pair.private_key,
@@ -428,6 +443,7 @@ def test_more_characters_than_an_index_can_name_are_refused(tmp_path, key_pair):
         cook_scenario(
             FIXTURES_DIR / "mesh_fixture.usda",
             characters,
+            RIFLE_FIXTURE,
             tmp_path / "client.apak",
             tmp_path / "server.apak",
             key_pair.private_key,
@@ -443,6 +459,7 @@ def test_a_character_named_as_a_root_prim_of_the_map_is_refused(
         cook_scenario(
             FIXTURES_DIR / "mesh_fixture.usda",
             [("TestMesh", FIXTURES_DIR / "mesh_fixture.usda")],
+            RIFLE_FIXTURE,
             tmp_path / "client.apak",
             tmp_path / "server.apak",
             key_pair.private_key,
@@ -452,8 +469,9 @@ def test_a_character_named_as_a_root_prim_of_the_map_is_refused(
     assert raised.value.prim_path == "TestMesh"
 
 
-# A character stage (ADR-0040): the Eye every character has, its Skeleton, and
-# the given hitboxes, each a 0.2 m cube at its height above the feet.
+# A character stage (ADR-0040): the Eye every character has, its Skeleton, its
+# weapon socket, and the given hitboxes, each a 0.2 m cube at its height above
+# the feet.
 _CHARACTER_STAGE = """#usda 1.0
 (
     defaultPrim = "Character"
@@ -469,6 +487,7 @@ def Xform "Character"
         uniform token[] xformOpOrder = ["xformOp:translate"]
     }
 SKELETON
+SOCKET
 HITBOXES
 }
 """
@@ -557,17 +576,229 @@ def _hitbox_prim(name, body_part, height, joint):
 _SKELETON = _skeleton_prim(_JOINTS)
 
 
-def cook_character(hitboxes, tmp_path, key_pair, skeleton=_SKELETON):
+def _socket_prim(
+    joint="Root/Hips/Chest",
+    left_hand="Root/Hips/Chest/Neck",
+    translation=(0.3, 1.2, -0.2),
+    degrees=0.0,
+):
+    """A WeaponSocket prim bound rigidly to joint, as a hitbox is.
+
+    Placed at translation in the character's space, turned degrees about +Y,
+    and naming left_hand as the left hand's joint. No binding if joint is
+    None, and no left hand if left_hand is None.
+    """
+    binding_schema = (
+        ' (\n        prepend apiSchemas = ["SkelBindingAPI"]\n    )'
+        if joint is not None
+        else ""
+    )
+    binding = (
+        f'        uniform token[] skel:joints = ["{joint}"]\n'
+        "        int[] primvars:skel:jointIndices = [0] (\n"
+        '            elementSize = 1\n            interpolation = "constant"\n'
+        "        )\n"
+        if joint is not None
+        else ""
+    )
+    left_hand_line = (
+        f'        uniform token augusta:leftHand = "{left_hand}"\n'
+        if left_hand is not None
+        else ""
+    )
+    return (
+        f'    def Xform "WeaponSocket"{binding_schema}\n'
+        "    {\n"
+        f"{binding}"
+        f"{left_hand_line}"
+        f"        double3 xformOp:translate = {translation}\n"
+        f"        float3 xformOp:rotateXYZ = (0, {degrees}, 0)\n"
+        '        uniform token[] xformOpOrder = ["xformOp:translate", '
+        '"xformOp:rotateXYZ"]\n'
+        "    }\n"
+    )
+
+
+_SOCKET = _socket_prim()
+
+
+@dataclass(frozen=True)
+class _Clip:
+    """A Clip as a test authors it, every joint but the root at rest.
+
+    root is the root's translation at each of its time codes, 24 a second, and
+    contacts its Foot contacts by time code. joints are its joints' names, its
+    character's Skeleton's if None.
+    """
+
+    root: dict[int, tuple[float, float, float]]
+    contacts: dict[int, str] = field(default_factory=dict)
+    joints: list[str] | None = None
+
+
+# Standing still: one sample, the root at the feet.
+_STILL = _Clip(root={0: (0.0, 0.0, 0.0)})
+
+
+def _walk(direction, stride=1.4):
+    """Two steps in direction (x, z), stride metres in a second.
+
+    The left foot lands at the start and the right halfway, where the root
+    rises by 5 cm.
+    """
+    x, z = direction
+    return _Clip(
+        root={
+            0: (0.0, 0.0, 0.0),
+            12: (x * stride / 2, 0.05, z * stride / 2),
+            24: (x * stride, 0.0, z * stride),
+        },
+        contacts={0: "left", 12: "right"},
+    )
+
+
+# The character faces -Z, with +X on its right.
+_DIRECTIONS = {
+    "forward": (0.0, -1.0),
+    "backward": (0.0, 1.0),
+    "left": (-1.0, 0.0),
+    "right": (1.0, 0.0),
+}
+_AIMS = ("aim_down", "aim_center", "aim_up", "ads")
+
+
+def _required_clips():
+    """A Clip for each role a character must have, by role."""
+    clips = {"air": _STILL, "standing/sprint": _walk((0.0, -1.0), 2.4)}
+    for stance in ("standing", "crouching"):
+        clips[f"{stance}/idle"] = _STILL
+        for role, direction in _DIRECTIONS.items():
+            clips[f"{stance}/{role}"] = _walk(direction)
+    clips["prone/idle"] = _STILL
+    clips["prone/forward"] = _walk(_DIRECTIONS["forward"], 0.6)
+    clips["prone/backward"] = _walk(_DIRECTIONS["backward"], 0.6)
+    for stance in ("standing", "crouching", "prone"):
+        for role in _AIMS:
+            clips[f"{stance}/{role}"] = _STILL
+    return clips
+
+
+_TRANSITIONS = {
+    "standing_crouching": 0.25,
+    "standing_prone": 0.75,
+    "crouching_prone": 0.5,
+}
+
+
+def _usd_quat(rest):
+    """The rotation of rest as a USD quaternion literal, real part first."""
+    quat = rest.ExtractRotationQuat()
+    return (quat.GetReal(), *quat.GetImaginary())
+
+
+def _clip_stage(clip, joints):
+    """The text of a USD file holding clip, a SkelAnimation, on joints."""
+    rests = dict(joints)
+    names = clip.joints if clip.joints is not None else list(rests)
+    identity = Gf.Matrix4d(1.0)
+
+    def translations(root):
+        return [
+            root
+            if index == 0
+            else tuple(rests.get(name, identity).ExtractTranslation())
+            for index, name in enumerate(names)
+        ]
+
+    samples = ", ".join(
+        f"{time}: {translations(root)}" for time, root in clip.root.items()
+    )
+    rotations = [_usd_quat(rests.get(name, identity)) for name in names]
+    contacts = ", ".join(
+        f'{time}: "{foot}"' for time, foot in clip.contacts.items()
+    )
+    contacts_line = (
+        f"    custom token augusta:footContacts.timeSamples = {{{contacts}}}\n"
+        if clip.contacts
+        else ""
+    )
+    return (
+        '#usda 1.0\n(\n    defaultPrim = "Clip"\n'
+        "    timeCodesPerSecond = 24\n)\n\n"
+        'def SkelAnimation "Clip"\n{\n'
+        f"    uniform token[] joints = {[str(name) for name in names]}\n"
+        f"    float3[] translations.timeSamples = {{{samples}}}\n"
+        f"    quatf[] rotations = {rotations}\n"
+        f"    half3[] scales = {[(1, 1, 1)] * len(names)}\n"
+        f"{contacts_line}"
+        "}\n"
+    ).replace("'", '"')
+
+
+def _clips_prim(clips, transitions, clip_dir, joints):
+    """The character's Clips prim, each clip by its role in a file of its own.
+
+    clips are by role, e.g. "standing/forward"; transitions by pair of
+    stances, e.g. "standing_crouching". Writes each clip's file into clip_dir.
+    """
+    clip_dir.mkdir(exist_ok=True)
+    groups: dict[str, list[str]] = {}
+    for role, clip in clips.items():
+        file_name = role.replace("/", "_") + ".usda"
+        (clip_dir / file_name).write_text(
+            _clip_stage(clip, joints), encoding="utf-8"
+        )
+        stance, _, name = role.rpartition("/")
+        groups.setdefault(stance, []).append(
+            f'def SkelAnimation "{name}" '
+            f"(references = @./{clip_dir.name}/{file_name}@) {{}}"
+        )
+    lines = ['    def Scope "Clips"', "    {"]
+    lines += [
+        f"        float augusta:transitionDuration:{pair} = {seconds}"
+        for pair, seconds in transitions.items()
+    ]
+    lines += [f"        {prim}" for prim in groups.pop("", [])]
+    for stance, prims in groups.items():
+        lines += [f'        def Scope "{stance}"', "        {"]
+        lines += [f"            {prim}" for prim in prims]
+        lines.append("        }")
+    lines.append("    }")
+    return "\n".join(lines) + "\n"
+
+
+def cook_character(
+    hitboxes,
+    tmp_path,
+    key_pair,
+    skeleton=_SKELETON,
+    joints=_JOINTS,
+    clips=None,
+    transitions=None,
+    socket=_SOCKET,
+):
     """Cooks a map with one character, named test, holding hitboxes.
 
-    Its Skeleton is the skeleton prim's text, none if it is empty.
+    Its Skeleton is the skeleton prim's text, none if it is empty, and joints
+    the (name, rest transform) its Clips are authored on. Its Clips are clips
+    by role, every required one if None, and its stance transitions
+    transitions, _TRANSITIONS if None. Its weapon socket is the socket prim's
+    text, none if it is empty.
 
     Returns:
         (client, server) contents.
     """
     stage_path = tmp_path / "character.usda"
+    clips_prim = _clips_prim(
+        _required_clips() if clips is None else clips,
+        _TRANSITIONS if transitions is None else transitions,
+        tmp_path / "clips",
+        joints,
+    )
     stage_path.write_text(
-        _CHARACTER_STAGE.replace("SKELETON", skeleton).replace(
+        _CHARACTER_STAGE.replace("SKELETON", skeleton + clips_prim)
+        .replace("SOCKET", socket)
+        .replace(
             "HITBOXES", "".join(_hitbox_prim(*hitbox) for hitbox in hitboxes)
         ),
         encoding="utf-8",
@@ -577,6 +808,7 @@ def cook_character(hitboxes, tmp_path, key_pair, skeleton=_SKELETON):
     cook_scenario(
         FIXTURES_DIR / "mesh_fixture.usda",
         [("test", stage_path)],
+        RIFLE_FIXTURE,
         client_path,
         server_path,
         key_pair.private_key,
@@ -649,6 +881,77 @@ def test_a_characters_eye_goes_into_both_packs(tmp_path, key_pair):
         ) == pytest.approx((0, 1.7, 0))
 
 
+def test_a_characters_weapon_socket_goes_into_both_packs_in_its_joints_space(
+    tmp_path, key_pair
+):
+    client, server = cook_character(
+        _EVERY_BODY_PART,
+        tmp_path,
+        key_pair,
+        socket=_socket_prim(degrees=90.0),
+    )
+
+    half = math.sqrt(0.5)
+    for contents in (client, server):
+        assert contents.paths_of_type(_native.AssetType.WEAPON_SOCKET) == {
+            "test/Character/WeaponSocket"
+        }
+        socket = decode_weapon_socket(
+            contents.blob("test/Character/WeaponSocket")
+        )
+        assert socket.right_hand == "Root/Hips/Chest"
+        # 1.2 m above the feet, and the chest at 1.3 m.
+        assert socket.translation == pytest.approx((0.3, -0.1, -0.2))
+        # A quarter turn about +Y.
+        assert socket.rotation == pytest.approx((0, half, 0, half))
+        assert socket.left_hand == "Root/Hips/Chest/Neck"
+
+
+@pytest.mark.parametrize(
+    ("socket", "code", "named"),
+    [
+        ("", "weapon_socket_missing", "WeaponSocket"),
+        (_socket_prim(joint=None), "weapon_socket_joint_missing", ""),
+        (
+            _socket_prim(joint="Root/Hips/Hand"),
+            "weapon_socket_joint_unknown",
+            "Root/Hips/Hand",
+        ),
+        (_socket_prim(left_hand=None), "left_hand_missing", "augusta:leftHand"),
+        (
+            _socket_prim(left_hand="Root/Hips/LeftHand"),
+            "left_hand_unknown",
+            "Root/Hips/LeftHand",
+        ),
+        # The Hips' parent is the Root, and the Root has none: no arm.
+        (
+            _socket_prim(left_hand="Root/Hips"),
+            "left_hand_arm_missing",
+            "Root/Hips",
+        ),
+    ],
+    ids=[
+        "no_socket",
+        "socket_under_no_joint",
+        "socket_under_an_unknown_joint",
+        "no_left_hand",
+        "left_hand_unknown",
+        "left_hand_without_an_arm",
+    ],
+)
+def test_a_character_without_a_weapon_socket_and_a_left_hand_is_refused(
+    socket, code, named, tmp_path, key_pair
+):
+    with pytest.raises(CookError) as raised:
+        cook_character(_EVERY_BODY_PART, tmp_path, key_pair, socket=socket)
+
+    assert raised.value.code == code
+    assert raised.value.prim_path.startswith("test/Character")
+    assert named in raised.value.message
+    assert not (tmp_path / "client.apak").exists()
+    assert not (tmp_path / "server.apak").exists()
+
+
 def test_a_characters_hitbox_is_cooked_into_its_joints_space(
     tmp_path, key_pair
 ):
@@ -668,6 +971,7 @@ def test_a_hitbox_under_a_turned_joint_is_cooked_turned_back(
     joints = [
         ("Root", _rest((0, 0, 0))),
         ("Root/Neck", _rest((0, 1.3, 0), axis=(1, 0, 0), degrees=90.0)),
+        ("Root/Neck/Chin", _rest((0, 0.1, 0))),
     ]
     hitboxes = [
         ("Head", "head", 1.8, "Root/Neck"),
@@ -676,7 +980,12 @@ def test_a_hitbox_under_a_turned_joint_is_cooked_turned_back(
     ]
 
     client, _ = cook_character(
-        hitboxes, tmp_path, key_pair, skeleton=_skeleton_prim(joints)
+        hitboxes,
+        tmp_path,
+        key_pair,
+        skeleton=_skeleton_prim(joints),
+        joints=joints,
+        socket=_socket_prim(joint="Root", left_hand="Root/Neck/Chin"),
     )
 
     points = decode_hitbox(client.blob("test/Character/Head")).points
@@ -742,10 +1051,11 @@ def test_a_skeleton_rooted_away_from_the_characters_origin_is_refused(
 
 
 def _joints(count):
-    """A skeleton of count joints: a root at the feet, and children of it."""
+    """A skeleton of count joints: a root at the feet, an arm, its children."""
     return [
         ("Root", _rest((0, 0, 0))),
-        *((f"Root/J{i}", _rest((0, 1, 0))) for i in range(count - 1)),
+        ("Root/Arm", _rest((0, 1, 0))),
+        *((f"Root/Arm/J{i}", _rest((0, 1, 0))) for i in range(count - 2)),
     ]
 
 
@@ -762,6 +1072,8 @@ def test_a_skeleton_with_as_many_joints_as_the_format_allows_cooks(
         tmp_path,
         key_pair,
         skeleton=_skeleton_prim(joints),
+        joints=joints,
+        socket=_socket_prim(joint="Root", left_hand="Root/Arm/J0"),
     )
 
     assert len(decode_skeleton(client.blob("test/Character/Skeleton"))) == 128
@@ -841,3 +1153,425 @@ def test_a_hitbox_whose_body_part_is_unknown_is_refused(tmp_path, key_pair):
     assert raised.value.code == "hitbox_body_part_unknown"
     assert raised.value.prim_path == "test/Character/Tail"
     assert "tail" in raised.value.message
+
+
+def _clip_paths(roles):
+    return {f"test/Character/Clips/{role}" for role in roles}
+
+
+def test_a_characters_clips_go_into_both_packs_with_its_animation_skeleton(
+    tmp_path, key_pair
+):
+    client, server = cook_character(_EVERY_BODY_PART, tmp_path, key_pair)
+
+    for contents in (client, server):
+        assert contents.paths_of_type(_native.AssetType.CLIP) == _clip_paths(
+            _required_clips()
+        )
+        assert contents.paths_of_type(_native.AssetType.ANIMATION_SKELETON) == {
+            "test/Character/Skeleton.ozz"
+        }
+    assert client.blob("test/Character/Skeleton.ozz") == server.blob(
+        "test/Character/Skeleton.ozz"
+    )
+
+
+def test_cosmetic_clips_go_into_the_client_pack_only(tmp_path, key_pair):
+    cosmetic = {role: _STILL for role in ("reload", "recoil", "flinch", "land")}
+
+    client, server = cook_character(
+        _EVERY_BODY_PART,
+        tmp_path,
+        key_pair,
+        clips={**_required_clips(), **cosmetic},
+    )
+
+    assert _clip_paths(cosmetic) <= client.paths_of_type(_native.AssetType.CLIP)
+    assert not _clip_paths(cosmetic) & server.paths_of_type(
+        _native.AssetType.CLIP
+    )
+
+
+def test_diagonal_clips_go_into_both_packs(tmp_path, key_pair):
+    diagonals = {
+        "standing/forward_left": _walk((-0.7, -0.7)),
+        "crouching/backward_right": _walk((0.7, 0.7)),
+    }
+
+    client, server = cook_character(
+        _EVERY_BODY_PART,
+        tmp_path,
+        key_pair,
+        clips={**_required_clips(), **diagonals},
+    )
+
+    for contents in (client, server):
+        assert _clip_paths(diagonals) <= contents.paths_of_type(
+            _native.AssetType.CLIP
+        )
+
+
+def test_a_locomotion_clips_stride_length_is_measured_from_its_root(
+    tmp_path, key_pair
+):
+    client, _ = cook_character(_EVERY_BODY_PART, tmp_path, key_pair)
+
+    forward = decode_clip(client.blob("test/Character/Clips/standing/forward"))
+    sprint = decode_clip(client.blob("test/Character/Clips/standing/sprint"))
+    idle = decode_clip(client.blob("test/Character/Clips/standing/idle"))
+    assert forward.stride_length == pytest.approx(1.4)
+    assert sprint.stride_length == pytest.approx(2.4)
+    assert idle.stride_length == 0.0
+    # Left at the start, right halfway through.
+    assert forward.foot_contacts == [(0, 0.0), (1, 0.5)]
+    assert idle.foot_contacts == []
+
+
+def _root_at(contents, role, ratio):
+    """Where the clip of role puts the root joint at ratio of it."""
+    joints = _native.sample_clip(
+        contents.blob("test/Character/Skeleton.ozz"),
+        decode_clip(contents.blob(f"test/Character/Clips/{role}")).archive,
+        ratio,
+    )
+    return next(
+        translation for name, translation, _, _ in joints if name == "Root"
+    )
+
+
+@pytest.mark.parametrize("role", ["standing/forward", "crouching/left"])
+def test_a_locomotion_clip_plays_in_place(role, tmp_path, key_pair):
+    client, _ = cook_character(_EVERY_BODY_PART, tmp_path, key_pair)
+
+    # Its root moves along the ground no more, but still rises halfway.
+    for ratio, height in ((0.0, 0.0), (0.5, 0.05), (1.0, 0.0)):
+        x, y, z = _root_at(client, role, ratio)
+        assert (x, z) == pytest.approx((0.0, 0.0), abs=1e-3)
+        assert y == pytest.approx(height, abs=1e-3)
+
+
+def test_a_clip_keeps_its_joints_poses(tmp_path, key_pair):
+    client, _ = cook_character(_EVERY_BODY_PART, tmp_path, key_pair)
+
+    joints = _native.sample_clip(
+        client.blob("test/Character/Skeleton.ozz"),
+        decode_clip(client.blob("test/Character/Clips/standing/idle")).archive,
+        0.0,
+    )
+
+    chest = next(joint for joint in joints if joint[0] == "Root/Hips/Chest")
+    assert chest[1] == pytest.approx((0.0, 0.4, 0.0), abs=1e-3)
+    assert sorted(name for name, *_ in joints) == sorted(
+        name for name, _ in _JOINTS
+    )
+
+
+def test_each_pair_of_stances_transition_duration_goes_into_both_packs(
+    tmp_path, key_pair
+):
+    client, server = cook_character(_EVERY_BODY_PART, tmp_path, key_pair)
+
+    for contents in (client, server):
+        assert contents.paths_of_type(_native.AssetType.STANCE_TRANSITIONS) == {
+            "test/Character/Clips"
+        }
+        assert decode_stance_transitions(
+            contents.blob("test/Character/Clips")
+        ) == pytest.approx((0.25, 0.75, 0.5))
+
+
+def _refused(tmp_path, key_pair, **character):
+    """The CookError cooking a character of character's clips raises.
+
+    No pack is left behind.
+    """
+    with pytest.raises(CookError) as raised:
+        cook_character(_EVERY_BODY_PART, tmp_path, key_pair, **character)
+    assert not (tmp_path / "client.apak").exists()
+    assert not (tmp_path / "server.apak").exists()
+    return raised.value
+
+
+@pytest.mark.parametrize(
+    "role",
+    [
+        "standing/idle",
+        "standing/sprint",
+        "crouching/right",
+        "prone/backward",
+        "crouching/aim_up",
+        "prone/ads",
+        "air",
+    ],
+)
+def test_a_character_missing_a_required_clip_is_refused(
+    role, tmp_path, key_pair
+):
+    clips = _required_clips()
+    del clips[role]
+
+    error = _refused(tmp_path, key_pair, clips=clips)
+
+    assert error.code == "clip_missing"
+    assert error.prim_path == f"test/Character/Clips/{role}"
+    assert "test" in error.message
+    assert role in error.message
+
+
+@pytest.mark.parametrize("pair", list(_TRANSITIONS))
+def test_a_character_missing_a_transition_duration_is_refused(
+    pair, tmp_path, key_pair
+):
+    transitions = {
+        name: seconds for name, seconds in _TRANSITIONS.items() if name != pair
+    }
+
+    error = _refused(tmp_path, key_pair, transitions=transitions)
+
+    assert error.code == "stance_transition_missing"
+    assert error.prim_path == "test/Character/Clips"
+    assert pair in error.message
+
+
+def test_a_transition_duration_that_is_not_positive_is_refused(
+    tmp_path, key_pair
+):
+    transitions = {**_TRANSITIONS, "standing_prone": 0.0}
+
+    error = _refused(tmp_path, key_pair, transitions=transitions)
+
+    assert error.code == "stance_transition_invalid"
+    assert error.prim_path == "test/Character/Clips"
+    assert "standing_prone" in error.message
+
+
+@pytest.mark.parametrize(
+    "joints",
+    [
+        [name for name, _ in _JOINTS[:-1]],
+        [*(name for name, _ in _JOINTS), "Root/Hips/Tail"],
+        ["Root", "Root/Hips", "Root/Hips/Chest", "Root/Hips/Neck"],
+    ],
+    ids=["joint_missing", "joint_extra", "joint_renamed"],
+)
+def test_a_clip_whose_joints_do_not_match_the_skeleton_is_refused(
+    joints, tmp_path, key_pair
+):
+    clips = {
+        **_required_clips(),
+        "crouching/idle": _Clip(_STILL.root, {}, joints),
+    }
+
+    error = _refused(tmp_path, key_pair, clips=clips)
+
+    assert error.code == "clip_joints_mismatch"
+    assert error.prim_path == "test/Character/Clips/crouching/idle"
+    assert "test/Character/Skeleton" in error.message
+
+
+@pytest.mark.parametrize(
+    "contacts",
+    [
+        {},
+        {0: "left"},
+        {0: "left", 12: "left"},
+        {0: "left", 6: "right", 12: "right"},
+    ],
+    ids=["none", "left_only", "two_lefts", "three"],
+)
+def test_a_locomotion_clip_without_one_foot_contact_per_foot_is_refused(
+    contacts, tmp_path, key_pair
+):
+    walk = _walk(_DIRECTIONS["backward"])
+    clips = {
+        **_required_clips(),
+        "standing/backward": _Clip(walk.root, contacts),
+    }
+
+    error = _refused(tmp_path, key_pair, clips=clips)
+
+    assert error.code == "locomotion_foot_contacts"
+    assert error.prim_path == "test/Character/Clips/standing/backward"
+
+
+def test_a_foot_contact_naming_no_foot_is_refused(tmp_path, key_pair):
+    walk = _walk(_DIRECTIONS["left"])
+    clips = {
+        **_required_clips(),
+        "standing/left": _Clip(walk.root, {0: "left", 12: "tail"}),
+    }
+
+    error = _refused(tmp_path, key_pair, clips=clips)
+
+    assert error.code == "locomotion_foot_contacts"
+    assert "tail" in error.message
+
+
+def test_a_locomotion_clip_whose_root_does_not_move_is_refused(
+    tmp_path, key_pair
+):
+    still = _Clip({0: (0, 0, 0), 24: (0, 0.05, 0)}, {0: "left", 12: "right"})
+    clips = {**_required_clips(), "prone/forward": still}
+
+    error = _refused(tmp_path, key_pair, clips=clips)
+
+    assert error.code == "locomotion_root_still"
+    assert error.prim_path == "test/Character/Clips/prone/forward"
+
+
+def test_an_idle_with_a_foot_contact_is_refused(tmp_path, key_pair):
+    clips = {
+        **_required_clips(),
+        "standing/idle": _Clip(_STILL.root, {0: "left"}),
+    }
+
+    error = _refused(tmp_path, key_pair, clips=clips)
+
+    assert error.code == "idle_foot_contact"
+    assert error.prim_path == "test/Character/Clips/standing/idle"
+
+
+def test_an_idle_whose_root_moves_is_refused(tmp_path, key_pair):
+    drifting = _Clip(_walk((1.0, 0.0), 0.2).root)
+    clips = {**_required_clips(), "prone/idle": drifting}
+
+    error = _refused(tmp_path, key_pair, clips=clips)
+
+    assert error.code == "idle_root_moves"
+    assert error.prim_path == "test/Character/Clips/prone/idle"
+
+
+def test_an_idle_whose_root_only_rises_cooks(tmp_path, key_pair):
+    breathing = _Clip({0: (0, 0, 0), 12: (0, 0.02, 0), 24: (0, 0, 0)})
+    clips = {**_required_clips(), "standing/idle": breathing}
+
+    client, _ = cook_character(
+        _EVERY_BODY_PART, tmp_path, key_pair, clips=clips
+    )
+
+    assert "test/Character/Clips/standing/idle" in client.entries
+
+
+def cook_rifle(rifle_stage_path, tmp_path, key_pair):
+    """Cooks the mesh fixture with the rifle at rifle_stage_path.
+
+    Returns:
+        (client, server) contents.
+    """
+    client_path = tmp_path / "client.apak"
+    server_path = tmp_path / "server.apak"
+    cook_scenario(
+        FIXTURES_DIR / "mesh_fixture.usda",
+        [],
+        rifle_stage_path,
+        client_path,
+        server_path,
+        key_pair.private_key,
+    )
+    return (
+        read_pack_contents(client_path, key_pair.public_key),
+        read_pack_contents(server_path, key_pair.public_key),
+    )
+
+
+def decode_rifle(blob):
+    """A rifle blob: the Grip, Muzzle, Sight and Fore-end.
+
+    Each as (translation, xyzw).
+    """
+    values = struct.unpack("<28f", blob)
+    return [(values[i : i + 3], values[i + 3 : i + 7]) for i in (0, 7, 14, 21)]
+
+
+def test_the_rifles_markers_go_into_both_packs(tmp_path, key_pair):
+    client, server = cook_rifle(RIFLE_FIXTURE, tmp_path, key_pair)
+
+    half = math.sqrt(0.5)
+    for contents in (client, server):
+        assert contents.paths_of_type(_native.AssetType.RIFLE) == {
+            _native.RIFLE_PATH
+        }
+        grip, muzzle, sight, fore_end = decode_rifle(
+            contents.blob(_native.RIFLE_PATH)
+        )
+        assert grip == (
+            pytest.approx((0, -0.1, 0.1)),
+            pytest.approx((0, 0, 0, 1)),
+        )
+        # A quarter turn about +Y.
+        assert muzzle == (
+            pytest.approx((0, 0, -0.7)),
+            pytest.approx((0, half, 0, half)),
+        )
+        assert sight == (
+            pytest.approx((0, 0.07, -0.1)),
+            pytest.approx((0, 0, 0, 1)),
+        )
+        assert fore_end == (
+            pytest.approx((0, -0.05, -0.35)),
+            pytest.approx((0, 0, 0, 1)),
+        )
+
+
+def test_no_rifle_mesh_goes_into_either_pack(tmp_path, key_pair):
+    client, server = cook_rifle(RIFLE_FIXTURE, tmp_path, key_pair)
+
+    for contents in (client, server):
+        assert not any(
+            path.startswith(_native.RIFLE_PATH)
+            for path in contents.paths_of_type(_native.AssetType.MESH)
+        )
+
+
+def test_a_z_up_rifles_markers_are_turned_y_up(tmp_path, key_pair):
+    stage_path = tmp_path / "rifle.usda"
+    stage_path.write_text(
+        RIFLE_FIXTURE.read_text(encoding="utf-8").replace(
+            'upAxis = "Y"', 'upAxis = "Z"'
+        ),
+        encoding="utf-8",
+    )
+
+    client, _ = cook_rifle(stage_path, tmp_path, key_pair)
+
+    grip, _, _, _ = decode_rifle(client.blob(_native.RIFLE_PATH))
+    # Z-up (0, -0.1, 0.1) is Y-up (0, 0.1, 0.1).
+    assert grip[0] == pytest.approx((0, 0.1, 0.1))
+
+
+@pytest.mark.parametrize("marker", ["Grip", "Muzzle", "Sight", "ForeEnd"])
+def test_a_rifle_missing_a_marker_is_refused_naming_it_and_its_stage(
+    marker, tmp_path, key_pair
+):
+    stage_path = tmp_path / "rifle.usda"
+    stage_path.write_text(
+        RIFLE_FIXTURE.read_text(encoding="utf-8").replace(
+            f'def Xform "{marker}"', 'def Xform "Elsewhere"'
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(CookError) as raised:
+        cook_rifle(stage_path, tmp_path, key_pair)
+
+    assert raised.value.code == "rifle_marker_missing"
+    assert marker in raised.value.message
+    assert str(stage_path) in raised.value.message
+    assert not (tmp_path / "client.apak").exists()
+    assert not (tmp_path / "server.apak").exists()
+
+
+def test_a_rifle_stage_without_a_default_prim_is_refused(tmp_path, key_pair):
+    stage_path = tmp_path / "rifle.usda"
+    stage_path.write_text(
+        RIFLE_FIXTURE.read_text(encoding="utf-8").replace(
+            'defaultPrim = "Rifle"', ""
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(CookError) as raised:
+        cook_rifle(stage_path, tmp_path, key_pair)
+
+    assert raised.value.code == "rifle_root_missing"
+    assert str(stage_path) in raised.value.message

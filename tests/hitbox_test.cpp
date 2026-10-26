@@ -27,7 +27,6 @@ using augusta::hitbox::Pose;
 using augusta::math::Vec3;
 using augusta::physics::CollisionMeshError;
 using augusta::physics::Stance;
-using augusta::physics::StanceHeight;
 
 constexpr float kTolerance = 1e-5F;
 
@@ -89,26 +88,18 @@ TEST(HitboxTest, APoseTurnsTheHitboxesByItsYawAboutTheVertical) {
   ExpectNear(placed[0].triangles[0].b, Vec3(9.5F, 1.8F, 4.9F));
 }
 
-TEST(HitboxTest, EachStanceLowersTheHitboxesInProportionToItsHeight) {
+// How low a body is in a stance is its stance's Clips' (ADR-0066): the root
+// is not scaled by it (ADR-0040).
+TEST(HitboxTest, TheStanceDoesNotScaleTheRoot) {
   for (const Stance stance : {Stance::kStanding, Stance::kCrouching, Stance::kProne}) {
     SCOPED_TRACE(static_cast<int>(stance));
-    const float scale = StanceHeight(stance) / StanceHeight(Stance::kStanding);
 
     const std::vector<PlacedHitbox> placed =
         Place(Character(), Pose{.position = Vec3(1.0F, 0.0F, 0.0F), .yaw = 0.0F, .stance = stance});
 
-    ExpectNear(placed[0].triangles[0].a, Vec3(1.0F, 1.8F * scale, -0.5F));
-    ExpectNear(placed[1].triangles[1].b, Vec3(1.2F, 1.2F * scale, 0.0F));
+    ExpectNear(placed[0].triangles[0].a, Vec3(1.0F, 1.8F, -0.5F));
+    ExpectNear(placed[1].triangles[1].b, Vec3(1.2F, 1.2F, 0.0F));
   }
-}
-
-TEST(HitboxTest, ACrouchOrProneIsLowerThanStanding) {
-  const auto head_height = [](Stance stance) {
-    return Place(Character(), Pose{.position = Vec3(0.0F), .yaw = 0.0F, .stance = stance})[0].triangles[0].a.y;
-  };
-
-  EXPECT_LT(head_height(Stance::kCrouching), head_height(Stance::kStanding));
-  EXPECT_LT(head_height(Stance::kProne), head_height(Stance::kCrouching));
 }
 
 TEST(HitboxTest, ACharacterWithoutHitboxesPlacesNone) { EXPECT_TRUE(Place({}, Pose{}).empty()); }

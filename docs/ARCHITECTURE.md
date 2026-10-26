@@ -176,12 +176,16 @@ policy (ADR-0060).
 - Animation — a Character's Skeleton posed (augusta_animation, ADR-0061): from a
   player's Hitbox pose, each Joint's world transform, which places the Hitboxes
   bound to it. Below Presentation, depending on Physics and Gameplay at most.
-  Until Clips the pose is the Rest pose, the stance and the facing carried by
-  the Skeleton's root. SimulationWorld's Posing phase poses every player each
-  tick; the one other consumer is a Development build's client (ADR-0074), which
-  places a Character's Hitboxes in its root space by the Rest pose once, when
-  the character loads, for the Hitboxes Debug overlay. That is a loader, not a
-  World: neither PredictionWorld nor PresentationWorld poses a player
+  The pose is its Clips' (ADR-0066): its stance's blend space at its velocity,
+  synchronised by its Stride, its Aim offset and ADS grip on top, onto a root
+  its position and facing place, then the rifle held in it. SimulationWorld's
+  Posing phase poses every player each tick. Presentation gives what a client
+  would pose a remote player from, its interpolated state, but no client poses
+  one until drawing a posed player arrives with skinning; the one other consumer
+  is a Development build's client (ADR-0074), which places a Character's
+  Hitboxes in its root space by the Rest pose once, when the character loads,
+  for the Hitboxes Debug overlay. That is a loader, not a World: neither
+  PredictionWorld nor PresentationWorld poses a player
 - Networking Protocol — message definitions, serialized as Protocol Buffers
   (ADR-0007)
 - Link — the channel of one Session (augusta_link): every conversion between the
@@ -401,7 +405,7 @@ after the tick.
 | Movement           | Mechanism                     | PhysX integration, stamina, collision resolution (US-04, US-05)                                                                                                          |
 | Dynamics           | Mechanism                     | One fixed-step PhysX `simulate()`: Props, grenades, explosion impulses; reports Prop contacts for Damage (ADR-0045). Added with the first Prop                           |
 | WeaponHandling     | Mechanism                     | Aim/ADS, fire, reload, recoil (US-06–US-09)                                                                                                                              |
-| Posing             | Mechanism                     | Evaluates every living player's Hitbox pose from its Skeleton, in the Rest pose until Clips (ADR-0061)                                                                   |
+| Posing             | Mechanism                     | Evaluates every living player's Hitbox pose from its Clips (ADR-0061, ADR-0066)                                                                                          |
 | Ballistics         | Mechanism                     | Advances in-flight bullet trajectories (US-10)                                                                                                                           |
 | HitDetection       | Mechanism                     | Impact point + body part against hitboxes as they were the Shooter's delay ago (US-11, ADR-0044); its test runs inside Ballistics's step, so it has no system of its own |
 | Damage             | Mechanism (reads Data/Config) | Applies damage, marks death/spectator (US-12, US-13)                                                                                                                     |

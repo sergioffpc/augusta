@@ -9,11 +9,13 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <variant>
 #include <vector>
 
 #include "agent_report.h"
 #include "augusta/assets.h"
+#include "augusta/clips.h"
 #include "augusta/command.h"
 #include "augusta/harness.h"
 #include "augusta/intent.h"
@@ -32,18 +34,29 @@
 /// Runner's threads never touch the GIL.
 namespace augusta::agent {
 
-/// A client pack, verified, and its Map's collision: loaded once for every
-/// Agent of a script.
+/// A client pack, verified, its Map's collision and each of its characters'
+/// Clips: loaded once for every Agent of a script.
 struct LoadedPack {
   assets::PackHash hash{};
   std::vector<physics::CollisionMesh> map;
+  /// By the character's name in the scenario's manifest: what an Agent playing
+  /// it predicts its Stride by (ADR-0066), as augustac does.
+  std::unordered_map<std::string, std::shared_ptr<const animation::CharacterClips>> clips;
 };
 
-/// Why LoadPack failed: the pack or its key did not verify, or its Map did not load.
-using LoadPackError = std::variant<assets::VerifiedPackError, map::MapError>;
+/// A character of the pack whose Clips did not load, and why.
+struct CharacterClipsError {
+  std::string character;
+  std::string reason;
+};
+
+/// Why LoadPack failed: the pack or its key did not verify, or its Map or a
+/// character's Clips did not load.
+using LoadPackError = std::variant<assets::VerifiedPackError, map::MapError, CharacterClipsError>;
 
 /// Verifies the client pack at pack_path with the key at public_key_path and
-/// loads its Map's collision, as augustac does before it connects.
+/// loads its Map's collision and every character's Clips, as augustac does
+/// before it connects.
 [[nodiscard]] std::expected<LoadedPack, LoadPackError> LoadPack(const std::filesystem::path& pack_path,
                                                                 const std::filesystem::path& public_key_path);
 

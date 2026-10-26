@@ -91,13 +91,37 @@ TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersEye) {
   }
 }
 
+// The server places every Muzzle from them (ADR-0064), so both packs hold the
+// example rifle's Grip, Muzzle, Sight and Fore-end: the Muzzle ahead of the
+// Grip, the Fore-end between them.
+TEST_F(CookedPackTest, BothPacksHoldTheExampleRiflesMarkers) {
+  for (const Pack* pack : {&*client_, &*server_}) {
+    const auto rifle = pack->ResolveRifle();
+    ASSERT_TRUE(rifle.has_value());
+    EXPECT_FLOAT_EQ(rifle->muzzle.translation.z, -0.62F);
+    EXPECT_FLOAT_EQ(rifle->sight.translation.y, 0.12F);
+    EXPECT_FLOAT_EQ(rifle->fore_end.translation.z, -0.35F);
+  }
+}
+
+// Both packs pose the example character holding the rifle (ADR-0066), so both
+// hold its weapon socket, on its right hand, and name its left hand.
+TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersWeaponSocket) {
+  for (const Pack* pack : {&*client_, &*server_}) {
+    const auto socket = pack->ResolveWeaponSocket("soldier");
+    ASSERT_TRUE(socket.has_value());
+    EXPECT_EQ(socket->right_hand, "Root/Pelvis/Spine/RightShoulder/RightElbow/RightHand");
+    EXPECT_EQ(socket->left_hand, "Root/Pelvis/Spine/LeftShoulder/LeftElbow/LeftHand");
+  }
+}
+
 // The server judges hits against them and the client draws where a Shot lands,
 // so both packs hold the example character's hitboxes, one or more per body part.
 TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersHitboxesForEveryBodyPart) {
   for (const Pack* pack : {&*client_, &*server_}) {
     const auto hitboxes = pack->ResolveHitboxes("soldier");
     ASSERT_TRUE(hitboxes.has_value());
-    EXPECT_EQ(hitboxes->size(), 6U);
+    EXPECT_EQ(hitboxes->size(), 8U);
     EXPECT_EQ(augusta::assets::FirstMissingBodyPart(*hitboxes), std::nullopt);
     for (const augusta::assets::HitboxData& hitbox : *hitboxes) {
       EXPECT_FALSE(hitbox.joint.empty());
@@ -114,6 +138,27 @@ TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersSkeleton) {
       return entry.type == augusta::assets::AssetType::kSkeleton &&
              entry.path == augusta::assets::CharacterSkeletonPath("soldier");
     }));
+  }
+}
+
+// The example character's pose comes from its Clips (ADR-0066), so both packs
+// hold its animation Skeleton, its Clips and its stance transitions.
+TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersAnimation) {
+  using augusta::assets::AssetType;
+  const std::vector<std::pair<AssetType, std::string>> expected = {
+      {AssetType::kAnimationSkeleton, augusta::assets::CharacterAnimationSkeletonPath("soldier")},
+      {AssetType::kClip, augusta::assets::CharacterClipPath("soldier", "standing/forward")},
+      {AssetType::kClip, augusta::assets::CharacterClipPath("soldier", "prone/idle")},
+      {AssetType::kClip, augusta::assets::CharacterClipPath("soldier", "air")},
+      {AssetType::kStanceTransitions, augusta::assets::CharacterStanceTransitionsPath("soldier")},
+  };
+  for (const Pack* pack : {&*client_, &*server_}) {
+    const auto entries = pack->Entries();
+    for (const auto& [type, path] : expected) {
+      EXPECT_TRUE(std::ranges::any_of(entries, [&](const augusta::assets::PackEntry& entry) {
+        return entry.type == type && entry.path == path;
+      })) << path;
+    }
   }
 }
 
@@ -134,7 +179,7 @@ TEST_F(CookedPackTest, BothPacksLoadTheSameExampleSkeletonAndEveryHitboxResolves
     ASSERT_TRUE(hitboxes.has_value());
     const auto bound = augusta::assets::BindHitboxes(*server_skeleton, *std::move(hitboxes));
     ASSERT_TRUE(bound.has_value()) << bound.error().joint;
-    EXPECT_EQ(bound->size(), 6U);
+    EXPECT_EQ(bound->size(), 8U);
   }
 }
 

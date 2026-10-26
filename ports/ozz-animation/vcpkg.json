@@ -1,0 +1,13 @@
+{
+  "name": "ozz-animation",
+  "version": "0.17.0",
+  "description": "ozz-animation: a skeletal animation runtime (sampling, blending, IK) and the offline libraries that build its archives.",
+  "homepage": "https://github.com/guillaumeblanc/ozz-animation",
+  "license": "MIT",
+  "dependencies": [
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    }
+  ]
+}

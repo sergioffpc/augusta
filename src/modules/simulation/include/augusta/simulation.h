@@ -55,6 +55,10 @@
 /// each round's Shot judgement from the players its hit test selected, handed
 /// on in the tick's result once the round's flight ends (ADR-0074).
 /// What each one does is documented on its Phase enumerator below.
+namespace augusta::animation {
+struct CharacterClips;
+}  // namespace augusta::animation
+
 namespace augusta::simulation {
 
 /// SimulationWorld's nine phases (ADR-0023), executed in this exact
@@ -72,7 +76,10 @@ enum class Phase {
   /// Mechanism. PhysX integration, stamina, collision resolution
   /// (US-04, US-05) - augusta::physics::World::Step, one call per player
   /// body. The same physics::World interface PredictionWorld's Movement
-  /// phase uses (ARCHITECTURE.md §5).
+  /// phase uses (ARCHITECTURE.md §5). Each body's Stride advances by the
+  /// distance it moves over the stride length its Character's Clips give its
+  /// stance and velocity as the last tick left them, in the space its yaw faces
+  /// (animation::StrideLength), as PredictionWorld advances its own.
   kMovement,
   /// Mechanism. Aim/ADS, fire, reload, recoil, ammo rules (US-06-US-09) -
   /// augusta::weapon::Step, one call per player: the same function
@@ -82,14 +89,21 @@ enum class Phase {
   /// are only intent: the fire rate, the magazine and the reload are this
   /// phase's to keep, whatever a client sends.
   kWeaponHandling,
-  /// Mechanism. Evaluates every living player's Hitbox pose (ADR-0061) -
-  /// augusta::animation::PoseAtRest, one call per player: each Joint of its
-  /// Character's Skeleton relative to its parent and as its world transform,
-  /// where Movement has just put its body. With no Clips the pose is the Rest
-  /// pose, its root lowered for the stance as the eye is and turned by the yaw
+  /// Mechanism. Evaluates every living player's Hitbox pose (ADR-0061,
+  /// ADR-0066) - augusta::animation::Poser, one call per player: each Joint of
+  /// its Character's Skeleton relative to its parent and as its world
+  /// transform, from its Clips at the stance, velocity and Stride Movement has
+  /// just left its body with, its root where its position and yaw put it
   /// (hitbox::RootOf). What HitDetection judges this tick's Shots against when
   /// the Hitbox history holds no tick of the player yet, and what Commit keeps
-  /// in it.
+  /// in it. Then hangs its rifle from its Character's weapon socket on its
+  /// posed right hand and bends its left arm to the rifle's Fore-end by
+  /// two-bone IK (animation::HoldRifle, ADR-0066), before HitDetection judges
+  /// or Commit records the pose; and places the rifle's Muzzle and Sight where
+  /// the socket holds it, the rifle turned about its Grip by the Recoil offset
+  /// WeaponHandling has just left it with (weapon::Recoiled, weapon::PlaceMuzzle,
+  /// ADR-0064, World::HeldRifleOf); the body does not take the recoil. Rounds
+  /// still leave the Eye.
   kPosing,
   /// Mechanism. Advances in-flight bullet trajectories (US-10) -
   /// augusta::ballistics::World::Step, one call per in-flight bullet.
@@ -103,8 +117,8 @@ enum class Phase {
   /// around that moment: the root's position, facing and stance interpolated
   /// apart from the Joints relative to it, which are composed onto it from the
   /// root down; or as Posing posed them for a player it holds no tick of yet.
-  /// A bullet passing farther from a player's root than its Character's Rest
-  /// pose reaches in its stance is not tested against it. The Map is judged in
+  /// A bullet passing farther from a player's root than that pose holds its
+  /// Hitboxes is not tested against it. The Map is judged in
   /// the present. A bullet is never tested against its own shooter. The test
   /// itself is folded into the same ballistics::World::Step call as
   /// kBallistics - see ballistics.h - so the hitboxes are posed for each
@@ -194,6 +208,15 @@ struct Character {
   /// at the character's root, so a Hitbox bound to joint 0 is in root space.
   assets::Skeleton skeleton{.joints = {assets::JointData{.name = std::string(kDefaultRootJoint)}},
                             .rest_transforms = {math::Mat4(1.0F)}};
+  /// Its Clips (ADR-0066): what Movement advances each of its players' Stride
+  /// by and Posing poses each one by. Never null: every Character has them,
+  /// loading one refuses any without (animation::LoadClips). Shared, as they
+  /// are loaded once a Character and read by every player who plays it, in
+  /// every World built on the same content (a live Match, a Replay, a
+  /// Reenactment), and never changed after loading.
+  // Initialized, so a designated initializer may leave it out.
+  // NOLINTNEXTLINE(readability-redundant-member-init)
+  std::shared_ptr<const animation::CharacterClips> clips{};
 };
 
 /// One player of a Match, as Match start hands it to SimulationWorld.
@@ -209,6 +232,15 @@ struct MatchPlayer {
   std::optional<math::Vec3> spawn = std::nullopt;
 };
 
+/// Where a player's rifle is, as Posing placed it (ADR-0064): its Muzzle and its
+/// Sight, each a world transform pointing along its -Z (weapon::Markers).
+struct HeldRifle {
+  math::Mat4 muzzle{1.0F};
+  math::Mat4 sight{1.0F};
+
+  bool operator==(const HeldRifle&) const = default;
+};
+
 /// One dynamic body as of the end of a tick.
 struct EntityState {
   EntityId entity{};
@@ -217,6 +249,11 @@ struct EntityState {
   /// (command::Command), in radians, on the grid the Networking Protocol sends
   /// it on (ADR-0038). Its hitboxes turn with it.
   float yaw = 0.0F;
+  /// Where it looks up or down: the pitch of the same Command, in radians, on
+  /// the same grid.
+  float pitch = 0.0F;
+  /// Whether the same Command aimed down sights.
+  bool ads = false;
   /// What is left of its player's health: the Parameters' starting health at
   /// Match start, less the damage taken since, never below 0. Its own player
   /// alone is told it (ADR-0038).
@@ -415,9 +452,11 @@ class World {
   /// empty physics::World (its stamina rules for every player body) and an
   /// empty ballistics::World (no bullets in flight yet), policy, the scenario's
   /// Game policy (ADR-0022) as the server loaded it from its pack (none by
-  /// default), and the Flecs world with Phase's nine phases and their systems
-  /// registered (see header comment).
-  World(const parameters::Parameters& parameters, std::uint8_t tick_rate_hz, policy::Policy policy = {});
+  /// default), rifle, the markers of the rifle every player holds (ADR-0064;
+  /// all at its origin by default), and the Flecs world with Phase's nine
+  /// phases and their systems registered (see header comment).
+  World(const parameters::Parameters& parameters, std::uint8_t tick_rate_hz, policy::Policy policy = {},
+        const weapon::Markers& rifle = {});
   ~World();
 
   /// Adds immovable level geometry to this world's physics, the same way PredictionWorld does.
@@ -473,6 +512,10 @@ class World {
   /// kMaxShootersDelay. Returns the tick's Authoritative State and the actions
   /// Game policy took on it.
   TickResult Tick(const std::vector<PlayerCommand>& commands, float delta_time);
+
+  /// Where entity's rifle is, as the last tick's Posing placed it; nullopt for
+  /// a player not in the world, dead, or not yet posed by a tick.
+  [[nodiscard]] std::optional<HeldRifle> HeldRifleOf(EntityId entity) const;
 
 #if AUGUSTA_DEBUG_TOOLS
   /// Whether Tick builds the Shot judgements of the rounds fired from now on:

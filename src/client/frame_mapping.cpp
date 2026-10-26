@@ -71,7 +71,11 @@ presentation::WorldSnapshot ToPresentation(const harness::AuthoritativeState& st
   };
   snapshot.bodies.reserve(state.bodies.size());
   for (const harness::EntityBody& body : state.bodies) {
-    snapshot.bodies.push_back({.entity = ToPresentation(body.entity), .state = body.body, .yaw = body.yaw});
+    snapshot.bodies.push_back({.entity = ToPresentation(body.entity),
+                               .state = body.body,
+                               .yaw = body.yaw,
+                               .pitch = body.pitch,
+                               .ads = body.ads});
   }
   return snapshot;
 }
@@ -165,17 +169,6 @@ void ConvertedServerView::Update(const harness::ServerView& view) {
 std::span<const presentation::WorldSnapshot> ConvertedServerView::Updates() const { return updates_; }
 
 std::span<const presentation::PlayerCharacter> ConvertedServerView::Characters() const { return characters_; }
-
-std::vector<presentation::PlayerView> ViewsOf(const harness::ServerView& view) {
-  std::vector<presentation::PlayerView> views;
-  if (view.replay_view.has_value()) {
-    views.reserve(view.replay_view->players.size());
-    for (const harness::PlayerView& player : view.replay_view->players) {
-      views.push_back({.entity = ToPresentation(player.entity), .pitch = player.pitch, .ads = player.ads});
-    }
-  }
-  return views;
-}
 
 std::optional<presentation::MatchEnd> MatchEndOf(const harness::ServerView& view) {
   return view.match_end.transform([&view](const harness::MatchEnd& end) {

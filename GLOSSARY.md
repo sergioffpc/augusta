@@ -254,8 +254,7 @@ looks back in time), re-simulation (Reconciliation's replay of unacknowledged
 commands is the client's own), Reenactment (that goes through live clients)
 
 **Replay viewer**: A client watching a Replay: a Spectator from the first tick,
-with no body and no Commands, shown each watched player's pitch and ADS as well
-(ADR-0051). _Avoid_: Observer, ghost
+with no body and no Commands (ADR-0051). _Avoid_: Observer, ghost
 
 **Seen time**: The moment of the server's timeline a client's frame shows the
 other players at: the tick of an Authoritative State update and how far from it
@@ -491,9 +490,9 @@ carry none. _Avoid_: Bone, node, transform (a Joint has a transform; it is not
 one)
 
 **Rest pose**: The Hitbox pose a Character is in when nothing animates it — the
-pose it was authored in. What the engine poses a player by until a Character has
-Clips, and what a Skeleton's Joint transforms describe as authored. _Avoid_:
-Bind pose (that names the pose a mesh was skinned in, a client concern), T-pose,
+pose it was authored in. What a Skeleton's Joint transforms describe as
+authored, and where a Debug overlay places a Character's Hitboxes. _Avoid_: Bind
+pose (that names the pose a mesh was skinned in, a client concern), T-pose,
 default pose, idle (an idle is a Clip, not the absence of one)
 
 **Cosmetic layer**: Something the client draws on top of a player's Hitbox pose
@@ -509,6 +508,16 @@ distance its body moves and never by time. _Avoid_: Gait phase, cycle time
 
 **Aim offset**: The poses that bend a player's body by the pitch of its view.
 _Avoid_: Aim layer, look pose
+
+**Blend space**: A stance's Clips laid out over the body's velocity in its own
+space — idle, forward, backward, the sides, optional diagonals and, standing,
+sprint — whose weights at the body's velocity blend its pose, each Clip
+synchronised by the Stride. _Avoid_: State machine (the pose has no state of its
+own), locomotion graph
+
+**ADS grip**: A stance's pose of a player aiming down sights, added whole onto
+its body's pose while ADS is set: it shoulders the rifle with its Sight on the
+Eye. _Avoid_: ADS pose, aim layer (the Aim offset is the pitch's)
 
 **Shot**: One bullet fired, as the Authoritative server announces it to every
 client: who fired it, at which tick, from where and in which direction. Clients
@@ -526,13 +535,30 @@ salvo (a Burst is not a fire mode: the rifle is full-auto)
 its player holds it. _Avoid_: Eye (the Eye is where a player sees from, never
 where a round leaves), shot origin
 
+**Grip**: Where on a rifle the holding hand holds it: one of the rifle's
+markers, with the Muzzle, the Sight and the Fore-end, authored in its stage.
+_Avoid_: Handle, hand position
+
+**Fore-end**: Where on a rifle the support hand holds it, ahead of the Grip: one
+of the rifle's markers, which the left hand reaches by two-bone IK. _Avoid_:
+Handguard (the part, not the marker), support grip
+
+**Weapon socket**: Where on a Character's right hand the rifle's Grip hangs,
+authored with the Character, and the left hand that reaches the rifle's
+Fore-end. _Avoid_: Attachment point, hand bone, grip bone
+
+**Sight**: The point on a rifle the Eye looks through in ADS, and its line of
+sight: one of the rifle's markers. In ADS a Desktop player holds the rifle with
+its Sight on the Eye. _Avoid_: Scope, aim point
+
 **Recoil offset**: How far a rifle points off its player's view, as a pitch and
 a yaw: every round of a Burst adds its kick to it, scaled down in ADS, and it
 shrinks back to zero while the trigger is not pulled. A Shot leaves along the
-view turned by it. It is the rifle's, predicted and reconciled with it, and
-never part of a Command's view. _Avoid_: Spread (recoil is a fixed pattern, not
-random), kick (a kick is one round's addition to the offset), view punch, aim
-punch
+view turned by it, and the rifle held turns by it about its Grip; the body that
+holds the rifle does not. It is the rifle's, predicted and reconciled with it,
+and never part of a Command's view. _Avoid_: Spread (recoil is a fixed pattern,
+not random), kick (a kick is one round's addition to the offset), view punch,
+aim punch
 
 **Shooter's delay**: How far in the past the shooter saw other players when it
 fired: from the Seen time its fire Command reports to the tick the server takes
@@ -576,8 +602,9 @@ sights, trading movement/hip-fire speed for accuracy. _Avoid_: Zoom, scope
 
 **Spectator**: A dead player still in the Match: until the Match ends it watches
 from a living teammate's eye (any living player's once its Team has none),
-chosen in Session order and moved on with fire, and its input moves, turns and
-fires nothing. It never respawns. _Avoid_: Ghost, observer, dead cam
+looking where that player looks and zoomed by its ADS, chosen in Session order
+and moved on with fire, and its input moves, turns and fires nothing. It never
+respawns. _Avoid_: Ghost, observer, dead cam
 
 ### Audio
 

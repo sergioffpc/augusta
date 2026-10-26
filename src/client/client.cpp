@@ -20,6 +20,7 @@
 #include <nvtx3/nvtx3.hpp>
 
 #include "augusta/audio.h"
+#include "augusta/clips.h"
 #include "augusta/command.h"
 #include "augusta/cues.h"
 #include "augusta/failure.h"
@@ -191,11 +192,9 @@ struct ClientRuntime::Impl {
 
   // Main/Render thread only: the Server view's recent Authoritative State updates and Match
   // start as presentation's types, converted when they change and lent to
-  // every render frame in between (NextFrameInput); a Replay viewer's views
-  // of the newest tick, lent to the frame they are converted for; and the
-  // characters a Replay viewer has loaded.
+  // every render frame in between (NextFrameInput); and the characters a
+  // Replay viewer has loaded.
   ConvertedServerView converted_view;
-  std::vector<presentation::PlayerView> replay_views;
   std::set<std::string, std::less<>> replay_characters;
 
   // What the last render frame showed the other players at, or nullopt while
@@ -455,7 +454,7 @@ struct ClientRuntime::Impl {
   }
 
   Impl(const RuntimeConfig& cfg, const Map& map, const math::Vec3& eye, const audio::CueSounds& cue_sounds,
-       CharacterLoader loader)
+       CharacterLoader loader, std::shared_ptr<const animation::CharacterClips> clips)
       : config(cfg),
         load_character(std::move(loader)),
         input(cfg.input),
@@ -470,8 +469,9 @@ struct ClientRuntime::Impl {
     // account for that.
     // No rules of its own: the Session starts the prediction under the
     // server's once it has joined, so the two cannot drift.
-    // The Map goes into PresentationWorld too, for the tracers to meet.
-    prediction::World world;
+    // The Map goes into PresentationWorld too, for the tracers to meet. It
+    // predicts the Stride by the Clips of the character this player plays.
+    prediction::World world(std::move(clips));
     const auto added = map::AddCollision(world, map.collision).and_then([&] {
       return map::AddCollision(presentation, map.collision);
     });
@@ -730,7 +730,6 @@ struct ClientRuntime::Impl {
     const std::shared_ptr<const harness::ServerView> view = session->GetServerView();
     converted_view.Update(*view);
     const auto [aim, fire] = CurrentAim();
-    replay_views = ViewsOf(*view);
     const bool viewer = config.replay.has_value();
     presentation::FrameInput frame{
         .ticks = {.previous = latest.previous,
@@ -750,7 +749,6 @@ struct ClientRuntime::Impl {
                                [](const harness::AuthoritativeState& state) { return state.health; }),
         .match_end = MatchEndOf(*view),
         .replay_viewer = viewer,
-        .views = replay_views,
     };
     frame.local_entity = view->OwnEntity().transform([](harness::EntityId entity) { return ToPresentation(entity); });
     for (const harness::Shot& shot : session->TakeShots(*view)) {
@@ -842,7 +840,7 @@ struct ClientRuntime::Impl {
 
 ClientRuntime::ClientRuntime(const RuntimeConfig& config, Content content)
     : impl_(std::make_unique<Impl>(config, content.map, content.eye, content.cue_sounds,
-                                   std::move(content.load_character))) {
+                                   std::move(content.load_character), std::move(content.clips))) {
   impl_->renderer.SetScene(content.scene);
 }
 

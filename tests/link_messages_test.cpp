@@ -73,6 +73,9 @@ BodyState Body(float x, Stance stance) {
   body.velocity = Vec3(0.25F, -9.5F, 3.0F);
   body.stance = stance;
   body.stamina = 0.4F;
+  body.stride = static_cast<std::uint8_t>(200 + static_cast<int>(x));
+  body.previous_stance = stance == Stance::kProne ? Stance::kStanding : Stance::kProne;
+  body.stance_progress = static_cast<std::uint8_t>(100 + static_cast<int>(x));
   return body;
 }
 
@@ -83,6 +86,10 @@ void ExpectSameBody(const BodyState& actual, const BodyState& expected) {
   EXPECT_EQ(actual.stance, expected.stance);
   EXPECT_EQ(actual.stamina, augusta::math::SnapStamina(expected.stamina));
   EXPECT_EQ(actual.exhausted, expected.exhausted);
+  EXPECT_EQ(actual.grounded, expected.grounded);
+  EXPECT_EQ(actual.stride, expected.stride);
+  EXPECT_EQ(actual.previous_stance, expected.previous_stance);
+  EXPECT_EQ(actual.stance_progress, expected.stance_progress);
 }
 
 TEST(LinkMessagesTest, ACommandTheClientSendsReachesTheServerUnchanged) {
@@ -265,6 +272,51 @@ TEST(LinkMessagesTest, AnExhaustedBodyReachesTheClientStillExhausted) {
 
   ASSERT_EQ(received.bodies.size(), 2U);
   EXPECT_TRUE(received.bodies[0].body.exhausted);
+  EXPECT_FALSE(received.bodies[1].body.exhausted);
+}
+
+// The grounded flag (ADR-0062) reaches every client beside the exhausted and
+// ADS flags it shares a bitfield with, so a client poses a body in the air as
+// the server did.
+TEST(LinkMessagesTest, AGroundedBodyReachesTheClientStillGroundedAndOneInTheAirStillInIt) {
+  BodyState grounded = Body(1.0F, Stance::kStanding);
+  grounded.grounded = true;
+  grounded.exhausted = true;
+  const augusta::link::AuthoritativeState sent{
+      .tick = 7,
+      .acknowledged_sequence = 3,
+      .bodies = {{.entity = EntityId{1}, .body = grounded, .ads = true},
+                 {.entity = EntityId{2}, .body = Body(2.0F, Stance::kProne)}},
+  };
+
+  const augusta::link::AuthoritativeState received = FromWire(ThroughTheWire(ToWire(sent)));
+
+  ASSERT_EQ(received.bodies.size(), 2U);
+  ExpectSameBody(received.bodies[0].body, grounded);
+  EXPECT_TRUE(received.bodies[0].ads);
+  EXPECT_FALSE(received.bodies[1].body.grounded);
+}
+
+// Pitch and ADS reach every client in the body state, beside the exhausted
+// flag ADS shares a bitfield with (ADR-0038).
+TEST(LinkMessagesTest, ABodysPitchAndAdsReachTheClient) {
+  BodyState exhausted = Body(1.0F, Stance::kStanding);
+  exhausted.exhausted = true;
+  const augusta::link::AuthoritativeState sent{
+      .tick = 7,
+      .acknowledged_sequence = 3,
+      .bodies = {{.entity = EntityId{1}, .body = exhausted, .pitch = 0.5F, .ads = true},
+                 {.entity = EntityId{2}, .body = Body(2.0F, Stance::kProne), .pitch = -1.25F, .ads = false}},
+  };
+
+  const augusta::link::AuthoritativeState received = FromWire(ThroughTheWire(ToWire(sent)));
+
+  ASSERT_EQ(received.bodies.size(), 2U);
+  EXPECT_EQ(received.bodies[0].pitch, 0.5F);
+  EXPECT_TRUE(received.bodies[0].ads);
+  EXPECT_TRUE(received.bodies[0].body.exhausted);
+  EXPECT_EQ(received.bodies[1].pitch, -1.25F);
+  EXPECT_FALSE(received.bodies[1].ads);
   EXPECT_FALSE(received.bodies[1].body.exhausted);
 }
 
@@ -565,23 +617,6 @@ TEST(LinkMessagesTest, ADeathTheServerTellsReachesTheClientUnchanged) {
     EXPECT_EQ(received.yaw, sent.yaw);
     EXPECT_EQ(received.pitch, sent.pitch);
     EXPECT_EQ(received.part, part);
-  }
-}
-
-TEST(LinkMessagesTest, AReplayViewTheReplayServerSendsReachesTheViewerUnchanged) {
-  const augusta::link::ReplayView sent{
-      .tick = 90,
-      .players = {{.entity = EntityId{1}, .pitch = augusta::math::SnapAngle(0.25F), .ads = true},
-                  {.entity = EntityId{2}, .pitch = augusta::math::SnapAngle(-0.5F), .ads = false}}};
-
-  const augusta::link::ReplayView received = FromWire(ThroughTheWire(ToWire(sent)));
-
-  EXPECT_EQ(received.tick, sent.tick);
-  ASSERT_EQ(received.players.size(), sent.players.size());
-  for (std::size_t i = 0; i < sent.players.size(); ++i) {
-    EXPECT_EQ(received.players[i].entity, sent.players[i].entity);
-    EXPECT_EQ(received.players[i].pitch, sent.players[i].pitch);
-    EXPECT_EQ(received.players[i].ads, sent.players[i].ads);
   }
 }
 

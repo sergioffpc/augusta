@@ -33,6 +33,10 @@ enum class EncodeError {
   kPartialSample,
   /// A cue's sound has no variant, or a gain that is not a finite number.
   kInvalidCueSound,
+  /// A Clip's stride length is negative or not finite, a Foot contact of it
+  /// lies outside it, or a stance transition's duration is not a positive
+  /// finite number.
+  kInvalidAnimation,
 };
 
 /// A phrase for error that follows the name of what was encoded, e.g. "exceeds
@@ -64,6 +68,13 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeHitboxBlob(const Hitbox
 /// Encodes eye into the pack's eye-blob byte layout (ADR-0040).
 std::expected<std::vector<std::byte>, EncodeError> EncodeEyeBlob(const EyeData& eye);
 
+/// Encodes rifle into the pack's rifle-blob byte layout (ADR-0064).
+std::expected<std::vector<std::byte>, EncodeError> EncodeRifleBlob(const RifleData& rifle);
+
+/// Encodes socket into the pack's weapon-socket-blob byte layout (ADR-0066):
+/// kTooLarge for a Joint's name longer than a pack path.
+std::expected<std::vector<std::byte>, EncodeError> EncodeWeaponSocketBlob(const WeaponSocketData& socket);
+
 /// Encodes script, a Lua script's text, into the pack's script-blob byte layout
 /// (ADR-0031): the text itself, with no framing.
 std::expected<std::vector<std::byte>, EncodeError> EncodeScriptBlob(std::string_view script);
@@ -71,6 +82,22 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeScriptBlob(std::string_
 /// Encodes skeleton into the pack's skeleton-blob byte layout (ADR-0061):
 /// kTooLarge past kMaxJoints Joints.
 std::expected<std::vector<std::byte>, EncodeError> EncodeSkeletonBlob(const SkeletonData& skeleton);
+
+/// Encodes archive, an ozz::animation::Skeleton archive, into the pack's
+/// animation-skeleton blob byte layout (ADR-0066): the archive itself, with no
+/// framing. kTooLarge past kMaxArchiveBytes.
+std::expected<std::vector<std::byte>, EncodeError> EncodeAnimationSkeletonBlob(std::span<const std::byte> archive);
+
+/// Encodes clip into the pack's clip-blob byte layout (ADR-0066):
+/// kInvalidAnimation as the decoder would refuse it, kTooLarge past
+/// kMaxArchiveBytes or kMaxFootContacts.
+std::expected<std::vector<std::byte>, EncodeError> EncodeClipBlob(const ClipData& clip);
+
+/// Encodes transitions into the pack's stance-transitions blob byte layout
+/// (ADR-0066): kInvalidAnimation unless each duration is a positive finite
+/// number.
+std::expected<std::vector<std::byte>, EncodeError> EncodeStanceTransitionsBlob(
+    const StanceTransitionsData& transitions);
 
 /// Encodes characters, a scenario's character names in manifest order, into the
 /// pack's character-list blob byte layout (ADR-0042): kTooLarge past

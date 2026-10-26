@@ -47,14 +47,12 @@ using augusta::protocol::MatchPlayerWire;
 using augusta::protocol::MatchStartWire;
 using augusta::protocol::MessageWire;
 using augusta::protocol::ParametersWire;
-using augusta::protocol::PlayerViewWire;
 using augusta::protocol::ReadyWire;
 using augusta::protocol::ReenactRequestWire;
 using augusta::protocol::ReplayListingWire;
 using augusta::protocol::ReplayListRequestWire;
 using augusta::protocol::ReplayListWire;
 using augusta::protocol::ReplayRequestWire;
-using augusta::protocol::ReplayViewWire;
 using augusta::protocol::RosterEntryWire;
 using augusta::protocol::SequencedCommandWire;
 using augusta::protocol::SessionIdWire;
@@ -77,8 +75,11 @@ std::vector<Seed> SeedsOfEveryBuild() {
   const BodyStateWire body{.position = Vec3(12.5F, 1.75F, -40.0F),
                            .velocity = Vec3(3.0F, -0.5F, 4.25F),
                            .stamina = 0.25F,
-                           .flags = BodyStateWire::kExhausted,
-                           .stance = StanceWire::kCrouching};
+                           .flags = BodyStateWire::kExhausted | BodyStateWire::kAds | BodyStateWire::kGrounded,
+                           .stance = StanceWire::kCrouching,
+                           .stride = 200,
+                           .previous_stance = StanceWire::kProne,
+                           .stance_progress = 100};
   const CommandWire command{.direction = Vec3(0.6F, 0.0F, -0.8F),
                             .yaw = 1.5F,
                             .pitch = -0.25F,
@@ -108,7 +109,8 @@ std::vector<Seed> SeedsOfEveryBuild() {
        .message =
            AuthoritativeStateWire{
                .tick = 1200,
-               .bodies = {EntityStateWire{.entity = static_cast<EntityIdWire>(1), .body = body, .yaw = 1.5F},
+               .bodies = {EntityStateWire{
+                              .entity = static_cast<EntityIdWire>(1), .body = body, .yaw = 1.5F, .pitch = -0.25F},
                           EntityStateWire{.entity = static_cast<EntityIdWire>(2), .body = BodyStateWire{}}},
                .rifle = WeaponStateWire{.cooldown = 0.0625F,
                                         .reload_remaining = 1.75F,
@@ -160,12 +162,6 @@ std::vector<Seed> SeedsOfEveryBuild() {
        .message =
            ReplayRequestWire{
                .engine_version = "0.1.0", .client_pack = {}, .capture = "20261009T120000123Z-0001.acap", .run = run}},
-      {.name = "replay_view",
-       .message = ReplayViewWire{.tick = 1200,
-                                 .players = {PlayerViewWire{.pitch = -0.25F,
-                                                            .entity = static_cast<EntityIdWire>(1),
-                                                            .flags = PlayerViewWire::kAds},
-                                             PlayerViewWire{.pitch = 0.5F, .entity = static_cast<EntityIdWire>(2)}}}},
       {.name = "reenact_request",
        .message = ReenactRequestWire{.engine_version = "0.1.0",
                                      .client_pack = {},

@@ -29,6 +29,7 @@
 #include "augusta/protocol.h"
 #include "augusta/raw_link.h"
 #include "augusta/version.h"
+#include "clips_fixture.h"
 
 // What the Session tests' files share: a real server host and real client
 // sessions over loopback, driven by hand, and a client and a server speaking
@@ -101,7 +102,9 @@ inline Parameters WithPlayerCount(std::uint8_t count) {
 }
 
 // A PredictionWorld with no map, and nothing decided yet: a server decides it on the client's join.
-inline augusta::prediction::World EmptyWorld() { return augusta::prediction::World(); }
+inline augusta::prediction::World EmptyWorld() {
+  return augusta::prediction::World(augusta::clips_fixture::TestClips());
+}
 
 // ctest runs every test case in its own process, possibly in parallel, so a
 // fixed port would collide: each server binds port 0, a free one of its own

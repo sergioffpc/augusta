@@ -7,6 +7,7 @@
 #include <fstream>
 #include <functional>
 #include <ios>
+#include <map>
 #include <memory>
 #include <optional>
 #include <random>
@@ -19,6 +20,7 @@
 #include <boost/uuid/uuid_io.hpp>
 #include <gtest/gtest.h>
 
+#include "augusta/animation.h"
 #include "augusta/capture_records.h"
 #include "augusta/command.h"
 #include "augusta/content.h"
@@ -26,11 +28,14 @@
 #include "augusta/harness.h"
 #include "augusta/host.h"
 #include "augusta/link.h"
+#include "augusta/link_types.h"
 #include "augusta/logging.h"
 #include "augusta/match.h"
 #include "augusta/math.h"
+#include "augusta/pose.h"
 #include "augusta/reenactment.h"
 #include "augusta/tick.h"
+#include "clips_fixture.h"
 #include "session_test.h"
 
 // The reenactments debug tool end to end (ADR-0050), on a real server host and
@@ -64,10 +69,20 @@ using augusta::session_test::TestSessionConfig;
 using augusta::session_test::WithPlayerCount;
 using augusta::session_test::WorldWithFloorAt;
 
+// What a client was told of its own body on one tick: where its view looked,
+// whether it aimed down sights, and the pose its Character's Clips give the
+// body from that state, each Joint relative to its parent.
+struct Seen {
+  float pitch = 0.0F;
+  bool ads = false;
+  std::vector<augusta::animation::JointPose> pose;
+};
+
 // ADR-0050 end to end: a playtest of two players captured on one server, then
 // both reenacted at once, joining in the other order, against another server
 // with reenactments on and other Spawn points, whose own capture of the run is
-// compared with the playtest's.
+// compared with the playtest's. Both play the Holder (clips_fixture.h), whose
+// Aim offset and ADS grip pose it by its view.
 class ReenactmentHostTest : public ::testing::Test {
  protected:
   static constexpr float kFloorY = 0.0F;
@@ -102,9 +117,17 @@ class ReenactmentHostTest : public ::testing::Test {
     HostConfig config = TestHostConfig(WithPlayerCount(2));
     config.capture_directory = captures;
     config.reenactments = reenactments;
-    return std::make_unique<Host>(config, Scenario{.collision = {FloorAt(kFloorY)},
-                                                   .spawn_points = std::move(spawn_points),
-                                                   .characters = {{.path = kCharacter, .hitboxes = {}}}});
+    return std::make_unique<Host>(
+        config,
+        Scenario{.collision = {FloorAt(kFloorY)}, .spawn_points = std::move(spawn_points), .characters = {Holder()}});
+  }
+
+  static augusta::scenario::Character Holder() {
+    return augusta::scenario::Character{.path = kCharacter,
+                                        .hitboxes = {},
+                                        .skeleton = augusta::clips_fixture::HolderSkeleton(),
+                                        .eye = {},
+                                        .clips = augusta::clips_fixture::HolderClips()};
   }
 
   // One step of the whole Match: every client of sessions still connected
@@ -137,16 +160,58 @@ class ReenactmentHostTest : public ::testing::Test {
   }
 
   // The playtest's Command of player (from 0) on step: each a view of its own,
-  // so each is told apart in a capture, seen kSeenDelay before the newest State.
+  // so each is told apart in a capture, looking a little higher each step and
+  // in ADS for every other three, seen kSeenDelay before the newest State.
   static Command PlaytestCommand(const Session& session, std::size_t player, int step) {
     Command command;
     command.movement.direction = Vec3(player == 0 ? 1.0F : -1.0F, 0.0F, 0.0F);
     command.yaw = augusta::math::SnapAngle(0.02F * static_cast<float>(step) + (player == 0 ? 0.0F : 1.0F));
+    command.pitch = augusta::math::SnapAngle(-0.6F + (0.03F * static_cast<float>(step)) + (player == 0 ? 0.0F : 0.01F));
+    command.ads = (step / 3) % 2 == 1;
     const auto state = session.GetServerView()->authoritative;
     const augusta::tick::Tick newest =
         state.has_value() ? state->tick : session.GetServerView()->match_start->first_tick;
     command.seen_tick = newest - kSeenDelay;
     return command;
+  }
+
+  // Records, into seen by where it spawned, what each client of sessions in a
+  // Match was told of its own body on the newest State it has.
+  void Record(const std::vector<std::unique_ptr<Session>>& sessions, std::map<float, std::vector<Seen>>& seen) {
+    for (const auto& session : sessions) {
+      const auto& view = *session->GetServerView();
+      if (!view.match_start.has_value() || !view.authoritative.has_value() ||
+          session->GetConnectionState() != ConnectionState::kConnected) {
+        continue;
+      }
+      for (const auto& player : view.match_start->players) {
+        if (player.session != AdmittedSession(view)) {
+          continue;
+        }
+        for (const augusta::link::EntityBody& body : view.authoritative->bodies) {
+          if (body.entity != player.entity) {
+            continue;
+          }
+          augusta::animation::SkeletonPose posed;
+          poser_.Pose(*holder_.clips, holder_.skeleton,
+                      {.body = body.body, .yaw = body.yaw, .pitch = body.pitch, .ads = body.ads}, posed);
+          seen[player.spawn.x].push_back(Seen{.pitch = body.pitch, .ads = body.ads, .pose = posed.local});
+        }
+      }
+    }
+  }
+
+  // seen with each view held over several ticks once: a Reenactment's Commands
+  // reach the World within kTolerance ticks of their own, so a view may be held
+  // a tick longer or shorter than the playtest held it.
+  static std::vector<Seen> Views(const std::vector<Seen>& seen) {
+    std::vector<Seen> views;
+    for (const Seen& each : seen) {
+      if (views.empty() || views.back().pitch != each.pitch || views.back().ads != each.ads) {
+        views.push_back(each);
+      }
+    }
+    return views;
   }
 
   // The one capture in directory, once its host is gone, as player's Script.
@@ -175,6 +240,7 @@ class ReenactmentHostTest : public ::testing::Test {
         sessions[1]->Disconnect();
       }
       Step(*host, sessions, [&](std::size_t i) { return PlaytestCommand(*sessions[i], i, step); });
+      Record(sessions, played_);
     }
     host->EndMatch();
     host->Tick(kFixedTick);
@@ -217,6 +283,7 @@ class ReenactmentHostTest : public ::testing::Test {
       Step(*host, sessions, [&](std::size_t i) {
         return runs[i]->NextCommand(*sessions[i]->GetServerView(), sessions[i]->NextSequence(), 0);
       });
+      Record(sessions, reenacted_seen_);
     }
     host->EndMatch();
     host->Tick(kFixedTick);
@@ -248,6 +315,12 @@ class ReenactmentHostTest : public ::testing::Test {
 
   std::filesystem::path playtest_;
   std::filesystem::path reenacted_;
+  augusta::scenario::Character holder_ = Holder();
+  augusta::animation::Poser poser_;
+  // What each player was told of its own body, tick by tick, by where it
+  // spawned: in the playtest and in its Reenactment.
+  std::map<float, std::vector<Seen>> played_;
+  std::map<float, std::vector<Seen>> reenacted_seen_;
 };
 
 // Requirements: US-21
@@ -279,6 +352,36 @@ TEST_F(ReenactmentHostTest, EveryCapturedPlayerSpawnsWhereTheCaptureHasItAndItsC
   // The playtest's players are numbered in the order they were admitted, which
   // the two connecting at once leaves open: whichever it is, one left.
   EXPECT_NE(ReadPlayer(playtest_, 1).leave.has_value(), ReadPlayer(playtest_, 2).leave.has_value());
+}
+
+// The Commands re-run reproduce each player's view, its pitch and ADS, and so
+// the pose its Clips give its body (ADR-0066): each player's own body, as its
+// client is told it, takes the playtest's views in the playtest's order, each
+// posed as it was then.
+// Requirements: US-21
+TEST_F(ReenactmentHostTest, EachPlayersPitchAdsAndPoseAreThePlaytests) {
+  Playtest();
+  Reenact();
+
+  ASSERT_EQ(played_.size(), 2U);
+  for (const auto& [spawn, seen] : played_) {
+    SCOPED_TRACE(spawn);
+    const std::vector<Seen> played = Views(seen);
+    const std::vector<Seen> reenacted = Views(reenacted_seen_[spawn]);
+    ASSERT_GT(played.size(), 10U);
+    ASSERT_EQ(reenacted.size(), played.size());
+    for (std::size_t i = 0; i < played.size(); ++i) {
+      SCOPED_TRACE(i);
+      EXPECT_EQ(reenacted[i].pitch, played[i].pitch);
+      EXPECT_EQ(reenacted[i].ads, played[i].ads);
+      ASSERT_EQ(reenacted[i].pose.size(), played[i].pose.size());
+      for (std::size_t joint = 0; joint < played[i].pose.size(); ++joint) {
+        EXPECT_LT(augusta::math::Length(reenacted[i].pose[joint].translation - played[i].pose[joint].translation),
+                  1e-5F);
+        EXPECT_GT(std::abs(glm::dot(reenacted[i].pose[joint].rotation, played[i].pose[joint].rotation)), 1.0F - 1e-6F);
+      }
+    }
+  }
 }
 
 // A Captured player's Reenact request carries its Run ID as a Join request

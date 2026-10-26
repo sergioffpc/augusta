@@ -1,0 +1,6 @@
+ozz-animation provides CMake targets:
+
+    find_package(ozz-animation CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE ozz::animation)
+    # The offline libraries, which build its archives:
+    target_link_libraries(tool PRIVATE ozz::animation_offline)

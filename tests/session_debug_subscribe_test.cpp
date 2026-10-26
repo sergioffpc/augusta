@@ -16,6 +16,7 @@
 #include "augusta/math.h"
 #include "augusta/misbehaviour.h"
 #include "augusta/protocol.h"
+#include "scenario_fixture.h"
 #include "session_test.h"
 
 // Debug subscribe end to end (ADR-0038, ADR-0074), on a real server host and
@@ -78,7 +79,7 @@ class DebugSubscribeTest : public ::testing::Test {
   static Scenario FloorScenario() {
     return Scenario{.collision = {FloorAt(kFloorY)},
                     .spawn_points = {Vec3(0.0F, kFloorY, 0.0F), Vec3(10.0F, kFloorY, 0.0F)},
-                    .characters = {{.path = kCharacter, .hitboxes = {}}}};
+                    .characters = {augusta::scenario_fixture::Rigged({.path = kCharacter, .hitboxes = {}})}};
   }
 
   // Connects a new client and runs the network until the server has admitted it.

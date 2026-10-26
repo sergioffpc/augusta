@@ -390,7 +390,6 @@ class Outgoing {
 [[nodiscard]] std::expected<Outgoing, failure::Failure> Encode(const Shot& shot);
 [[nodiscard]] std::expected<Outgoing, failure::Failure> Encode(const HitConfirmation& hit);
 [[nodiscard]] std::expected<Outgoing, failure::Failure> Encode(const Death& death);
-[[nodiscard]] std::expected<Outgoing, failure::Failure> Encode(const ReplayView& view);
 [[nodiscard]] std::expected<Outgoing, failure::Failure> Encode(const std::vector<ReplayListing>& listings);
 #if AUGUSTA_DEBUG_TOOLS
 [[nodiscard]] std::expected<Outgoing, failure::Failure> Encode(const ShotJudgement& judgement);
