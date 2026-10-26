@@ -2,6 +2,125 @@
 
 Generated from the Conventional Commits history by git-cliff (cliff.toml).
 
+## 8.0.0 - 2026-10-26
+
+### Features
+
+- **bootstrap:** install CI's tools and Podman, and uninstall what it installs
+- **pack:** **BREAKING** cook a Character's UsdSkel Skeleton into both packs
+- **assets:** load a Character's Skeleton and bind each Hitbox to its Joint
+- **simulation:** pose a player's Hitboxes from its Skeleton in a Posing phase
+- **simulation:** keep posed Joints in the Hitbox history and interpolate them Joint by Joint
+- **pack:** **BREAKING** cook a Character's Clips into ozz-animation archives
+- **protocol:** **BREAKING** replicate view pitch and ADS in the Authoritative State
+- **simulation:** **BREAKING** place each player's Muzzle from its holding hand
+- **animation:** load a Character's Clips, and refuse to serve one without
+- **assets:** **BREAKING** cook the rifle's Grip, Muzzle and Sight; servers place Muzzles from them
+- **protocol:** **BREAKING** advance each player's Stride by distance, replicate and reconcile it
+- **animation:** pose Hitboxes from each stance's blend space, synchronised by the Stride
+- **animation:** bend the body by the Aim offset and raise it by the ADS grip
+- **animation:** blend a change of stance by a replicated previous stance and progress
+- **animation:** **BREAKING** hang the rifle from the right hand and reach it with the left by IK
+- **animation:** pose a body in the air by its air Clip and replicate kGrounded
+- **presentation:** pose a remote player from its interpolated state, as the server does
+- **simulation:** the held rifle turns about its Grip by the Recoil offset
+- **macos:** build, test and bootstrap natively on Apple silicon
+- **toolchain:** run the PyPI formatters and linters from .toolchain/bin
+- **toolchain:** run CI's and the operators' tools from .toolchain/bin
+- **toolchain:** link LLVM's clangd, clang-format and clang-tidy
+- **toolchain:** pin Prettier by package.json and its lockfile
+- **toolchain:** download yamlfmt, StyLua, luacheck, Taplo and buf into it
+- **bootstrap:** rename the toolchain step platform, which fills the store
+- **toolchain:** build the pinned luacheck where it has no release
+- **gameplay:** **BREAKING** add the rifle's zero range Parameter
+- **simulation:** fire rounds from the Muzzle, zeroed onto the line of sight
+- **simulation:** fire a round whose barrel is in a wall into the wall
+- **presentation:** show the local player's predicted muzzle flash at its Muzzle
+
+### Bug Fixes
+
+- **config:** align --help descriptions past the longest option
+- **pack:** read a sampled Clip's lanes through ozz-animation's own API
+- **physics:** value-initialise BodyState's position and velocity
+- **tests:** raise the open-file limit for the wildcard-ports test
+- **pack:** name usd-optimize, not ktx, as what keeps the cooker off macOS
+- **vscode:** build each launch config's own preset, configuring it first
+- **vscode:** pass --config to the lldb launch configs too
+- **toolchain:** run PyPI's tools on a pinned Python with their wheels
+- **toolchain:** extract release archives on a C:/ store, binary alone
+- **toolchain:** hand npm ci its directory's physical path
+- **toolchain:** run npm ci in the scratch directory's real path
+- **toolchain:** say why a tool does not run
+- **toolchain:** build luacheck's rock for a pinned Lua 5.4
+- **harness:** aim an AimAt down sights; shoulder the example soldier's rifle
+
+### Refactoring
+
+- **presentation:** delete the animation stub
+- **hitbox:** bind and place the overlay's Hitboxes in one loader, and assert bindings on the tick
+- **pack:** read a Skeleton through one function per check
+- **animation:** name the blend space's directions
+- **application:** rename Lifecycle to Program
+- **runtimes:** keep the Runtimes' headers beside their sources
+- **client:** prefix the Profiling and Network panels with debug_
+- **animation:** state the air Clip's ratio without magic numbers
+- **gameplay:** **BREAKING** remove the rifle's hip offset
+- **animation:** a clip load error names its cause as an enum
+- **simulation:** pose every Character by its Clips and weapon socket
+- **link:** assert the wire's end of a change of stance is physics'
+- **server:** prefix the Connection health and liveness with metrics_
+- **crash:** spell the Run ID stream type as its AUGR tag
+- **networking:** ask Asio for a free UDP port
+- split crash, version and hardware into a file per platform
+- **toolchain:** pin LLVM's release in versions.env
+- **toolchain:** remove toolchain.sh's duplicates, name its parts
+- **toolchain:** split toolchain.sh into its operations
+- **modules:** keep headers no other module includes beside their code
+- **modules:** move the headers of test-only targets beside their code
+- **networking:** split networking.cpp into single-responsibility files
+- **simulation:** take a view's heading and the rifle's shoulder from their modules
+- **protocol:** split protocol.cpp into encoder, decoder, framing and capture records
+- **host:** split host_metrics.cpp into counting, exposition and capture metrics
+- **config:** move the command line out of config.cpp
+- **host:** move the Capturer's writer to capture_writer.cpp
+- **agent:** split the native module's bindings into their own files
+- **assets:** split assets.cpp into pack writer, pack reader and keys
+- **client:** move the Runtime's debug tools out of client.cpp
+- **physics:** split physics.cpp into PhysX state, movement rules and recording
+- **simulation:** move the components and combat rules out of simulation.cpp
+
+### Documentation
+
+- **readme:** split installation from the development environment
+- **adr:** state the history's root apart, the vertical-only stance scale and HitDetection's empty phase
+- **animation:** state the module's responsibilities without its symbols
+- **vcpkg:** cite ADR-0008 in the x64-windows triplet
+- plan the Workbench release and record ADR-0077
+- name the macOS job's cache and its naming exception
+- **animation:** state who poses a player; drop ADR-0061's stale wire decision
+- define the toolchain and the bootstrap's platform and checkout steps
+- **adr:** record the Windows store's path-length limit in ADR-0077
+- **hardware:** restore the \file command in hardware_platform.h
+- **presentation:** name the phase that poses the local muzzle; state its approximation
+- **adr:** state ADR-0064's Muzzle as decided; let M21's exit hold for a barrel in a wall
+
+### Tests
+
+- **animation:** include what the Clip and ozz job tests use
+- **scenario:** tag the missing-Clip refusal with US-22
+- **animation:** pose the Aimer from a default body state
+- **harness:** a Reenactment reproduces each player's pitch, ADS and pose
+- **simulation:** in ADS the Holder's Sight sits on its Eye along the view
+- **physics:** a still body holds its Stride under a real stride length
+- include what the reenactment and simulation property tests use
+- fail a loopback step whose expected command never arrives
+- **simulation:** a hip-fired round past the zero range lands above and left of the sight
+
+### Build
+
+- **vcpkg:** build llvm and mesa release-only on Windows
+- copy vcpkg's DLLs into the test directories before linking
+- turn vcpkg's z-applocal off for the test executables
 ## 7.0.0 - 2026-10-24
 
 ### Features
