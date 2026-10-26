@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_LINK_MAPPING_H_
-#define AUGUSTA_LINK_MAPPING_H_
+#ifndef AUGUSTA_HOST_LINK_MAPPING_H_
+#define AUGUSTA_HOST_LINK_MAPPING_H_
 
 #include <cstdint>
 #include <span>
@@ -16,7 +16,7 @@
 
 /// \file
 /// The conversions Host makes at the Link's edge (ADR-0038), the way
-/// augusta/simulation_mapping.h makes them at SimulationWorld's: what Match
+/// simulation_mapping.h makes them at SimulationWorld's: what Match
 /// and replication decide to send, which name players and bodies by
 /// the server's own IDs, as the Link's messages (augusta/link_types.h), which
 /// name them by the same numbers. A Session ID is one boost::uuids::uuid on
@@ -69,4 +69,4 @@ void FillRecipientFields(link::AuthoritativeState& state, const replication::Rec
 
 }  // namespace augusta::host
 
-#endif  // AUGUSTA_LINK_MAPPING_H_
+#endif  // AUGUSTA_HOST_LINK_MAPPING_H_

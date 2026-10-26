@@ -16,7 +16,7 @@
 /// (ADR-0031/ADR-0032/ADR-0007), implemented in encoder.cpp/assets.cpp. The
 /// write half of the pack's wire format, for the cooker, which links it
 /// through its native module (tools/pack, ADR-0030), and for tests that build
-/// packs; augusta/pack_decoder.h is its read half.
+/// packs; pack_decoder.h, private to the module, is its read half.
 namespace augusta::assets {
 
 /// Why an Encode* function refused its input.

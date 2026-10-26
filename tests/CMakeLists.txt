@@ -65,6 +65,7 @@ target_link_libraries(
     benchmark::benchmark
     benchmark::benchmark_main
 )
+target_include_directories(augusta_benchmarks PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/host)
 target_compile_definitions(
   augusta_benchmarks
   PRIVATE AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs"
@@ -483,11 +484,13 @@ add_custom_target(
 
 add_executable(augusta_reconciliation_tests reconciliation_test.cpp)
 target_link_libraries(augusta_reconciliation_tests PRIVATE augusta_prediction GTest::gtest GTest::gtest_main)
+target_include_directories(augusta_reconciliation_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/prediction)
 # Links augusta_physics publicly, so the same PhysX DLL launch cost applies.
 gtest_discover_tests(augusta_reconciliation_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_correction_tests correction_test.cpp)
 target_link_libraries(augusta_correction_tests PRIVATE augusta_presentation GTest::gtest GTest::gtest_main)
+target_include_directories(augusta_correction_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/presentation)
 # Links augusta_prediction publicly (so PhysX), same first-launch cost as above.
 gtest_discover_tests(augusta_correction_tests DISCOVERY_TIMEOUT 30)
 
@@ -518,6 +521,7 @@ gtest_discover_tests(augusta_effects_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_audio_cues_tests audio_cues_test.cpp)
 target_link_libraries(augusta_audio_cues_tests PRIVATE augusta_presentation GTest::gtest GTest::gtest_main)
+target_include_directories(augusta_audio_cues_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/presentation)
 # Links augusta_prediction publicly (so PhysX), same first-launch cost as above.
 gtest_discover_tests(augusta_audio_cues_tests DISCOVERY_TIMEOUT 30)
 
@@ -540,6 +544,7 @@ target_link_libraries(
     GTest::gtest
     GTest::gtest_main
 )
+target_include_directories(augusta_prediction_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/presentation)
 # Links augusta_physics publicly, so the same PhysX DLL launch cost applies.
 gtest_discover_tests(augusta_prediction_tests DISCOVERY_TIMEOUT 30)
 
@@ -770,6 +775,7 @@ target_link_libraries(
     GTest::gtest
     GTest::gtest_main
 )
+target_include_directories(augusta_transport_failure_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/host)
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_transport_failure_tests DISCOVERY_TIMEOUT 30)
 
@@ -803,6 +809,7 @@ gtest_discover_tests(augusta_link_transport_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_tick_messages_tests tick_messages_test.cpp)
 target_link_libraries(augusta_tick_messages_tests PRIVATE augusta_host augusta_protocol GTest::gtest GTest::gtest_main)
+target_include_directories(augusta_tick_messages_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/host)
 # Links networking and PhysX through augusta_host, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_tick_messages_tests DISCOVERY_TIMEOUT 30)
 
@@ -813,11 +820,13 @@ target_link_libraries(
   augusta_simulation_mapping_tests
   PRIVATE augusta_host augusta_animation ozz::animation_offline GTest::gtest GTest::gtest_main
 )
+target_include_directories(augusta_simulation_mapping_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/host)
 # Links PhysX through augusta_physics, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_simulation_mapping_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_assets_tests assets_test.cpp)
 target_link_libraries(augusta_assets_tests PRIVATE augusta_assets GTest::gtest GTest::gtest_main)
+target_include_directories(augusta_assets_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/assets)
 # WritePack/Encode*/Pack::Load round-trip coverage, through augusta_assets'
 # public pack encoder (augusta/pack_encoder.h).
 gtest_discover_tests(augusta_assets_tests DISCOVERY_TIMEOUT 30)

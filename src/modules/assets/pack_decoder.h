@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_PACK_DECODER_H_
-#define AUGUSTA_PACK_DECODER_H_
+#ifndef AUGUSTA_ASSETS_PACK_DECODER_H_
+#define AUGUSTA_ASSETS_PACK_DECODER_H_
 
 #include <optional>
 #include <span>
@@ -39,4 +39,4 @@ std::optional<StanceTransitionsData> DecodeStanceTransitionsBlob(std::span<const
 
 }  // namespace augusta::assets
 
-#endif  // AUGUSTA_PACK_DECODER_H_
+#endif  // AUGUSTA_ASSETS_PACK_DECODER_H_

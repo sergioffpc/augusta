@@ -32,14 +32,14 @@
 #include "augusta/math.h"
 #include "augusta/misbehaviour.h"
 #include "augusta/parameters.h"
-#include "augusta/peer_gate.h"
 #include "augusta/policy.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
-#include "augusta/tick_messages.h"
+#include "peer_gate.h"
+#include "tick_messages.h"
 
 #if AUGUSTA_DEBUG_TOOLS
-#include "augusta/debug_subscriptions.h"
+#include "debug_subscriptions.h"
 #endif
 
 /// \file

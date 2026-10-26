@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_SIMULATION_MAPPING_H_
-#define AUGUSTA_SIMULATION_MAPPING_H_
+#ifndef AUGUSTA_HOST_SIMULATION_MAPPING_H_
+#define AUGUSTA_HOST_SIMULATION_MAPPING_H_
 
 #include <cstdint>
 #include <string>
@@ -17,7 +17,7 @@
 
 /// \file
 /// The conversions Host makes at SimulationWorld's edge, the way
-/// augusta/link_mapping.h makes them at the Link's: Match's names for players
+/// link_mapping.h makes them at the Link's: Match's names for players
 /// and bodies into SimulationWorld's, which are the same numbers, and the pack's
 /// characters into what SimulationWorld judges hits against; and the World
 /// itself, built from the scenario.
@@ -54,4 +54,4 @@ namespace augusta::host {
 
 }  // namespace augusta::host
 
-#endif  // AUGUSTA_SIMULATION_MAPPING_H_
+#endif  // AUGUSTA_HOST_SIMULATION_MAPPING_H_

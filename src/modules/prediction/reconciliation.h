@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_RECONCILIATION_H_
-#define AUGUSTA_RECONCILIATION_H_
+#ifndef AUGUSTA_PREDICTION_RECONCILIATION_H_
+#define AUGUSTA_PREDICTION_RECONCILIATION_H_
 
 #include <cstddef>
 #include <cstdint>
@@ -81,4 +81,4 @@ class History {
 
 }  // namespace augusta::prediction
 
-#endif  // AUGUSTA_RECONCILIATION_H_
+#endif  // AUGUSTA_PREDICTION_RECONCILIATION_H_

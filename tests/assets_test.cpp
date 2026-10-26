@@ -19,8 +19,8 @@
 #include <gtest/gtest.h>
 
 #include "augusta/math.h"
-#include "augusta/pack_decoder.h"
 #include "augusta/pack_encoder.h"
+#include "pack_decoder.h"
 
 // Unit tests for augusta_assets, including its pack encoder
 // (augusta/pack_encoder.h's Encode*/WritePack). Links only augusta_assets - no

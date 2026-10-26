@@ -32,6 +32,7 @@ file(
   "${SOURCE_DIR}/src/modules/harness/include/augusta/*.h"
   "${SOURCE_DIR}/src/modules/simulation/include/augusta/replication*.h"
   "${SOURCE_DIR}/src/modules/presentation/include/augusta/*.h"
+  "${SOURCE_DIR}/src/modules/presentation/*.h"
   "${SOURCE_DIR}/src/modules/capture/include/augusta/*.h"
   "${SOURCE_DIR}/src/modules/link/include/augusta/link_types.h"
   "${SOURCE_DIR}/src/modules/host/include/augusta/*.h"
@@ -53,7 +54,11 @@ foreach(header ${headers})
   endforeach()
 endforeach()
 
-file(GLOB presentation_headers "${SOURCE_DIR}/src/modules/presentation/include/augusta/*.h")
+file(
+  GLOB presentation_headers
+  "${SOURCE_DIR}/src/modules/presentation/include/augusta/*.h"
+  "${SOURCE_DIR}/src/modules/presentation/*.h"
+)
 if(NOT presentation_headers)
   message(FATAL_ERROR "protocol_boundary.cmake: no presentation headers found under ${SOURCE_DIR}")
 endif()

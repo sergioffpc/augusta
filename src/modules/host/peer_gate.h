@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_PEER_GATE_H_
-#define AUGUSTA_PEER_GATE_H_
+#ifndef AUGUSTA_HOST_PEER_GATE_H_
+#define AUGUSTA_HOST_PEER_GATE_H_
 
 #include <chrono>
 #include <functional>
@@ -89,4 +89,4 @@ void PumpPeers(link::Server& network, HostMetrics& metrics, std::mutex& mutex, P
 
 }  // namespace augusta::host
 
-#endif  // AUGUSTA_PEER_GATE_H_
+#endif  // AUGUSTA_HOST_PEER_GATE_H_

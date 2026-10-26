@@ -42,8 +42,8 @@ augusta_set_module_scope(augusta_host_heartbeat SERVER_ONLY)
 
 # The Host itself: the server's end of the Link and SimulationWorld, driven by
 # hand (see augusta/host.h), and the conversions it makes at its edges - into
-# the Link's messages (see augusta/link_mapping.h) and into SimulationWorld's (see
-# augusta/simulation_mapping.h) - with the Match capture it writes (see
+# the Link's messages (see link_mapping.h) and into SimulationWorld's (see
+# simulation_mapping.h) - with the Match capture it writes (see
 # augusta/capturer.h, ADR-0050) and what it counts for the metrics endpoint (see
 # augusta/host_metrics.h, ADR-0049).
 find_package(prometheus-cpp CONFIG REQUIRED)
@@ -89,7 +89,7 @@ target_link_libraries(
 )
 augusta_set_module_scope(augusta_host SERVER_ONLY)
 # Which streams of the server's state each peer subscribed to (see
-# augusta/debug_subscriptions.h), in a Development build alone (ADR-0074).
+# debug_subscriptions.h), in a Development build alone (ADR-0074).
 if(AUGUSTA_DEBUG_TOOLS)
   target_sources(augusta_host PRIVATE debug_subscriptions.cpp)
 endif()

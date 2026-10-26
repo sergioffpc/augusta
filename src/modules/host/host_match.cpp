@@ -22,21 +22,21 @@
 #include "augusta/host_log.h"
 #include "augusta/host_metrics.h"
 #include "augusta/link.h"
-#include "augusta/link_mapping.h"
 #include "augusta/logging.h"
 #include "augusta/match.h"
 #include "augusta/math.h"
 #include "augusta/policy_actions.h"
 #include "augusta/replication.h"
 #include "augusta/simulation.h"
-#include "augusta/simulation_mapping.h"
 #include "augusta/tick.h"
-#include "augusta/tick_messages.h"
 #include "host_impl.h"
+#include "link_mapping.h"
+#include "simulation_mapping.h"
+#include "tick_messages.h"
 
 #if AUGUSTA_DEBUG_TOOLS
-#include "augusta/debug_subscriptions.h"
 #include "augusta/link_types.h"
+#include "debug_subscriptions.h"
 #endif
 
 namespace augusta::host {
