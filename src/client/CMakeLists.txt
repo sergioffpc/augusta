@@ -11,8 +11,9 @@
 
 # What the client loads from its verified pack at startup: the scene graph as
 # renderer::Scene (see client_scene_loader.h), the characters other players
-# bring (see client_character_loader.h), the map's collision, every cue's sound
-# and the local player's Character's Clips (see client_content.h).
+# bring (see client_character_loader.h), the map's collision, every cue's sound,
+# the local player's Character's Skeleton and Clips and the scenario's rifle (see
+# client_content.h).
 add_library(augusta_client_content STATIC client_scene_loader.cpp client_character_loader.cpp client_content.cpp)
 target_include_directories(
   augusta_client_content
@@ -25,6 +26,7 @@ target_link_libraries(
     augusta_assets
     augusta_cues
     augusta_failure
+    augusta_gameplay
     augusta_math
     augusta_physics
     augusta_window_events
@@ -42,9 +44,9 @@ target_link_libraries(
 )
 augusta_set_module_scope(augusta_client_frame_mapping CLIENT_ONLY)
 if(AUGUSTA_DEBUG_TOOLS)
-  # augusta_gameplay: a character's Hitboxes, for the Hitboxes Debug overlay,
+  # A character's Hitboxes (augusta_gameplay), for the Hitboxes Debug overlay,
   # placed in its space by augusta_animation's Rest pose.
-  target_link_libraries(augusta_client_content PUBLIC augusta_debug augusta_gameplay)
+  target_link_libraries(augusta_client_content PUBLIC augusta_debug)
   target_link_libraries(augusta_client_frame_mapping PUBLIC augusta_debug)
 endif()
 

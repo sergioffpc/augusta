@@ -529,7 +529,12 @@ target_include_directories(augusta_audio_cues_tests PRIVATE ${CMAKE_SOURCE_DIR}/
 gtest_discover_tests(augusta_audio_cues_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_presentation_tests presentation_test.cpp)
-target_link_libraries(augusta_presentation_tests PRIVATE augusta_presentation GTest::gtest GTest::gtest_main)
+# Links augusta_animation and ozz-animation's offline libraries for the Clips of
+# the local player's Character it authors (clips_fixture.h).
+target_link_libraries(
+  augusta_presentation_tests
+  PRIVATE augusta_presentation augusta_animation ozz::animation_offline GTest::gtest GTest::gtest_main
+)
 # Links augusta_prediction publicly (so PhysX), same first-launch cost as above.
 gtest_discover_tests(augusta_presentation_tests DISCOVERY_TIMEOUT 30)
 
@@ -837,6 +842,18 @@ target_link_libraries(
 target_include_directories(augusta_simulation_mapping_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/host)
 # Links PhysX through augusta_physics, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_simulation_mapping_tests DISCOVERY_TIMEOUT 30)
+
+# The example soldier holding the example rifle, as a server loads and poses
+# them from the golden server pack (ADR-0064, ADR-0066).
+add_executable(augusta_example_soldier_tests example_soldier_test.cpp)
+target_link_libraries(augusta_example_soldier_tests PRIVATE augusta_host GTest::gtest GTest::gtest_main)
+target_include_directories(augusta_example_soldier_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/host)
+target_compile_definitions(
+  augusta_example_soldier_tests
+  PRIVATE AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs"
+)
+# Links PhysX through augusta_physics, so the same first-launch cost applies as above.
+gtest_discover_tests(augusta_example_soldier_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_assets_tests assets_test.cpp)
 target_link_libraries(augusta_assets_tests PRIVATE augusta_assets GTest::gtest GTest::gtest_main)

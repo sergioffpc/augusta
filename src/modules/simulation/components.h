@@ -78,9 +78,20 @@ struct HitboxHistory {
   PoseHistory poses;
 };
 
-/// A player's rifle, as WeaponHandling left it.
+/// A round WeaponHandling fired this tick, for Posing to fire from the Muzzle it
+/// places: the view it is aimed along, the Command's turned by the Recoil offset
+/// from before its own kick, that offset, and its Shooter's delay.
+struct FiredRound {
+  weapon::Heading aim{};
+  weapon::RecoilOffset recoil{};
+  float shooters_delay = 0.0F;
+};
+
+/// A player's rifle, as WeaponHandling left it, and the round it fired this
+/// tick, if it fired one.
 struct Rifle {
   weapon::State state{};
+  std::optional<FiredRound> fired;
 };
 
 /// A player's character's Clips (Character::clips).

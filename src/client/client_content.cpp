@@ -15,6 +15,7 @@
 #include "augusta/map.h"
 #include "augusta/math.h"
 #include "augusta/renderer.h"
+#include "augusta/weapon.h"
 #include "client_character_loader.h"
 #include "client_scene_loader.h"
 
@@ -58,18 +59,25 @@ std::expected<math::Vec3, failure::Failure> LoadEye(const assets::Pack& pack, st
   return *eye;
 }
 
-// The Clips of character, the one this player asked to play, from pack: what its
-// predicted Stride advances by (ADR-0066). The server refuses a pack whose Clips
-// do not load, so a client refuses it too, naming the part as the server does.
-std::expected<std::shared_ptr<const animation::CharacterClips>, failure::Failure> LoadClips(
-    const assets::Pack& pack, std::string_view character) {
-  std::vector<failure::ContextField> context = {{.key = "character", .value = std::string(character)}};
-  const auto skeleton = pack.ResolveSkeleton(character);
+// The Skeleton of character, the one this player asked to play, from pack: what
+// its Clips pose.
+std::expected<assets::Skeleton, failure::Failure> LoadSkeleton(const assets::Pack& pack, std::string_view character) {
+  auto skeleton = pack.ResolveSkeleton(character);
   if (!skeleton) {
-    return std::unexpected(
-        ContentFailure(pack, std::move(context), assets::DescribeResolveError(skeleton.error(), "skeleton")));
+    return std::unexpected(ContentFailure(pack, {{.key = "character", .value = std::string(character)}},
+                                          assets::DescribeResolveError(skeleton.error(), "skeleton")));
   }
-  auto clips = animation::LoadClips(pack, character, *skeleton);
+  return *std::move(skeleton);
+}
+
+// The Clips of character, the one this player asked to play, of its skeleton,
+// from pack: what its predicted Stride advances by and its body holds the rifle
+// with (ADR-0066). The server refuses a pack whose Clips do not load, so a client
+// refuses it too, naming the part as the server does.
+std::expected<std::shared_ptr<const animation::CharacterClips>, failure::Failure> LoadClips(
+    const assets::Pack& pack, std::string_view character, const assets::Skeleton& skeleton) {
+  std::vector<failure::ContextField> context = {{.key = "character", .value = std::string(character)}};
+  auto clips = animation::LoadClips(pack, character, skeleton);
   if (!clips) {
     if (clips.error().part == animation::ClipPart::kClip) {
       context.push_back({.key = "clip", .value = clips.error().role});
@@ -121,6 +129,18 @@ std::expected<CharacterLoader, failure::Failure> CharacterLoaderFor(const assets
               });
         });
   };
+}
+
+// The scenario's rifle from pack (ADR-0064), whose Muzzle the local player's
+// muzzle flash shows at. The server refuses a pack whose rifle does not resolve,
+// so a client refuses it too.
+std::expected<weapon::Markers, failure::Failure> LoadRifle(const assets::Pack& pack) {
+  const auto rifle = pack.ResolveRifle();
+  if (!rifle) {
+    return std::unexpected(ContentFailure(pack, {{.key = "asset", .value = std::string(assets::kRiflePath)}},
+                                          assets::DescribeResolveError(rifle.error(), "rifle")));
+  }
+  return weapon::MarkersOf(*rifle);
 }
 
 // The map's collision from pack.
@@ -176,9 +196,19 @@ std::expected<Content, failure::Failure> LoadClientContent(const assets::Pack& p
     return std::unexpected(std::move(cue_sounds.error()));
   }
 
-  auto clips = LoadClips(pack, character);
+  auto skeleton = LoadSkeleton(pack, character);
+  if (!skeleton) {
+    return std::unexpected(std::move(skeleton.error()));
+  }
+
+  auto clips = LoadClips(pack, character, *skeleton);
   if (!clips) {
     return std::unexpected(std::move(clips.error()));
+  }
+
+  const auto rifle = LoadRifle(pack);
+  if (!rifle) {
+    return std::unexpected(rifle.error());
   }
 
   return Content{.eye = *eye,
@@ -186,7 +216,9 @@ std::expected<Content, failure::Failure> LoadClientContent(const assets::Pack& p
                  .map = *std::move(map),
                  .load_character = *std::move(load_character),
                  .cue_sounds = *std::move(cue_sounds),
-                 .clips = *std::move(clips)};
+                 .skeleton = *std::move(skeleton),
+                 .clips = *std::move(clips),
+                 .rifle = *rifle};
 }
 
 }  // namespace augusta::client

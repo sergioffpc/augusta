@@ -11,7 +11,8 @@
 /// The fight's short-lived effects (ADR-0024's Interpolation phase): muzzle
 /// flashes, and the impacts tracers leave on the Map (tracers.h). Each shows at
 /// a point for a moment and is gone. The local player's flashes come from its
-/// predicted fire, every other player's from its Shots (ADR-0044).
+/// predicted fire, every other player's from its Shots, at the Muzzle each left
+/// from (ADR-0044, ADR-0064).
 ///
 /// Pure - no clock, no ECS - so it is tested on its own; PresentationWorld feeds
 /// it each frame (see presentation.cpp).
@@ -32,11 +33,6 @@ struct Effect {
 /// Ages every effect by elapsed seconds and forgets those whose age reaches
 /// lifetime. An effect added after the frame's call shows on that frame.
 void Age(std::vector<Effect>& effects, float elapsed, float lifetime);
-
-/// Where the muzzle flash of a round leaving from eye (a Shot's origin) for
-/// direction shows: a short way ahead of the eye along it, where the rifle's
-/// muzzle is.
-[[nodiscard]] math::Vec3 MuzzleOf(const math::Vec3& eye, const math::Vec3& direction);
 
 /// Counts the rounds the local player's rifle fired between two frames, from
 /// the running total each Prediction State carries

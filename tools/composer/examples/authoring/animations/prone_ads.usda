@@ -10,7 +10,7 @@
 def SkelAnimation "Clip"
 {
     uniform token[] joints = ["Root", "Root/Pelvis", "Root/Pelvis/Spine", "Root/Pelvis/Spine/Head", "Root/Pelvis/Spine/LeftShoulder", "Root/Pelvis/Spine/RightShoulder", "Root/Pelvis/LeftHip", "Root/Pelvis/RightHip", "Root/Pelvis/Spine/LeftShoulder/LeftElbow", "Root/Pelvis/Spine/RightShoulder/RightElbow", "Root/Pelvis/Spine/LeftShoulder/LeftElbow/LeftHand", "Root/Pelvis/Spine/RightShoulder/RightElbow/RightHand"]
-    float3[] translations = [(0, 0, 0), (0, 0.15, 0), (0, 0.35, 0), (0, 0.35, 0), (-0.2, 0.35, -0.2), (0.25, 0.3, -0.25), (-0.12, 0, 0), (0.12, 0, 0), (0, -0.3, 0), (0, -0.3, 0), (0, -0.3, 0), (0, -0.3, 0)]
-    quatf[] rotations = [(1, 0, 0, 0), (0.707107, -0.707107, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0)]
+    float3[] translations = [(0, 0, 0), (0, 0.15, 0), (0, 0.35, 0), (0, 0.35, 0), (-0.2, 0.35, -0.2), (0.25, 0.3, -0.25), (-0.12, 0, 0), (0.12, 0, 0), (0, -0.3, 0), (0, -0.3, 0), (0, -0.3, 0), (-0.25, -0.3, 0.546667)]
+    quatf[] rotations = [(1, 0, 0, 0), (0.707107, -0.707107, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0), (0.707107, 0.707107, 0, 0)]
     half3[] scales = [(1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1)]
 }

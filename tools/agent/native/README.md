@@ -14,7 +14,8 @@ Harness alone, so it links no protocol or networking of its own.
 ## Not its responsibility
 
 - The Python bindings and the dispatch thread that hands Reports to a script:
-  the Agents' Python module (`module.cpp`, `augusta_agent_py`).
+  the Agents' Python module (`augusta_agent_py`: `module.cpp`, `bindings.h`,
+  `dispatch.h`).
 - The in-process server the tests play against: `augusta_agent_testing_server`,
   beside it.
 - The Session, its prediction and its Intents' execution: harness.

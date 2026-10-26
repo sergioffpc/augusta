@@ -16,8 +16,9 @@
 
 /// \file
 /// Private (not under include/augusta/, never installed) byte-level
-/// primitives shared by encoder.cpp, decoder.cpp, and assets.cpp's own
-/// pack-container (header/index/trailer) assembly and parsing - the same
+/// primitives shared by encoder.cpp, decoder.cpp, and the pack-container
+/// (header/index/trailer) assembly and parsing of pack_writer.cpp and
+/// pack_reader.cpp (its layout is pack_format.h's) - the same
 /// length-prefixed little-endian encoding (ADR-0007) underlies every blob
 /// type's wire format and the container around them, so this is the one
 /// place both sides of every read/write pair agree on it.
@@ -32,7 +33,7 @@ inline constexpr std::uint32_t kByteMask = 0xFFU;
 /// Every place that narrows a size_t count into a u32 wire field checks
 /// the relevant limit below first, which doubles as the narrowing guard:
 /// all limits are comfortably under UINT32_MAX. kMaxPathLength is also
-/// reused directly by assets.cpp's ValidateEntries (an AssetEntry's path
+/// reused directly by pack_writer.cpp's ValidateEntries (an AssetEntry's path
 /// is the same kind of string WriteString/ReadString cap here).
 inline constexpr std::uint32_t kMaxPathLength = 4096;
 inline constexpr std::uint32_t kMaxMeshPoints = 16'000'000;
@@ -143,7 +144,7 @@ class ByteWriter {
 
 /// Reads primitive values out of a byte span left-to-right, failing (via
 /// std::nullopt) the moment a read would run past the end - the one place
-/// every decode path (blob decoders, plus assets.cpp's own header/index
+/// every decode path (blob decoders, plus pack_reader.cpp's own header/index
 /// parsing) routes every bounds check through.
 class ByteReader {
  public:

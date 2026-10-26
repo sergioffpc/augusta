@@ -2,9 +2,9 @@
 """Checks every environment's packs are of the format the engine reads.
 
 The engine refuses a pack written in any pack format version but its own
-(kFormatVersion in src/modules/assets/assets.cpp, ADR-0031), so a server whose
-pack is of another format exits at startup. Each server entry in clusters/ that
-names a packVersion records next to it the packFormat that pack was cooked
+(kFormatVersion in src/modules/assets/pack_format.h, ADR-0031), so a server
+whose pack is of another format exits at startup. Each server entry in clusters/
+that names a packVersion records next to it the packFormat that pack was cooked
 with, as augusta-publish prints it. This fails on an entry with no packFormat,
 or one other than the engine's: a change to the format moves every
 environment to packs re-cooked in it (docs/runbooks/cut-release.md).
@@ -19,7 +19,7 @@ import sys
 import yaml
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
-_ASSETS = pathlib.PurePosixPath("src/modules/assets/assets.cpp")
+_HEADER = pathlib.PurePosixPath("src/modules/assets/pack_format.h")
 _FORMAT_VERSION = re.compile(
     r"constexpr\s+\S+\s+kFormatVersion\s*=\s*(\d+)\s*;"
 )
@@ -29,13 +29,13 @@ def engine_format(root):
     """The pack format version the engine at root reads and writes.
 
     Raises:
-        ValueError: assets.cpp does not define kFormatVersion exactly once.
+        ValueError: pack_format.h does not define kFormatVersion exactly once.
     """
-    source = (root / _ASSETS).read_text(encoding="utf-8")
+    source = (root / _HEADER).read_text(encoding="utf-8")
     versions = _FORMAT_VERSION.findall(source)
     if len(versions) != 1:
         raise ValueError(
-            f"{_ASSETS} defines kFormatVersion {len(versions)} times, not once"
+            f"{_HEADER} defines kFormatVersion {len(versions)} times, not once"
         )
     return int(versions[0])
 
@@ -81,7 +81,7 @@ def mismatches(documents, expected):
             elif pack_format != expected:
                 errors.append(
                     f"{path}.packFormat is {pack_format}, but the engine reads "
-                    f"pack format {expected} (kFormatVersion in {_ASSETS}): "
+                    f"pack format {expected} (kFormatVersion in {_HEADER}): "
                     f"cook and publish the scenario's packs in format "
                     f"{expected}, and move packVersion and packFormat to them"
                 )

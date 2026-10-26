@@ -1095,6 +1095,16 @@ class LoopbackMatch : public ::testing::Test {
         .policy = {}};
   }
 
+  // Has setup's one character see from eye_height above its feet, and hold its
+  // rifle there (scenario_fixture::Rigged): a round leaves from its Eye.
+  static void SeeingFrom(HostSetup& setup, float eye_height) {
+    augusta::scenario::Character& character = setup.scenario.characters.front();
+    character = augusta::scenario_fixture::Rigged({.path = character.path,
+                                                   .hitboxes = std::move(character.hitboxes),
+                                                   .skeleton = augusta::session_test::RootSkeleton(),
+                                                   .eye = Vec3(0.0F, eye_height, 0.0F)});
+  }
+
   // Connects a new client and runs the network until the server has answered
   // it, admitted or not. The client's own stamina rules are none: any it uses
   // came from the server.
@@ -2185,7 +2195,8 @@ class ScriptedParametersTest : public LoopbackMatch {
         "  forced_walk_below = 0.2,\n"
         "},\n"
         "  rifle = { magazine_capacity = 30, rounds_per_minute = 600, muzzle_velocity = 800, reload_seconds = 2.5,\n"
-        "    recoil_pattern = {}, recoil_recovery_per_second = 0, ads_recoil_scale = 1, ads_field_of_view = 0.7 },\n"
+        "    recoil_pattern = {}, recoil_recovery_per_second = 0, ads_recoil_scale = 1, ads_field_of_view = 0.7,\n"
+        "    zero_range = 100 },\n"
         "  ammo = { gravity = 9.81, max_range = 1000, damage = { head = 100, torso = 34, limb = 25 } },\n"
         "  starting_health = 100,\n"
         "}",
@@ -3667,9 +3678,10 @@ TEST_F(AdmissionDeadlineTest, AJoinRefusedAsTheDeadlinePassesIsStillToldBeforeTh
 
 // A match of kPlayers on the floor, each with the test rifle: 600 rounds a
 // minute, a round every six ticks at the test tick rate, and a magazine of 15
-// that takes half a second, 30 ticks, to reload. Its recoil pattern is three
-// kicks, each a whole count of the angle grid's step so their sums are exact,
-// halved in ADS, and its Recoil offset recovers by 0.00625 rad a tick.
+// that takes half a second, 30 ticks, to reload, zeroed at kZeroRange. Its
+// recoil pattern is three kicks, each a whole count of the angle grid's step
+// so their sums are exact, halved in ADS, and its Recoil offset recovers by
+// 0.00625 rad a tick.
 template <std::uint8_t kPlayers>
 class FireMatchOf : public LoopbackMatch {
  protected:
@@ -3678,11 +3690,17 @@ class FireMatchOf : public LoopbackMatch {
   static constexpr int kReloadTicks = 30;
   // The test character's eye, standing, above its feet.
   static constexpr float kEyeHeight = 1.6F;
+  static constexpr float kZeroRange = 100.0F;
   static constexpr float kFirstPitch = 1.0F / 64.0F;
   static constexpr float kSecondPitch = 1.0F / 64.0F;
   static constexpr float kSecondYaw = 1.0F / 256.0F;
   static constexpr float kThirdPitch = 1.0F / 32.0F;
   static constexpr float kThirdYaw = -1.0F / 128.0F;
+  // How near a Shot leaves along the view it is expected to: a few steps of
+  // the angle grid. Its round is aimed from the rifle's Muzzle (ADR-0064),
+  // which the test character holds at its Eye to a hundredth of a millimetre,
+  // not to the bit.
+  static constexpr float kShotAngleTolerance = 3.0F * augusta::math::kAngleGrid.step;
 
   static HostSetup Armed() {
     Parameters parameters = WithPlayerCount(kPlayers);
@@ -3695,13 +3713,15 @@ class FireMatchOf : public LoopbackMatch {
                                        {.pitch = kThirdPitch, .yaw = kThirdYaw}};
     parameters.rifle.recoil_recovery_per_second = 0.375F;
     parameters.rifle.ads_recoil_scale = 0.5F;
+    parameters.rifle.zero_range = kZeroRange;
     parameters.ammo.flight.max_range = 1000.0F;
     HostSetup setup = OnTheFloor({Vec3(10.0F, kFloorY, 0.0F), Vec3(20.0F, kFloorY, 5.0F)}, parameters);
-    setup.scenario.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
+    SeeingFrom(setup, kEyeHeight);
     return setup;
   }
 
   FireMatchOf() : LoopbackMatch(Armed()) {}
+  explicit FireMatchOf(HostSetup setup) : LoopbackMatch(std::move(setup)) {}
 
   void TearDown() override { SimulateNetworkConditions({}); }
 
@@ -3838,16 +3858,43 @@ TEST_F(FireTest, ReloadSentOnEveryTickStartsOneReloadNotOneEveryTick) {
 
 using FireDuelTest = FireMatchOf<2>;
 
+// FireDuelTest with a rifle whose Muzzle is kMuzzleAhead ahead of its Grip,
+// which the test character holds level at its Eye, and kMuzzleBelow below it
+// (ADR-0064).
+class BarrelDuelTest : public FireMatchOf<2> {
+ protected:
+  static constexpr float kMuzzleAhead = 0.6F;
+  static constexpr float kMuzzleBelow = 0.05F;
+
+  static HostSetup WithABarrel() {
+    HostSetup setup = Armed();
+    setup.scenario.rifle.muzzle = augusta::math::ToMat4(Vec3(0.0F, -kMuzzleBelow, -kMuzzleAhead),
+                                                        augusta::math::Quat(1.0F, 0.0F, 0.0F, 0.0F), Vec3(1.0F));
+    return setup;
+  }
+
+  BarrelDuelTest() : FireMatchOf<2>(WithABarrel()) {}
+};
+
+// The Shot every client is told of leaves the shooter's Muzzle, where its body,
+// turned to the shooter's yaw, holds it, for where the barrel, zeroed, sends
+// the round: across the line of sight from its Eye along its view at the zero
+// range, its rounds flying straight.
 // Requirements: US-07, US-10
-TEST_F(FireDuelTest, EveryClientIsToldOfAShotWithItsShooterTickOriginAndDirection) {
+TEST_F(BarrelDuelTest, EveryClientIsToldOfAShotWithItsShooterTickMuzzleAndBarrelsDirection) {
+  constexpr float kYaw = 0.75F;
+  constexpr float kPitch = -0.25F;
   Session& shooter = *sessions_[0];
   Session& bystander = *sessions_[1];
   Settle(host_, Pointers(sessions_));
   const augusta::tick::Tick last_tick = shooter.GetServerView()->authoritative->tick;
   const Vec3 feet = PositionSeenBy(shooter, *shooter.GetServerView()->OwnEntity()).value();
+  const Vec3 eye = feet + Vec3(0.0F, kEyeHeight, 0.0F);
+  const Vec3 muzzle = eye + (augusta::command::ViewRotation(kYaw, 0.0F) * Vec3(0.0F, -kMuzzleBelow, -kMuzzleAhead));
+  const Vec3 sighted = eye + (kZeroRange * augusta::command::ViewDirection(kYaw, kPitch));
   Command command = Firing();
-  command.yaw = 0.75F;
-  command.pitch = -0.25F;
+  command.yaw = kYaw;
+  command.pitch = kPitch;
   const auto shooter_session = shooter.GetServerView()->accepted->session;
 
   // One tick, by hand: the server takes in the fire command on its next tick.
@@ -3862,11 +3909,11 @@ TEST_F(FireDuelTest, EveryClientIsToldOfAShotWithItsShooterTickOriginAndDirectio
     const Shot& shot = shots_[client].front();
     EXPECT_EQ(shot.shooter, *shooter.GetServerView()->OwnEntity());
     EXPECT_EQ(shot.tick, last_tick + 1);
-    EXPECT_NEAR(shot.origin.x, feet.x, 0.002F);
-    EXPECT_NEAR(shot.origin.y, feet.y + kEyeHeight, 0.002F);
-    EXPECT_NEAR(shot.origin.z, feet.z, 0.002F);
-    EXPECT_EQ(shot.yaw, 0.75F);
-    EXPECT_EQ(shot.pitch, -0.25F);
+    EXPECT_NEAR(shot.origin.x, muzzle.x, 0.002F);
+    EXPECT_NEAR(shot.origin.y, muzzle.y, 0.002F);
+    EXPECT_NEAR(shot.origin.z, muzzle.z, 0.002F);
+    const Vec3 along = augusta::command::ViewDirection(shot.yaw, shot.pitch);
+    EXPECT_LT(augusta::math::Length(augusta::math::Cross(sighted - shot.origin, along)), 0.005F);
   }
 }
 
@@ -4150,17 +4197,17 @@ TEST_F(RecoilTest, TheShotsOfAHeldBurstFollowThePatternCumulativelyAndASecondBur
   Run(60);
   const std::vector<Shot> second = Burst(5);
 
-  EXPECT_EQ(first[0].yaw, kViewYaw);
-  EXPECT_EQ(first[0].pitch, kViewPitch);
-  EXPECT_EQ(first[1].yaw, kViewYaw);
-  EXPECT_EQ(first[1].pitch, kViewPitch + kFirstPitch);
-  EXPECT_EQ(first[2].yaw, kViewYaw + kSecondYaw);
-  EXPECT_EQ(first[2].pitch, kViewPitch + kFirstPitch + kSecondPitch);
-  EXPECT_EQ(first[3].yaw, kViewYaw + kSecondYaw + kThirdYaw);
-  EXPECT_EQ(first[3].pitch, kViewPitch + kFirstPitch + kSecondPitch + kThirdPitch);
+  EXPECT_NEAR(first[0].yaw, kViewYaw, kShotAngleTolerance);
+  EXPECT_NEAR(first[0].pitch, kViewPitch, kShotAngleTolerance);
+  EXPECT_NEAR(first[1].yaw, kViewYaw, kShotAngleTolerance);
+  EXPECT_NEAR(first[1].pitch, kViewPitch + kFirstPitch, kShotAngleTolerance);
+  EXPECT_NEAR(first[2].yaw, kViewYaw + kSecondYaw, kShotAngleTolerance);
+  EXPECT_NEAR(first[2].pitch, kViewPitch + kFirstPitch + kSecondPitch, kShotAngleTolerance);
+  EXPECT_NEAR(first[3].yaw, kViewYaw + kSecondYaw + kThirdYaw, kShotAngleTolerance);
+  EXPECT_NEAR(first[3].pitch, kViewPitch + kFirstPitch + kSecondPitch + kThirdPitch, kShotAngleTolerance);
   // Past the pattern's last kick, the last repeats.
-  EXPECT_EQ(first[4].yaw, kViewYaw + kSecondYaw + (2.0F * kThirdYaw));
-  EXPECT_EQ(first[4].pitch, kViewPitch + kFirstPitch + kSecondPitch + (2.0F * kThirdPitch));
+  EXPECT_NEAR(first[4].yaw, kViewYaw + kSecondYaw + (2.0F * kThirdYaw), kShotAngleTolerance);
+  EXPECT_NEAR(first[4].pitch, kViewPitch + kFirstPitch + kSecondPitch + (2.0F * kThirdPitch), kShotAngleTolerance);
   for (std::size_t i = 0; i < first.size(); ++i) {
     EXPECT_EQ(second[i].yaw, first[i].yaw) << "round " << i;
     EXPECT_EQ(second[i].pitch, first[i].pitch) << "round " << i;
@@ -4179,21 +4226,21 @@ TEST_F(RecoilTest, ReleasingAndFiringAgainAtOnceRestartsThePatternOnTopOfWhatHas
   EXPECT_GT(left, 0.0F);
   EXPECT_LT(left, kFirstPitch + kSecondPitch + kThirdPitch);
   // Then the first kick again, not the fourth round's.
-  EXPECT_EQ(shots[1].pitch - shots[0].pitch, kFirstPitch);
-  EXPECT_EQ(shots[1].yaw - shots[0].yaw, 0.0F);
+  EXPECT_NEAR(shots[1].pitch - shots[0].pitch, kFirstPitch, kShotAngleTolerance);
+  EXPECT_NEAR(shots[1].yaw - shots[0].yaw, 0.0F, kShotAngleTolerance);
 }
 
 // Requirements: US-09, US-06
 TEST_F(RecoilTest, TheSameBurstInAdsClimbsByTheScaledKicks) {
   const std::vector<Shot> shots = Burst(4, FiringFromTheView(/*ads=*/true));
 
-  EXPECT_EQ(shots[0].yaw, kViewYaw);
-  EXPECT_EQ(shots[0].pitch, kViewPitch);
-  EXPECT_EQ(shots[1].pitch, kViewPitch + (kFirstPitch / 2.0F));
-  EXPECT_EQ(shots[2].yaw, kViewYaw + (kSecondYaw / 2.0F));
-  EXPECT_EQ(shots[2].pitch, kViewPitch + ((kFirstPitch + kSecondPitch) / 2.0F));
-  EXPECT_EQ(shots[3].yaw, kViewYaw + ((kSecondYaw + kThirdYaw) / 2.0F));
-  EXPECT_EQ(shots[3].pitch, kViewPitch + ((kFirstPitch + kSecondPitch + kThirdPitch) / 2.0F));
+  EXPECT_NEAR(shots[0].yaw, kViewYaw, kShotAngleTolerance);
+  EXPECT_NEAR(shots[0].pitch, kViewPitch, kShotAngleTolerance);
+  EXPECT_NEAR(shots[1].pitch, kViewPitch + (kFirstPitch / 2.0F), kShotAngleTolerance);
+  EXPECT_NEAR(shots[2].yaw, kViewYaw + (kSecondYaw / 2.0F), kShotAngleTolerance);
+  EXPECT_NEAR(shots[2].pitch, kViewPitch + ((kFirstPitch + kSecondPitch) / 2.0F), kShotAngleTolerance);
+  EXPECT_NEAR(shots[3].yaw, kViewYaw + ((kSecondYaw + kThirdYaw) / 2.0F), kShotAngleTolerance);
+  EXPECT_NEAR(shots[3].pitch, kViewPitch + ((kFirstPitch + kSecondPitch + kThirdPitch) / 2.0F), kShotAngleTolerance);
 }
 
 // The Recoil offset is the rifle's, on top of the view: the client predicts it
@@ -4274,7 +4321,7 @@ class HitMatchOf : public LoopbackMatch {
     }
     HostSetup setup = OnTheFloor(std::move(spawn_points), parameters);
     setup.policy = std::move(policy);
-    setup.scenario.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
+    SeeingFrom(setup, kEyeHeight);
     setup.scenario.characters.front().hitboxes = HumanHitboxes();
     if (walled) {
       setup.scenario.collision.push_back(
@@ -4649,7 +4696,7 @@ class FullAutoMatchTest : public LoopbackMatch {
       spawn_points.emplace_back(kPairSpacing * static_cast<float>(i / 2), kFloorY, i % 2 == 0 ? 0.0F : -kPairDistance);
     }
     HostSetup setup = OnTheFloor(std::move(spawn_points), parameters);
-    setup.scenario.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
+    SeeingFrom(setup, kEyeHeight);
     setup.scenario.characters.front().hitboxes = HumanHitboxes();
     return setup;
   }
@@ -5514,7 +5561,7 @@ class EightPlayerMatchTest : public LoopbackMatch {
     }
     HostSetup setup = OnTheFloor(std::move(spawn_points), parameters);
     setup.policy = ExamplePolicy();
-    setup.scenario.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
+    SeeingFrom(setup, kEyeHeight);
     setup.scenario.characters.front().hitboxes = HumanHitboxes();
     return setup;
   }
@@ -6155,7 +6202,7 @@ class CorrectedAimTest : public AdversaryMatch {
     parameters.ammo.damage = {.head = 50.0F, .torso = 20.0F, .limb = kLimbDamage};
     parameters.starting_health = kStartingHealth;
     HostSetup setup = OnTheFloor({Vec3(0.0F, kFloorY, 0.0F), Vec3(0.0F, kFloorY, -60.0F)}, parameters);
-    setup.scenario.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
+    SeeingFrom(setup, kEyeHeight);
     setup.scenario.characters.front().hitboxes = HumanHitboxes();
     return setup;
   }

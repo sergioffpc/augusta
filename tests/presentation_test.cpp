@@ -2,6 +2,9 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
+#include <cstdint>
+#include <numbers>
 #include <span>
 #include <thread>
 #include <vector>
@@ -15,20 +18,27 @@
 #include "augusta/local_view.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
+#include "augusta/prediction.h"
 #include "augusta/tick.h"
+#include "augusta/weapon.h"
+#include "clips_fixture.h"
 
 // PresentationWorld through RunFrame, one render frame at a time. An
 // audio::Engine without an output device is silent (audio.h), so none is
 // needed; bodies stand still, so what a frame shows does not depend on how long
-// it took.
+// it took. The local player plays the Holder (clips_fixture.h), holding its
+// rifle.
 namespace {
 
 using augusta::math::Vec3;
+using augusta::presentation::Aim;
 using augusta::presentation::DynamicBody;
 using augusta::presentation::EntityId;
 using augusta::presentation::FrameInput;
+using augusta::presentation::LocalCharacter;
 using augusta::presentation::PlayerCharacter;
 using augusta::presentation::RemotePlayer;
+using augusta::presentation::Shot;
 using augusta::presentation::State;
 using augusta::presentation::WorldSnapshot;
 
@@ -37,7 +47,17 @@ constexpr double kTickDuration = 1.0 / 60.0;
 constexpr EntityId kLocal{10};
 constexpr EntityId kSniper{30};
 constexpr EntityId kMedic{70};
-const Vec3 kEye(0.0F, 1.6F, 0.0F);
+// How near a posed Muzzle is to where it is expected: a pose is composed in
+// single precision through several Joints.
+constexpr float kPoseTolerance = 1e-3F;
+
+// The local player's Character: the Holder, and its rifle.
+LocalCharacter Holder() {
+  return LocalCharacter{.eye = augusta::clips_fixture::kHolderEye,
+                        .skeleton = augusta::clips_fixture::HolderSkeleton(),
+                        .clips = augusta::clips_fixture::HolderClips(),
+                        .rifle = augusta::clips_fixture::HolderRifle()};
+}
 
 DynamicBody BodyAt(EntityId entity, float x) {
   DynamicBody body{.entity = entity, .state = {}, .yaw = 0.0F};
@@ -80,7 +100,7 @@ const RemotePlayer* Find(const State& state, EntityId entity) {
 class PresentationWorldTest : public ::testing::Test {
  protected:
   augusta::audio::Engine audio;
-  augusta::presentation::World world{audio, augusta::audio::CueSounds{}, kEye};
+  augusta::presentation::World world{audio, augusta::audio::CueSounds{}, Holder()};
 };
 
 // Requirements: US-17
@@ -113,6 +133,24 @@ TEST_F(PresentationWorldTest, ASpectatorWatchesTheLivingPlayersInSessionOrder) {
   EXPECT_NEAR(next.camera.position.x, -100.0F, kTolerance);
 }
 
+// Another player's muzzle flash shows where its Shot left: the Muzzle of its
+// rifle, which the server fires from (ADR-0064), not a point estimated from it.
+// Requirements: US-19
+TEST_F(PresentationWorldTest, AnotherPlayersMuzzleFlashShowsWhereItsShotLeft) {
+  const WorldSnapshot snapshot = ThreePlayersAt(5);
+  const std::vector<PlayerCharacter> characters = SessionOrder();
+  FrameInput input = InMatch(snapshot, characters);
+  const Vec3 muzzle(100.25F, 0.85F, -0.7F);
+  input.shots = {Shot{.shooter = kSniper, .tick = 5, .origin = muzzle, .yaw = 0.5F, .pitch = 0.125F}};
+
+  const State state = world.RunFrame(input);
+
+  ASSERT_EQ(state.muzzle_flashes.size(), 1U);
+  EXPECT_NEAR(state.muzzle_flashes.front().position.x, muzzle.x, kTolerance);
+  EXPECT_NEAR(state.muzzle_flashes.front().position.y, muzzle.y, kTolerance);
+  EXPECT_NEAR(state.muzzle_flashes.front().position.z, muzzle.z, kTolerance);
+}
+
 // The three players as a Replay viewer, which plays none of them, is shown them.
 FrameInput Watching(const WorldSnapshot& snapshot, const std::vector<PlayerCharacter>& characters) {
   FrameInput input;
@@ -120,6 +158,90 @@ FrameInput Watching(const WorldSnapshot& snapshot, const std::vector<PlayerChara
   input.updates = std::span(&snapshot, 1);
   input.characters = characters;
   return input;
+}
+
+// The local player's Prediction State standing on the ground at feet, its
+// rifle off its view by recoil, having fired rounds rounds in all.
+augusta::prediction::State Predicted(const Vec3& feet, std::uint32_t rounds,
+                                     const augusta::weapon::RecoilOffset& recoil = {}) {
+  augusta::prediction::State state;
+  state.local_body.position = feet;
+  state.local_body.grounded = true;
+  state.rifle.recoil = recoil;
+  state.total_rounds_fired = rounds;
+  return state;
+}
+
+// The frame the local player's predicted fire fires a round, aiming as aim
+// does: the newest tick has fired it, the one before had not, the rifle off its
+// view by before_kick before it and by after_kick after.
+FrameInput FiringFrame(const WorldSnapshot& snapshot, const std::vector<PlayerCharacter>& characters, const Vec3& feet,
+                       const Aim& aim, const augusta::weapon::RecoilOffset& before_kick = {},
+                       const augusta::weapon::RecoilOffset& after_kick = {}) {
+  FrameInput input = InMatch(snapshot, characters);
+  input.aim = aim;
+  input.ticks = {.previous = Predicted(feet, 0, before_kick), .latest = Predicted(feet, 1, after_kick)};
+  input.ticks.latest.rounds_fired = 1;
+  return input;
+}
+
+// The local player's flash on the frame it fires a round: before the Shot it
+// fired arrives, at the Muzzle of the rifle its body holds where it is shown.
+void ExpectLocalFlashAt(augusta::presentation::World& world, const FrameInput& firing, const Vec3& muzzle) {
+  FrameInput before = firing;
+  before.ticks = {.previous = firing.ticks.previous, .latest = firing.ticks.previous};
+  ASSERT_TRUE(world.RunFrame(before).muzzle_flashes.empty());
+
+  const State state = world.RunFrame(firing);
+
+  ASSERT_EQ(state.muzzle_flashes.size(), 1U);
+  EXPECT_NEAR(state.muzzle_flashes.front().position.x, muzzle.x, kPoseTolerance);
+  EXPECT_NEAR(state.muzzle_flashes.front().position.y, muzzle.y, kPoseTolerance);
+  EXPECT_NEAR(state.muzzle_flashes.front().position.z, muzzle.z, kPoseTolerance);
+}
+
+// From the hip, the Holder's rifle hangs in its right hand, at its side and
+// level ahead, its Muzzle kHolderMuzzle ahead of the hand: well off the camera.
+// Requirements: US-19
+TEST_F(PresentationWorldTest, TheLocalPlayersFlashFromTheHipShowsAtItsRiflesMuzzle) {
+  const WorldSnapshot snapshot = ThreePlayersAt(5);
+  const std::vector<PlayerCharacter> characters = SessionOrder();
+  const Vec3 feet(3.0F, 0.0F, 0.0F);
+
+  ExpectLocalFlashAt(world, FiringFrame(snapshot, characters, feet, Aim{.yaw = 0.0F, .pitch = 0.0F, .ads = false}),
+                     Vec3(3.25F, 0.85F, -0.7F));
+}
+
+// In ADS the Holder shoulders the rifle with its Grip on its Eye, the barrel
+// along its view: turned a quarter left, to -X, the Muzzle is kHolderMuzzle
+// that way from the Eye.
+// Requirements: US-19
+TEST_F(PresentationWorldTest, TheLocalPlayersFlashInAdsShowsAtItsRiflesMuzzleAlongItsView) {
+  const WorldSnapshot snapshot = ThreePlayersAt(5);
+  const std::vector<PlayerCharacter> characters = SessionOrder();
+  const Vec3 feet(3.0F, 0.0F, 0.0F);
+
+  ExpectLocalFlashAt(
+      world,
+      FiringFrame(snapshot, characters, feet, Aim{.yaw = std::numbers::pi_v<float> / 2.0F, .pitch = 0.0F, .ads = true}),
+      Vec3(2.3F, 1.7F, 0.0F));
+}
+
+// The round leaves along the view turned by the recoil from before its own kick,
+// as the server fires it: the flash is where that recoil, not the kicked one,
+// turns the Muzzle about the Grip.
+// Requirements: US-19
+TEST_F(PresentationWorldTest, TheLocalPlayersFlashIsTurnedByTheRecoilBeforeTheRoundsKick) {
+  const WorldSnapshot snapshot = ThreePlayersAt(5);
+  const std::vector<PlayerCharacter> characters = SessionOrder();
+  const Vec3 feet(3.0F, 0.0F, 0.0F);
+  constexpr float kBeforeKick = 0.1F;
+
+  ExpectLocalFlashAt(world,
+                     FiringFrame(snapshot, characters, feet, Aim{.yaw = 0.0F, .pitch = 0.0F, .ads = true},
+                                 augusta::weapon::RecoilOffset{.pitch = kBeforeKick},
+                                 augusta::weapon::RecoilOffset{.pitch = 2.0F * kBeforeKick}),
+                     Vec3(3.0F, 1.7F + (0.7F * std::sin(kBeforeKick)), -0.7F * std::cos(kBeforeKick)));
 }
 
 // A Replay viewer is a Spectator from the first tick: it watches the first
@@ -349,7 +471,7 @@ TEST_F(PresentationWorldTest, WithNoRemotePlayerThereIsNoSlack) {
   const std::vector<PlayerCharacter> characters = SessionOrder();
   const WorldSnapshot with_sniper = SniperAt(3, 10.0F);
   const WorldSnapshot alone = {.tick = 3, .tick_duration = kSlowTickDuration, .bodies = {BodyAt(kLocal, 0.0F)}};
-  augusta::presentation::World control{audio, augusta::audio::CueSounds{}, kEye};
+  augusta::presentation::World control{audio, augusta::audio::CueSounds{}, Holder()};
   EXPECT_TRUE(control.RunFrame(InMatch(with_sniper, characters)).interpolation_slack.has_value());
 
   const State state = world.RunFrame(InMatch(alone, characters));

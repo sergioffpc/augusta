@@ -19,6 +19,7 @@
 #include <nvtx3/nvtx3.hpp>
 
 #include "audio_cues.h"
+#include "augusta/animation.h"
 #include "augusta/assets.h"
 #include "augusta/audio.h"
 #include "augusta/command.h"
@@ -29,9 +30,11 @@
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
+#include "augusta/pose.h"
 #include "augusta/prediction.h"
 #include "augusta/tick.h"
 #include "augusta/tracers.h"
+#include "augusta/weapon.h"
 #include "correction.h"
 
 namespace augusta::presentation {
@@ -68,10 +71,15 @@ struct World::Impl {
   std::array<LoadedCue, audio::kCues.size()> cue_sounds{};
   // What chooses each cue's variant as it plays (audio::ChooseVariant).
   std::mt19937 variant_random{std::random_device{}()};
-  // Where the camera sits relative to the local player's body position
-  // (physics::BodyState's feet) standing: its character's eye (World's
-  // constructor).
-  math::Vec3 eye;
+  // The local player's character (World's constructor): its eye is where the
+  // camera sits relative to its body position (physics::BodyState's feet)
+  // standing, and its Skeleton, Clips and rifle are how its body holds the
+  // rifle its muzzle flash shows at the Muzzle of.
+  LocalCharacter local;
+  // Where the local player's body is posed to place its Muzzle (OnAnimation):
+  // the Poser keeps its working buffers, the pose its storage, frame to frame.
+  animation::Poser poser;
+  animation::SkeletonPose posed;
   PhaseEntities phases;
 
   // The frame RunFrame() is running, borrowed for its ecs.progress() and read
@@ -91,7 +99,7 @@ struct World::Impl {
   std::vector<Effect> muzzle_flashes;
   FiredRounds fired_rounds;
   // How many rounds the local player's predicted fire fired this frame
-  // (OnCamera), which OnAudioCues hears.
+  // (OnCamera), which OnAnimation flashes and OnAudioCues hears.
   std::uint32_t rounds_fired = 0;
   CueSelector cue_selector;
 
@@ -139,8 +147,8 @@ struct World::Impl {
 
   State frame_state;
 
-  Impl(audio::Engine& engine, const audio::CueSounds& sounds, const math::Vec3& local_eye)
-      : audio_engine(engine), eye(local_eye) {
+  Impl(audio::Engine& engine, const audio::CueSounds& sounds, LocalCharacter local_character)
+      : audio_engine(engine), local(std::move(local_character)) {
     for (std::size_t i = 0; i < sounds.size(); ++i) {
       cue_sounds[i].gain_db = sounds[i].gain_db;
       for (const assets::AudioData& variant : sounds[i].variants) {
@@ -217,18 +225,18 @@ struct World::Impl {
 
   // Moves every tracer and muzzle flash on by delta_time, then starts a tracer
   // for each of the frame's Shots and shows the muzzle flash of each fired by
-  // another player: the local player's own come from its predicted fire
-  // (OnCamera), which is sooner.
+  // another player, both at the shooter's Muzzle the Shot left from: the local
+  // player's own flashes come from its predicted fire (OnCamera), which is
+  // sooner.
   void ShowShots(float delta_time) {
     tracers.Advance(delta_time);
     Age(muzzle_flashes, delta_time, kMuzzleFlashSeconds);
     for (const Shot& shot : input->shots) {
-      const math::Vec3 direction = command::ViewDirection(shot.yaw, shot.pitch);
       if (tracer_rules.has_value()) {
-        tracers.Fire(shot.origin, direction, *tracer_rules);
+        tracers.Fire(shot.origin, command::ViewDirection(shot.yaw, shot.pitch), *tracer_rules);
       }
       if (shot.shooter != input->local_entity) {
-        muzzle_flashes.push_back(Effect{.position = MuzzleOf(shot.origin, direction)});
+        muzzle_flashes.push_back(Effect{.position = shot.origin});
       }
     }
   }
@@ -276,17 +284,12 @@ struct World::Impl {
       // shown and local_offset are already this frame's - OnInterpolation (the
       // previous phase) just updated them. Same base position as OnCommit's
       // local_position.
-      camera = LocalCamera(shown.local_body.position + local_offset, shown.local_body.stance, eye, input->aim,
+      camera = LocalCamera(shown.local_body.position + local_offset, shown.local_body.stance, local.eye, input->aim,
                            shown.rifle.recoil);
       camera.vertical_fov = ads_zoom.Update(input->aim.ads, ads_field_of_view, delta_time);
     }
     hit_marker_shown = hit_marker.Update(input->hit_confirmations, delta_time);
-    // Flashed where the camera now is, the frame the round fires.
     rounds_fired = fired_rounds.Update(shown.total_rounds_fired);
-    if (rounds_fired > 0) {
-      const math::Vec3 forward = camera.rotation * math::Vec3(0.0F, 0.0F, -1.0F);
-      muzzle_flashes.push_back(Effect{.position = MuzzleOf(camera.position, forward)});
-    }
   }
 
   // A spectator's camera: at the eye of the living player it watches, as
@@ -321,13 +324,37 @@ struct World::Impl {
   // The eye standing of character, or the local player's character's if it was never set.
   [[nodiscard]] math::Vec3 EyeOf(const std::string& character) const {
     const auto found = character_eyes.find(character);
-    return found != character_eyes.end() ? found->second : eye;
+    return found != character_eyes.end() ? found->second : local.eye;
   }
 
   void OnAnimation() {
     const nvtx3::scoped_range range{"Animation"};
-    // Nothing to do yet: the phase poses each visible player's Character once
-    // the client evaluates a pose (ADR-0061); until then it calls nothing.
+    // Flashed the frame the round fires, ahead of the Shot that announces it.
+    if (rounds_fired > 0) {
+      muzzle_flashes.push_back(Effect{.position = LocalMuzzle()});
+    }
+  }
+
+  // Where the local player's Muzzle is this frame, placed as the server places
+  // the Muzzle a round leaves from (ADR-0064): its predicted body, where it is
+  // shown, posed where it aims and holding the rifle, the rifle turned about its
+  // Grip by the Recoil offset the round left with. That is the one from before
+  // the round's own kick: the previous tick's, when the newest tick fired it,
+  // the predicted rifle's own being the kicked one. A frame spanning several
+  // ticks, an earlier one of them firing, sees only its two newest, which hold
+  // no offset from before that round's kick: the flash then takes the previous
+  // tick's, its kick already in it, an approximation of one kick for one frame,
+  // left as it is since the flash is drawn, not where any round leaves from.
+  [[nodiscard]] math::Vec3 LocalMuzzle() {
+    physics::BodyState body = shown.local_body;
+    body.position += local_offset;
+    const Aim& aim = input->aim;
+    poser.Pose(*local.clips, local.skeleton,
+               animation::PoseInput{.body = body, .yaw = aim.yaw, .pitch = aim.pitch, .ads = aim.ads}, posed);
+    const math::Mat4 hand = animation::HoldRifle(local.skeleton, local.clips->weapon_socket, local.rifle, posed);
+    const weapon::RecoilOffset& before_kick = input->ticks.previous.rifle.recoil;
+    return math::TranslationOf(
+        weapon::PlaceMuzzle(weapon::Recoiled(hand, aim.yaw, aim.pitch, before_kick), local.rifle));
   }
 
   void OnAudioCues() {
@@ -366,8 +393,8 @@ struct World::Impl {
   }
 };
 
-World::World(audio::Engine& audio_engine, const audio::CueSounds& cue_sounds, const math::Vec3& eye)
-    : impl_(std::make_unique<Impl>(audio_engine, cue_sounds, eye)) {}
+World::World(audio::Engine& audio_engine, const audio::CueSounds& cue_sounds, LocalCharacter local)
+    : impl_(std::make_unique<Impl>(audio_engine, cue_sounds, std::move(local))) {}
 
 World::~World() = default;
 World::World(World&&) noexcept = default;

@@ -9,7 +9,9 @@
 #include <string>
 #include <vector>
 
+#include "augusta/assets.h"
 #include "augusta/audio.h"
+#include "augusta/clips.h"
 #include "augusta/cues.h"
 #include "augusta/effects.h"
 #include "augusta/interpolation.h"
@@ -20,6 +22,7 @@
 #include "augusta/prediction.h"
 #include "augusta/tick.h"
 #include "augusta/tracers.h"
+#include "augusta/weapon.h"
 
 /// \file
 /// augusta::presentation orchestrates PresentationWorld (ADR-0024): the
@@ -80,9 +83,10 @@ enum class Phase {
   /// this frame (FrameInput::aim), not as of the last tick, turned by its
   /// rifle's predicted Recoil offset, so the view shows where the next round
   /// goes; the field of view zooms in and out with ADS (AdsZoom). Also what
-  /// shows over the view: the crosshair from the hip, the hit marker after a Hit
-  /// confirmation (HitMarker), and the local player's muzzle flash on the frame
-  /// its predicted fire fires a round (FiredRounds). Once the local player's
+  /// shows over the view: the crosshair from the hip and the hit marker after a
+  /// Hit confirmation (HitMarker); and how many rounds the local player's
+  /// predicted fire fired since the last frame (FiredRounds), which
+  /// kAnimation and kAudioCues show and play. Once the local player's
   /// Death has arrived it is a spectator until the match ends, and a Replay
   /// viewer is one from the Match's first tick: the camera follows the eye of a
   /// living player instead (Spectator and WatchedCamera, local_view.h; fire
@@ -95,8 +99,14 @@ enum class Phase {
   /// Mechanism. Will drive skeletal/procedural animation from interpolated
   /// movement and weapon state, once per visible player character (local and
   /// remote alike, unlike Interpolation/Camera which only concern the local
-  /// player's own predicted state). Calls nothing yet: the client evaluates
-  /// no pose (ADR-0061).
+  /// player's own predicted state). For now it poses only the local player, on
+  /// the frame its predicted fire fires a round, ahead of the Shot that
+  /// announces it: its predicted body where kInterpolation showed it, posed
+  /// where it aims (animation::Poser, ADR-0061), holding the rifle
+  /// (animation::HoldRifle, ADR-0066), turned about the Grip by the Recoil
+  /// offset the round left with, the one before its own kick; and shows the
+  /// muzzle flash at the Muzzle that places (weapon::PlaceMuzzle), as the
+  /// server places the Muzzle the round leaves from (ADR-0064). Draws no rifle.
   kAnimation,
   /// Mechanism. Sets the listener to the camera Phase::kCamera just placed, a
   /// spectator's included (ListenerOf, audio_cues.h), then plays the frame's
@@ -154,12 +164,26 @@ struct Shot {
   EntityId shooter{};
   /// The server tick it was fired on.
   tick::Tick tick = 0;
-  /// Where the round left from: the shooter's eye.
+  /// Where the round left from: the shooter's Muzzle (ADR-0064).
   math::Vec3 origin{};
   /// Where it left for, as a view's yaw in radians (command::Command).
   float yaw = 0.0F;
   /// Where it left for, as a view's pitch in radians (command::Command).
   float pitch = 0.0F;
+};
+
+/// The Character the local player plays and the rifle it holds, as the client
+/// pack has them: where its camera sits, and how its body holds the rifle,
+/// whose Muzzle its own muzzle flash shows at - World's constructor's input.
+struct LocalCharacter {
+  /// Its eye standing, in its root space (its feet at the origin, ADR-0040).
+  math::Vec3 eye{};
+  /// Its Skeleton, which clips pose (ADR-0061).
+  assets::Skeleton skeleton;
+  /// Its Clips and weapon socket (ADR-0066), skeleton's. Never null.
+  std::shared_ptr<const animation::CharacterClips> clips;
+  /// The rifle's markers (ADR-0064), the scenario's.
+  weapon::Markers rifle;
 };
 
 /// What the server said when a match ended (US-14) - World::RunFrame's input,
@@ -277,13 +301,14 @@ class World {
   /// audio_engine must outlive this World, which references it, not owns it:
   /// ClientRuntime (src/client/client.h) constructs the client's one
   /// audio::Engine and wires it to this World's AudioCues phase, which plays
-  /// cue_sounds, loaded into audio_engine here. eye is the local player's character's eye
-  /// standing, in that character's root space (its feet at the origin,
-  /// ADR-0040): where Phase::kCamera puts the camera relative to the predicted
-  /// body, lowered for the body's stance (LocalCamera, local_view.h). Also
-  /// registers Phase's five phases and their systems on the owned Flecs world
-  /// (see header comment). Tracers meet no Map until AddCollisionMesh adds it.
-  World(audio::Engine& audio_engine, const audio::CueSounds& cue_sounds, const math::Vec3& eye);
+  /// cue_sounds, loaded into audio_engine here. local is the local player's
+  /// character: its eye is where Phase::kCamera puts the camera relative to the
+  /// predicted body, lowered for the body's stance (LocalCamera, local_view.h),
+  /// and its Skeleton, Clips and rifle are how Phase::kAnimation poses the
+  /// predicted body to show its muzzle flash at its Muzzle. Also registers
+  /// Phase's five phases and their systems on the owned Flecs world (see header
+  /// comment). Tracers meet no Map until AddCollisionMesh adds it.
+  World(audio::Engine& audio_engine, const audio::CueSounds& cue_sounds, LocalCharacter local);
   ~World();
 
   World(const World&) = delete;

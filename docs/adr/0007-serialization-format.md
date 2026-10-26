@@ -25,8 +25,8 @@ other's (ADR-0050).
 
 **The protocol's types stay hand-written; the generated code is private.**
 `augusta/protocol.h` keeps the `*Wire` types and the codec's API (`Encode`,
-`Decode`, `Readdress`, `EncodeCaptureRecord`, `DecodeCaptureRecord`).
-`protocol.cpp` maps each `*Wire` to its generated message and back, and checks
+`Decode`, `Readdress`, `EncodeCaptureRecord`, `DecodeCaptureRecord`). The
+module's sources map each `*Wire` to its generated message and back, and check
 the grids' ranges and the protocol's limits in that mapping. `augusta_protocol`
 links the full protobuf runtime `PRIVATE`, the one GameNetworkingSockets already
 links into every networking binary (ADR-0003), never lite as well, which would

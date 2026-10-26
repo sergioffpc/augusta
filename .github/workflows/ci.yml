@@ -360,8 +360,8 @@ jobs:
         run: cmake --preset linux -DAUGUSTA_CLIENT=OFF "-DPYTHON_EXECUTABLE=$PWD/tools/.venv/bin/python"
       - uses: ./.github/actions/save-vcpkg-cache
       - name: Generate the protocol's C++
-        # protocol.cpp includes augusta.pb.h, which protoc writes at build
-        # time, and Lint runs before Build.
+        # The protocol's sources include augusta.pb.h, which protoc writes at
+        # build time, and Lint runs before Build.
         run: cmake --build --preset linux --target augusta_protocol_generated
       - name: Lint
         id: lint

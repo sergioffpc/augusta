@@ -52,6 +52,11 @@ constexpr std::uint8_t kTickRate = 60;
 constexpr float kTick = 1.0F / kTickRate;
 constexpr int kSettleTicks = 30;
 constexpr int kWalkTicks = 60;
+// How near a Shot leaves along the view it is expected to: a few steps of the
+// angle grid. Its round is aimed from the rifle's Muzzle (ADR-0064), which the
+// test character holds at its Eye to a hundredth of a millimetre, not to the
+// bit.
+constexpr float kShotAngleTolerance = 3.0F * augusta::math::kAngleGrid.step;
 
 constexpr EntityId kAlice = static_cast<EntityId>(1);
 constexpr EntityId kBob = static_cast<EntityId>(2);
@@ -334,12 +339,14 @@ TEST_F(SimulationTest, AddingAPlayerTwiceKeepsOne) {
 }
 
 // A rifle of 600 rounds a minute, a round every six ticks of kTick, with a
-// magazine that outlasts a test; its rounds fly straight, 10 m a tick.
+// magazine that outlasts a test, zeroed at 100 m; its rounds fly straight, 10 m
+// a tick.
 Parameters WithTheTestRifle() {
   Parameters parameters;
   parameters.rifle.rounds_per_minute = 600.0F;
   parameters.rifle.magazine_capacity = 200;
   parameters.rifle.muzzle_velocity = 600.0F;
+  parameters.rifle.zero_range = 100.0F;
   parameters.ammo.flight.gravity = 0.0F;
   parameters.ammo.flight.max_range = 1000.0F;
   return parameters;
@@ -448,8 +455,10 @@ TEST_F(FireTest, ARifleAtRestFiresNoSoonerForHavingRested) {
   EXPECT_EQ(FiringTicks(7, Firing()), (std::vector<int>{0, 6}));
 }
 
+// The test character holds its rifle level at its Eye, its Muzzle on its Grip
+// (character_fixture::Rigged): its rounds leave from its Eye along its view.
 // Requirements: US-07
-TEST_F(FireTest, AShotLeavesFromTheShootersEyeAlongTheCommandsView) {
+TEST_F(FireTest, ARifleHeldAtTheEyeFiresFromTheEyeAlongTheCommandsView) {
   const Vec3 feet = Feet();
   Command command = Firing();
   command.yaw = 0.75F;
@@ -460,22 +469,8 @@ TEST_F(FireTest, AShotLeavesFromTheShootersEyeAlongTheCommandsView) {
   EXPECT_NEAR(shot.origin.x, feet.x, 0.002F);
   EXPECT_NEAR(shot.origin.y, feet.y + 1.5F, 0.002F);
   EXPECT_NEAR(shot.origin.z, feet.z, 0.002F);
-  EXPECT_EQ(shot.yaw, 0.75F);
-  EXPECT_EQ(shot.pitch, -0.25F);
-}
-
-// The eye is 1.5 m up a body 2.1 m tall standing, 1.3 m crouching and 0.7 m prone.
-// Requirements: US-07
-TEST_F(FireTest, ACrouchedOrProneShooterFiresFromALowerEye) {
-  const float feet = Feet().y;
-  Command crouched = Firing();
-  crouched.movement.desired_stance = Stance::kCrouching;
-  Command prone = Firing();
-  prone.movement.desired_stance = Stance::kProne;
-
-  EXPECT_NEAR(ShotOf(crouched).origin.y, feet + (1.5F * 1.3F / 2.1F), 0.002F);
-  FiringTicks(5, Command{});
-  EXPECT_NEAR(ShotOf(prone).origin.y, feet + (1.5F * 0.7F / 2.1F), 0.002F);
+  EXPECT_NEAR(shot.yaw, 0.75F, kShotAngleTolerance);
+  EXPECT_NEAR(shot.pitch, -0.25F, kShotAngleTolerance);
 }
 
 // A client is told a Shot's numbers as counts of their grids (ADR-0038), so the
@@ -489,8 +484,10 @@ TEST_F(FireTest, AShotsOriginAndDirectionAreOnTheGridsTheyTravelOn) {
   const augusta::simulation::Shot shot = ShotOf(command);
 
   EXPECT_EQ(shot.origin, augusta::math::SnapPosition(shot.origin));
-  EXPECT_EQ(shot.yaw, augusta::math::SnapAngle(0.1234567F));
-  EXPECT_EQ(shot.pitch, augusta::math::SnapAngle(-0.0654321F));
+  EXPECT_EQ(shot.yaw, augusta::math::SnapAngle(shot.yaw));
+  EXPECT_EQ(shot.pitch, augusta::math::SnapAngle(shot.pitch));
+  EXPECT_NEAR(shot.yaw, 0.1234567F, kShotAngleTolerance);
+  EXPECT_NEAR(shot.pitch, -0.0654321F, kShotAngleTolerance);
 }
 
 // Fire held with the view turned a quarter turn to the right: down +X.
@@ -869,24 +866,24 @@ class RecoilTest : public FireTest {
 TEST_F(RecoilTest, EachRoundOfABurstLeavesOffTheViewByTheKicksOfTheRoundsBeforeIt) {
   const auto shots = Burst(4);
 
-  EXPECT_EQ(shots[0].yaw, kViewYaw);
-  EXPECT_EQ(shots[0].pitch, kViewPitch);
-  EXPECT_EQ(shots[1].yaw, kViewYaw);
-  EXPECT_EQ(shots[1].pitch, kViewPitch + kFirstPitch);
-  EXPECT_EQ(shots[2].yaw, kViewYaw + kSecondYaw);
-  EXPECT_EQ(shots[2].pitch, kViewPitch + kFirstPitch + kSecondPitch);
-  EXPECT_EQ(shots[3].yaw, kViewYaw + kSecondYaw + kThirdYaw);
-  EXPECT_EQ(shots[3].pitch, kViewPitch + kFirstPitch + kSecondPitch + kThirdPitch);
+  EXPECT_NEAR(shots[0].yaw, kViewYaw, kShotAngleTolerance);
+  EXPECT_NEAR(shots[0].pitch, kViewPitch, kShotAngleTolerance);
+  EXPECT_NEAR(shots[1].yaw, kViewYaw, kShotAngleTolerance);
+  EXPECT_NEAR(shots[1].pitch, kViewPitch + kFirstPitch, kShotAngleTolerance);
+  EXPECT_NEAR(shots[2].yaw, kViewYaw + kSecondYaw, kShotAngleTolerance);
+  EXPECT_NEAR(shots[2].pitch, kViewPitch + kFirstPitch + kSecondPitch, kShotAngleTolerance);
+  EXPECT_NEAR(shots[3].yaw, kViewYaw + kSecondYaw + kThirdYaw, kShotAngleTolerance);
+  EXPECT_NEAR(shots[3].pitch, kViewPitch + kFirstPitch + kSecondPitch + kThirdPitch, kShotAngleTolerance);
 }
 
 // Requirements: US-09
 TEST_F(RecoilTest, PastThePatternsLastKickTheLastRepeats) {
   const auto shots = Burst(6);
 
-  EXPECT_EQ(shots[5].yaw - shots[4].yaw, kThirdYaw);
-  EXPECT_EQ(shots[5].pitch - shots[4].pitch, kThirdPitch);
-  EXPECT_EQ(shots[4].yaw - shots[3].yaw, kThirdYaw);
-  EXPECT_EQ(shots[4].pitch - shots[3].pitch, kThirdPitch);
+  EXPECT_NEAR(shots[5].yaw - shots[4].yaw, kThirdYaw, kShotAngleTolerance);
+  EXPECT_NEAR(shots[5].pitch - shots[4].pitch, kThirdPitch, kShotAngleTolerance);
+  EXPECT_NEAR(shots[4].yaw - shots[3].yaw, kThirdYaw, kShotAngleTolerance);
+  EXPECT_NEAR(shots[4].pitch - shots[3].pitch, kThirdPitch, kShotAngleTolerance);
 }
 
 // US-09: the pattern is the same every burst, and the aim settles back between them.
@@ -914,19 +911,19 @@ TEST_F(RecoilTest, ABurstFiredBeforeTheLastHasRecoveredStartsThePatternOverOnTop
   const float left = shots[0].pitch - kViewPitch;
   EXPECT_GT(left, 0.0F);
   EXPECT_LT(left, kFirstPitch + kSecondPitch + kThirdPitch);
-  EXPECT_EQ(shots[1].pitch - shots[0].pitch, kFirstPitch);
-  EXPECT_EQ(shots[1].yaw - shots[0].yaw, 0.0F);
+  EXPECT_NEAR(shots[1].pitch - shots[0].pitch, kFirstPitch, kShotAngleTolerance);
+  EXPECT_NEAR(shots[1].yaw - shots[0].yaw, 0.0F, kShotAngleTolerance);
 }
 
 // Requirements: US-09, US-06
 TEST_F(RecoilTest, AimingDownSightsScalesEveryKick) {
   const auto shots = Burst(4, FiringFromTheView(/*ads=*/true));
 
-  EXPECT_EQ(shots[0].pitch, kViewPitch);
-  EXPECT_EQ(shots[1].pitch, kViewPitch + (kFirstPitch / 2.0F));
-  EXPECT_EQ(shots[2].yaw, kViewYaw + (kSecondYaw / 2.0F));
-  EXPECT_EQ(shots[3].yaw, kViewYaw + ((kSecondYaw + kThirdYaw) / 2.0F));
-  EXPECT_EQ(shots[3].pitch, kViewPitch + ((kFirstPitch + kSecondPitch + kThirdPitch) / 2.0F));
+  EXPECT_NEAR(shots[0].pitch, kViewPitch, kShotAngleTolerance);
+  EXPECT_NEAR(shots[1].pitch, kViewPitch + (kFirstPitch / 2.0F), kShotAngleTolerance);
+  EXPECT_NEAR(shots[2].yaw, kViewYaw + (kSecondYaw / 2.0F), kShotAngleTolerance);
+  EXPECT_NEAR(shots[3].yaw, kViewYaw + ((kSecondYaw + kThirdYaw) / 2.0F), kShotAngleTolerance);
+  EXPECT_NEAR(shots[3].pitch, kViewPitch + ((kFirstPitch + kSecondPitch + kThirdPitch) / 2.0F), kShotAngleTolerance);
 }
 
 // Requirements: US-09
@@ -966,9 +963,9 @@ TEST_F(RecoilTest, AReloadEndsTheBurstThoughFireIsStillHeld) {
 
   const auto shots = Burst(2);
 
-  EXPECT_EQ(shots[0].yaw, kViewYaw);
-  EXPECT_EQ(shots[0].pitch, kViewPitch);
-  EXPECT_EQ(shots[1].pitch, kViewPitch + kFirstPitch);
+  EXPECT_NEAR(shots[0].yaw, kViewYaw, kShotAngleTolerance);
+  EXPECT_NEAR(shots[0].pitch, kViewPitch, kShotAngleTolerance);
+  EXPECT_NEAR(shots[1].pitch, kViewPitch + kFirstPitch, kShotAngleTolerance);
 }
 
 // Requirements: US-09, NFR-03
@@ -1967,6 +1964,135 @@ TEST_F(RecoiledHitTest, ARecoilKickTurnsNothingOfTheBodyThatHoldsTheRifle) {
   EXPECT_EQ(hits[0].part, BodyPart::kLimb);
 }
 
+// HitTest with Alice playing the Holder (clips_fixture.h) and holding its rifle
+// (clips_fixture::HolderRifle) in ADS, looking level at Bob: her Sight on her
+// Eye and her Muzzle kHolderMuzzle ahead of it. Her right hand's grandparent,
+// the shoulder a Muzzle in a wall is found from (ADR-0044), is her Pelvis,
+// below her Eye. A test puts up a thin wall across her view: kThroughTheBarrel
+// ahead of her feet, between her Pelvis and her Muzzle, the barrel pokes
+// through it toward Bob behind it.
+class MuzzleInAWallTest : public HitTest {
+ protected:
+  static constexpr float kThroughTheBarrel = 0.5F;
+  // How near a point is to where the test works it out to be: a little more
+  // than the grids a Shot's numbers travel on round off over the barrel.
+  static constexpr float kTolerance = 0.01F;
+
+  MuzzleInAWallTest() : HitTest(augusta::clips_fixture::HolderRifle()) {}
+
+  void SetUp() override {
+    world_.AddPlayer(kAlice, Vec3(0.0F, 0.5F, 0.0F), Holder());
+    world_.AddPlayer(kBob, Vec3(0.0F, 0.5F, -10.0F), Target());
+    bob_ = Command{};
+    Wait(kSettleTicks);
+  }
+
+  // A one-tick press of fire by Alice, in ADS, looking level down -Z at Bob's head.
+  static Command FiringInAds() {
+    Command command = Firing();
+    command.ads = true;
+    return command;
+  }
+
+  // Puts up a wall across Alice's view, ahead ahead of her feet; returns its Z.
+  float WallAhead(float ahead) {
+    const float wall_z = Feet().z - ahead;
+    EXPECT_TRUE(world_
+                    .AddCollisionMesh(CollisionMesh{.points = {Vec3(-2.0F, 0.0F, wall_z), Vec3(-2.0F, 3.0F, wall_z),
+                                                               Vec3(2.0F, 3.0F, wall_z), Vec3(2.0F, 0.0F, wall_z)},
+                                                    .indices = {0, 1, 2, 0, 2, 3}})
+                    .has_value());
+    return wall_z;
+  }
+
+  // Where Alice's feet are.
+  Vec3 Feet() { return Entity(Tick(Command{}), kAlice).body.position; }
+
+  // Her Pelvis, standing, from her feet.
+  static Vec3 Shoulder() { return {0.0F, augusta::clips_fixture::kPelvisStanding, 0.0F}; }
+
+  // Her Muzzle in ADS, from her feet as she faces -Z: kHolderMuzzle ahead of her Eye.
+  static Vec3 Muzzle() {
+    namespace fixture = augusta::clips_fixture;
+    return fixture::kHolderEye + Vec3(0.0F, 0.0F, -fixture::kHolderMuzzle);
+  }
+
+  static void ExpectNear(const Vec3& actual, const Vec3& expected) {
+    EXPECT_NEAR(actual.x, expected.x, kTolerance);
+    EXPECT_NEAR(actual.y, expected.y, kTolerance);
+    EXPECT_NEAR(actual.z, expected.z, kTolerance);
+  }
+};
+
+// The barrel enters the wall kThroughTheBarrel along the kHolderMuzzle from her
+// Pelvis's Z to her Muzzle's: there the round strikes it, on the tick it is
+// fired, and flies no further.
+// Requirements: US-10
+TEST_F(MuzzleInAWallTest, ARoundFromAMuzzleThroughAWallStrikesTheWallWhereTheBarrelEntersIt) {
+  const Vec3 feet = Feet();
+  WallAhead(kThroughTheBarrel);
+  const Vec3 entry =
+      feet + Shoulder() + ((kThroughTheBarrel / augusta::clips_fixture::kHolderMuzzle) * (Muzzle() - Shoulder()));
+
+  const State state = Tick(FiringInAds());
+
+  ASSERT_EQ(state.map_impacts.size(), 1U);
+  ExpectNear(state.map_impacts[0], entry);
+  EXPECT_EQ(state.bullets_in_flight, 0U);
+  EXPECT_TRUE(state.hits.empty());
+}
+
+// The same round, aimed at Bob from a Muzzle in the clear, hits him; with the
+// wall up round the barrel, it does not.
+// Requirements: US-10, US-11
+TEST_F(MuzzleInAWallTest, APlayerBehindAWallTheBarrelPokesThroughIsNotHit) {
+  const std::vector<Hit> in_the_clear = Shoot(FiringInAds());
+  ASSERT_EQ(in_the_clear.size(), 1U);
+  ASSERT_EQ(in_the_clear[0].target, kBob);
+  WallAhead(kThroughTheBarrel);
+
+  const std::vector<Hit> through_the_wall = Shoot(FiringInAds());
+
+  EXPECT_TRUE(through_the_wall.empty());
+}
+
+// A client draws a round from its Shot until its own Map raycast stops it
+// (ADR-0044): the Shot of a round stopped by the wall leaves from her Pelvis
+// toward her Muzzle, so that the line it gives meets the wall where the server
+// put the round.
+// Requirements: US-10
+TEST_F(MuzzleInAWallTest, TheShotOfARoundStoppedByAWallMeetsTheWallWhereTheRoundStruckIt) {
+  const Vec3 feet = Feet();
+  const float wall_z = WallAhead(kThroughTheBarrel);
+
+  const State state = Tick(FiringInAds());
+
+  ASSERT_EQ(state.shots.size(), 1U);
+  ASSERT_EQ(state.map_impacts.size(), 1U);
+  const augusta::simulation::Shot& shot = state.shots[0];
+  const Vec3 along = augusta::command::ViewDirection(shot.yaw, shot.pitch);
+  ExpectNear(shot.origin, feet + Shoulder());
+  ExpectNear(along, augusta::math::Normalize(Muzzle() - Shoulder()));
+  ExpectNear(shot.origin + (((wall_z - shot.origin.z) / along.z) * along), state.map_impacts[0]);
+}
+
+// A wall a little ahead of her Muzzle leaves the barrel clear: the round leaves
+// the Muzzle, as any other does, and strikes the wall along its flight.
+// Requirements: US-10
+TEST_F(MuzzleInAWallTest, ARoundWhoseBarrelIsClearOfAWallLeavesTheMuzzleAndStrikesTheWallInFlight) {
+  const Vec3 feet = Feet();
+  const float wall_z = WallAhead(1.0F);
+
+  const State state = Tick(FiringInAds());
+
+  ASSERT_EQ(state.shots.size(), 1U);
+  ExpectNear(state.shots[0].origin, feet + Muzzle());
+  ASSERT_EQ(state.map_impacts.size(), 1U);
+  EXPECT_NEAR(state.map_impacts[0].x, feet.x, kTolerance);
+  EXPECT_NEAR(state.map_impacts[0].z, wall_z, kTolerance);
+  EXPECT_GT(state.map_impacts[0].y, feet.y + Shoulder().y);
+}
+
 TEST_F(SimulationTest, AStateNamesItsTickFromOne) {
   EXPECT_EQ(world_.Tick({}, kTick).state.tick, 1U);
   EXPECT_EQ(world_.Tick({}, kTick).state.tick, 2U);
@@ -2425,6 +2551,215 @@ TEST_F(RecoiledRifleTest, ARecoilKickTurnsTheRifleAboutItsGrip) {
   ExpectNear(PositionOf(held.sight), hand);
   ExpectNear(PointingOf(held.muzzle), kicked);
   ExpectNear(PositionOf(held.muzzle), hand + (fixture::kHolderMuzzle * kicked));
+}
+
+// How far point is from the line a Shot's round flies along: straight, as the
+// test rifle's rounds fly with no gravity.
+float MissOf(const augusta::simulation::Shot& shot, const Vec3& point) {
+  const Vec3 along = augusta::command::ViewDirection(shot.yaw, shot.pitch);
+  return augusta::math::Length(augusta::math::Cross(point - shot.origin, along));
+}
+
+// From the hip, her round leaves the Muzzle of the rifle her hanging hand
+// holds, far below and to the right of her Eye (ADR-0064).
+// Requirements: US-07
+TEST_F(HeldRifleTest, AHipFiredRoundLeavesTheHipHeldMuzzle) {
+  namespace fixture = augusta::clips_fixture;
+  const Vec3 hand = Feet() + RightShoulder(fixture::kPelvisStanding) + Vec3(0.0F, -fixture::kHolderArm, 0.0F);
+  Command firing = Aiming(0.0F, 0.0F, false);
+  firing.fire = true;
+
+  const augusta::simulation::Shot shot = ShotOf(firing);
+
+  ExpectNear(shot.origin, hand + Vec3(0.0F, 0.0F, -fixture::kHolderMuzzle));
+}
+
+// In ADS her round leaves the Muzzle, kHolderMuzzle ahead of her Eye along the
+// view, not the Eye itself.
+// Requirements: US-07
+TEST_F(HeldRifleTest, InAdsARoundLeavesTheMuzzleAheadOfTheEye) {
+  namespace fixture = augusta::clips_fixture;
+  const Vec3 eye = Feet() + fixture::kHolderEye;
+  Command firing = Aiming(0.0F, 0.0F, true);
+  firing.fire = true;
+
+  const augusta::simulation::Shot shot = ShotOf(firing);
+
+  ExpectNear(shot.origin, eye + Vec3(0.0F, 0.0F, -fixture::kHolderMuzzle));
+}
+
+// The round is zeroed: from the hip as in ADS, it crosses her line of sight,
+// from her Eye along her view, at the rifle's zero range (ADR-0064).
+// Requirements: US-07
+TEST_F(HeldRifleTest, AHipFiredRoundCrossesTheLineOfSightAtTheZeroRange) {
+  const Vec3 eye = Feet() + augusta::clips_fixture::kHolderEye;
+  Command firing = Aiming(0.5F, 0.125F, false);
+  firing.fire = true;
+
+  const augusta::simulation::Shot shot = ShotOf(firing);
+
+  const float zero_range = WithTheTestRifle().rifle.zero_range;
+  EXPECT_LT(MissOf(shot, eye + (zero_range * augusta::command::ViewDirection(0.5F, 0.125F))), kTolerance);
+}
+
+// Crouched or prone, her Clips hold her Pelvis lower, and the rifle in her
+// hanging hand with it: her rounds leave from it.
+// Requirements: US-07
+TEST_F(HeldRifleTest, ACrouchedOrProneShooterFiresFromTheMuzzleItsStanceHoldsLower) {
+  namespace fixture = augusta::clips_fixture;
+  const auto settled_into = [&](Stance stance) {
+    Command command = Aiming(0.0F, 0.0F, false);
+    command.movement.desired_stance = stance;
+    for (int i = 0; i < kSettleTicks * 2; ++i) {
+      Tick(command);
+    }
+    command.fire = true;
+    return command;
+  };
+  const auto muzzle = [&](float pelvis) {
+    return Feet() + RightShoulder(pelvis) + Vec3(0.0F, -fixture::kHolderArm, -fixture::kHolderMuzzle);
+  };
+
+  const Command crouched = settled_into(Stance::kCrouching);
+  const Vec3 crouched_muzzle = muzzle(fixture::kPelvisCrouching);
+  const augusta::simulation::Shot from_a_crouch = ShotOf(crouched);
+  const Command prone = settled_into(Stance::kProne);
+  const Vec3 prone_muzzle = muzzle(fixture::kPelvisProne);
+  const augusta::simulation::Shot from_prone = ShotOf(prone);
+
+  ExpectNear(from_a_crouch.origin, crouched_muzzle);
+  ExpectNear(from_prone.origin, prone_muzzle);
+}
+
+// The Recoil offset turns the view her rounds leave along, as it did when they
+// left the Eye: the first round of a Burst, fired before its kick, crosses her
+// line of sight at the zero range, and the next one her line of sight turned by
+// the kick.
+// Requirements: US-09
+TEST_F(RecoiledRifleTest, EachRoundCrossesTheViewTurnedByTheKicksBeforeItAtTheZeroRange) {
+  const Vec3 eye = Feet() + augusta::clips_fixture::kHolderEye;
+  const float zero_range = WithAKick().rifle.zero_range;
+  Command firing = Aiming(0.0F, 0.0F, false);
+  firing.fire = true;
+  std::vector<augusta::simulation::Shot> shots;
+  for (int i = 0; i < 7; ++i) {
+    const State state = Tick(firing);
+    shots.insert(shots.end(), state.shots.begin(), state.shots.end());
+  }
+
+  ASSERT_EQ(shots.size(), 2U);
+  EXPECT_LT(MissOf(shots[0], eye + (zero_range * augusta::command::ViewDirection(0.0F, 0.0F))), kTolerance);
+  EXPECT_LT(MissOf(shots[1], eye + (zero_range * augusta::command::ViewDirection(kKickYaw, kKickPitch))), kTolerance);
+}
+
+// HeldRifleTest with a rifle whose rounds drop, at half the test rifle's speed
+// so the drop shows, zeroed at kZeroRange.
+class ZeroedRifleTest : public HeldRifleTest {
+ protected:
+  static constexpr float kZeroRange = 50.0F;
+  // How far off the sight a round lands at the least, nearer or further: well
+  // above the grids' rounding, and below what the test rifle's drop gives.
+  static constexpr float kOffTheSight = 0.01F;
+
+  static Parameters ThatDrops() {
+    Parameters parameters = WithTheTestRifle();
+    parameters.rifle.muzzle_velocity = 300.0F;
+    parameters.rifle.zero_range = kZeroRange;
+    parameters.ammo.flight.gravity = 9.81F;
+    return parameters;
+  }
+
+  ZeroedRifleTest() : HeldRifleTest(ThatDrops()) {}
+
+  // Where her Eye is.
+  Vec3 Eye() { return Feet() + augusta::clips_fixture::kHolderEye; }
+
+  // Where a round she fires with command, looking down -Z, lands on a wall
+  // across her view distance ahead of eye.
+  Vec3 LandingAt(float distance, const Vec3& eye, const Command& command) {
+    constexpr float kHalfWidth = 50.0F;
+    constexpr float kHeight = 20.0F;
+    const float wall_z = eye.z - distance;
+    EXPECT_TRUE(world_
+                    .AddCollisionMesh(
+                        CollisionMesh{.points = {Vec3(-kHalfWidth, 0.0F, wall_z), Vec3(kHalfWidth, 0.0F, wall_z),
+                                                 Vec3(kHalfWidth, kHeight, wall_z), Vec3(-kHalfWidth, kHeight, wall_z)},
+                                      .indices = {0, 1, 2, 0, 2, 3}})
+                    .has_value());
+    Command firing = command;
+    firing.fire = true;
+    Command holding = command;
+    holding.fire = false;
+    State state = Tick(firing);
+    for (int i = 0; i < 60 && state.map_impacts.empty(); ++i) {
+      state = Tick(holding);
+    }
+    EXPECT_EQ(state.map_impacts.size(), 1U);
+    return state.map_impacts.empty() ? Vec3() : state.map_impacts.front();
+  }
+};
+
+// Requirements: US-07
+TEST_F(ZeroedRifleTest, InAdsARoundAtTheZeroRangeLandsOnTheSight) {
+  const Vec3 eye = Eye();
+
+  const Vec3 landed = LandingAt(kZeroRange, eye, Aiming(0.0F, 0.0F, true));
+
+  ExpectNear(landed, eye + Vec3(0.0F, 0.0F, -kZeroRange));
+}
+
+// Requirements: US-07
+TEST_F(ZeroedRifleTest, FromTheHipARoundAtTheZeroRangeLandsOnTheSight) {
+  const Vec3 eye = Eye();
+
+  const Vec3 landed = LandingAt(kZeroRange, eye, Aiming(0.0F, 0.0F, false));
+
+  ExpectNear(landed, eye + Vec3(0.0F, 0.0F, -kZeroRange));
+}
+
+// In ADS the round leaves on the line of sight and climbs to fall back onto it
+// at the zero range: nearer, it is still above it.
+// Requirements: US-07
+TEST_F(ZeroedRifleTest, InAdsARoundNearerThanTheZeroRangeLandsAboveTheSight) {
+  const Vec3 eye = Eye();
+
+  const Vec3 landed = LandingAt(kZeroRange / 2.0F, eye, Aiming(0.0F, 0.0F, true));
+
+  EXPECT_GT(landed.y, eye.y + kOffTheSight);
+}
+
+// Requirements: US-07
+TEST_F(ZeroedRifleTest, InAdsARoundFurtherThanTheZeroRangeLandsBelowTheSight) {
+  const Vec3 eye = Eye();
+
+  const Vec3 landed = LandingAt(kZeroRange * 2.0F, eye, Aiming(0.0F, 0.0F, true));
+
+  EXPECT_LT(landed.y, eye.y - kOffTheSight);
+}
+
+// From the hip the round rises from her hand, to her right, toward the sight:
+// nearer than the zero range it has not reached it.
+// Requirements: US-07
+TEST_F(ZeroedRifleTest, FromTheHipARoundNearerThanTheZeroRangeLandsBelowAndRightOfTheSight) {
+  const Vec3 eye = Eye();
+
+  const Vec3 landed = LandingAt(kZeroRange / 2.0F, eye, Aiming(0.0F, 0.0F, false));
+
+  EXPECT_LT(landed.y, eye.y - kOffTheSight);
+  EXPECT_GT(landed.x, eye.x + kOffTheSight);
+}
+
+// Past the zero range it has crossed the sight and goes on: above it, its hand
+// further below her Eye than the round drops by twice the zero range, and to
+// her left.
+// Requirements: US-07
+TEST_F(ZeroedRifleTest, FromTheHipARoundFurtherThanTheZeroRangeLandsAboveAndLeftOfTheSight) {
+  const Vec3 eye = Eye();
+
+  const Vec3 landed = LandingAt(kZeroRange * 2.0F, eye, Aiming(0.0F, 0.0F, false));
+
+  EXPECT_GT(landed.y, eye.y + kOffTheSight);
+  EXPECT_LT(landed.x, eye.x - kOffTheSight);
 }
 
 }  // namespace

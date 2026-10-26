@@ -84,8 +84,8 @@ enum class Phase {
   /// Mechanism. Aim/ADS, fire, reload, recoil, ammo rules (US-06-US-09) -
   /// augusta::weapon::Step, one call per player: the same function
   /// PredictionWorld's WeaponHandling phase predicts with (ARCHITECTURE.md
-  /// §5). Here its result is authoritative: each round fired is a Shot, and a
-  /// bullet in ballistics::World from this tick on. A Command's fire and reload
+  /// §5). Here its result is authoritative: each round fired is one Posing
+  /// fires, from the Muzzle it places this tick. A Command's fire and reload
   /// are only intent: the fire rate, the magazine and the reload are this
   /// phase's to keep, whatever a client sends.
   kWeaponHandling,
@@ -102,8 +102,17 @@ enum class Phase {
   /// or Commit records the pose; and places the rifle's Muzzle and Sight where
   /// the socket holds it, the rifle turned about its Grip by the Recoil offset
   /// WeaponHandling has just left it with (weapon::Recoiled, weapon::PlaceMuzzle,
-  /// ADR-0064, World::HeldRifleOf); the body does not take the recoil. Rounds
-  /// still leave the Eye.
+  /// ADR-0064, World::HeldRifleOf); the body does not take the recoil. Last,
+  /// fires the round WeaponHandling fired, if it fired one: a Shot, and a
+  /// bullet in ballistics::World from this tick on, from the Muzzle of the rifle
+  /// turned by the Recoil offset from before that round's own kick, which also
+  /// turns the view it is aimed along, zeroed to cross the line of sight from
+  /// the Eye, as Movement just left it, along that view at the rifle's zero
+  /// range (weapon::Zeroed, ADR-0064). A rifle whose barrel, from the shoulder
+  /// of the arm that holds it (its right hand's grandparent Joint) to that
+  /// Muzzle, is in the Map fires into the Map instead, one raycast telling:
+  /// the round strikes it where the barrel enters it, a Map impact of this
+  /// tick, and no bullet flies (ADR-0044).
   kPosing,
   /// Mechanism. Advances in-flight bullet trajectories (US-10) -
   /// augusta::ballistics::World::Step, one call per in-flight bullet.
@@ -199,7 +208,8 @@ inline constexpr std::string_view kDefaultRootJoint = "Root";
 /// ADR-0061), in the character's root space: standing, its feet at the origin,
 /// facing where a view of yaw 0 looks (command::Command).
 struct Character {
-  /// Where it sees from, and where its Shots leave from.
+  /// Where it sees from: where the line of sight its Shots are zeroed onto
+  /// starts (ADR-0064). Its Shots leave its rifle's Muzzle.
   math::Vec3 eye{};
   /// What a bullet that reaches its body is judged against, each in the space
   /// of its Joint of skeleton. One without any cannot be hit.
@@ -270,11 +280,15 @@ struct EntityState {
 struct Shot {
   /// The body of the player who fired it.
   EntityId shooter{};
-  /// Where the round left from: the shooter's eye for its stance.
+  /// Where the round left from: the shooter's Muzzle, as Posing placed it
+  /// (ADR-0064); for a round fired into the Map, the shoulder of the arm that
+  /// holds the rifle (ADR-0044).
   math::Vec3 origin{};
   /// Where it left for, as a view's yaw and pitch in radians
-  /// (command::ViewDirection gives the direction): the view of the shooter's
-  /// Command, turned by its rifle's Recoil offset (weapon::Step).
+  /// (command::ViewDirection gives the direction): the barrel's, zeroed onto the
+  /// line of sight along the view of the shooter's Command turned by its rifle's
+  /// Recoil offset (weapon::Zeroed); for a round fired into the Map, the way
+  /// from that shoulder to the Muzzle.
   float yaw = 0.0F;
   float pitch = 0.0F;
 
@@ -398,7 +412,8 @@ struct State {
   std::vector<Death> deaths;
   /// Every round fired this tick, ordered by shooter: at most one a player.
   std::vector<Shot> shots;
-  /// Where each bullet that struck the Map this tick struck it.
+  /// Where each bullet that struck the Map this tick struck it, and each round
+  /// fired into it where its barrel enters it (ADR-0044).
   std::vector<math::Vec3> map_impacts;
   /// Every bullet that struck a player this tick, ordered by target; those on
   /// one target in the order they took its health.

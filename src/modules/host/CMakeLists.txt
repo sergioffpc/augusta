@@ -49,12 +49,15 @@ find_package(prometheus-cpp CONFIG REQUIRED)
 add_library(
   augusta_host
   STATIC
+  capture_metrics.cpp
   capture_retention.cpp
+  capture_writer.cpp
   capturer.cpp
   host.cpp
   host_log.cpp
   host_match.cpp
   host_metrics.cpp
+  host_metrics_collect.cpp
   host_network.cpp
   link_mapping.cpp
   peer_gate.cpp

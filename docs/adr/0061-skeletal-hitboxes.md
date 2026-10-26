@@ -102,12 +102,13 @@ format; ADR-0019, ADR-0023, ADR-0040 and ADR-0044 are amended to match.
 - **A client can pose a player; it draws none posed before skinning.** The
   module is `SHARED` so that it cannot depend on anything client-only, and a
   client poses a player from its interpolated state as the server does (below).
-  SimulationWorld is the one World that poses players, until skinning gives
-  PresentationWorld's Animation phase a posed body to draw (ADR-0066). A
-  Development build's client (ADR-0074) places a character's Hitboxes in its
-  root space by the rest pose once, when the character loads, for the Hitboxes
-  Debug overlay to place by each player's pose as the root: a loader, not a
-  World, posing no player.
+  SimulationWorld is the one World that poses every player. PresentationWorld's
+  Animation phase poses only the local player's predicted body, on a frame it
+  fires, to show its muzzle flash at its Muzzle (ADR-0064), until skinning gives
+  it a posed body to draw (ADR-0066). A Development build's client (ADR-0074)
+  places a character's Hitboxes in its root space by the rest pose once, when
+  the character loads, for the Hitboxes Debug overlay to place by each player's
+  pose as the root: a loader, not a World, posing no player.
 - **Skinning is ADR-0066's.** Drawing a posed character is decided there, apart
   from the Hitbox pose. The renderer rebuilds every remote player's vertices on
   the CPU each frame, rotated by yaw and translated, with no per-instance
