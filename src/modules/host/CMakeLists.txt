@@ -50,6 +50,7 @@ add_library(
   augusta_host
   STATIC
   capture_retention.cpp
+  capture_writer.cpp
   capturer.cpp
   host.cpp
   host_log.cpp
