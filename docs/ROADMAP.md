@@ -44,8 +44,7 @@ the issues is ENGINEERING.md's Milestones section.
 - [v7 — Debug and Network Tooling (7.0.0, 2026-10-24)](#v7--debug-and-network-tooling-700-2026-10-24)
     - [M19a — Debug Tooling (L)](#m19a--debug-tooling-l)
     - [M19b — Network Tooling (M)](#m19b--network-tooling-m)
-- [The Workbench (planned)](#the-workbench-planned)
-- [Authoritative Body (planned)](#authoritative-body-planned)
+- [v8 — The Workbench and Authoritative Body (8.0.0, 2026-10-26)](#v8--the-workbench-and-authoritative-body-800-2026-10-26)
     - [M20 — Skeleton (M)](#m20--skeleton-m)
     - [M21 — Muzzle (S)](#m21--muzzle-s)
     - [M22 — Clips & the Hitbox Pose (M)](#m22--clips--the-hitbox-pose-m)
@@ -459,24 +458,24 @@ shooter saw, and a Shipping build holds no debug tool
 every message in a Development build's capture, and the network Debug panel
 shows and impairs the client's own connection
 
-## The Workbench (planned)
-
-A maintenance release for the developer's own environment, with no change to the
-game, shipped as a minor ahead of the next major. A Mac builds, tests and checks
-natively on the host as Linux does (#1281), and every tool the repository runs
-has one pinned version that the editor, the hooks and CI all run, from each
-checkout's toolchain (#1283).
-
-**Exercises:** ADR-0008, ADR-0012, ADR-0077 **Exit criteria:** a Mac bootstraps,
-builds, tests and passes `make prepush` natively, and `make toolchain-check`
-passes on Linux, Windows and macOS
-
-## Authoritative Body (planned)
+## v8 — The Workbench and Authoritative Body (8.0.0, 2026-10-26)
 
 Debug Tooling lets developers see the game; the Authoritative Body makes a Shot
 land where the body is. A Character gets a Skeleton, its Hitboxes follow Joints
 posed from replicated state, and rounds leave the rifle's Muzzle. All of it is
-the server's: clients draw the same rigid body until The Drawn Body.
+the server's: clients draw the same rigid body until The Drawn Body. The
+Skeleton, the Clips and the rifle's markers changed the pack format, and view
+pitch, ADS and the Stride the wire, so it shipped as one major.
+
+The Workbench, planned as a minor ahead of it for the developer's own
+environment, with no change to the game, shipped with it: a Mac builds, tests
+and checks natively on the host as Linux does (#1281), and every tool the
+repository runs has one pinned version that the editor, the hooks and CI all
+run, from each checkout's toolchain (#1283).
+
+**Exercises:** ADR-0008, ADR-0012, ADR-0077 **Exit criteria:** a Mac bootstraps,
+builds, tests and passes `make prepush` natively, and `make toolchain-check`
+passes on Linux, Windows and macOS
 
 ### M20 — Skeleton (M)
 
