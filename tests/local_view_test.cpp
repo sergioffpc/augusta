@@ -267,7 +267,7 @@ TEST(SpectatorTest, WithNoOneLeftAliveNoOneIsWatched) {
   EXPECT_EQ(spectator.Update(kPlayers, {}, true), std::nullopt);
 }
 
-// Remote pitch is not replicated, so the watched view looks level.
+// A watched player looking level: the view looks level.
 // Requirements: US-13
 TEST(WatchedCameraTest, TheCameraIsAtTheWatchedPlayersEyeForItsStanceLookingLevelWhereItFaces) {
   const RemoteBody crouching{.position = Vec3(3.0F, 1.0F, -4.0F),
@@ -275,7 +275,7 @@ TEST(WatchedCameraTest, TheCameraIsAtTheWatchedPlayersEyeForItsStanceLookingLeve
                              .yaw = 0.6F,
                              .stance = Stance::kCrouching};
 
-  const Camera camera = WatchedCamera(crouching, kStandingEye, 0.0F);
+  const Camera camera = WatchedCamera(crouching, kStandingEye);
 
   ExpectNear(camera.position,
              Vec3(3.0F, 1.0F, -4.0F) + augusta::physics::LowerToStance(kStandingEye, Stance::kCrouching));
@@ -283,12 +283,13 @@ TEST(WatchedCameraTest, TheCameraIsAtTheWatchedPlayersEyeForItsStanceLookingLeve
   EXPECT_FLOAT_EQ(camera.vertical_fov, kHipFieldOfView);
 }
 
-// A Replay viewer is shown the watched player's pitch (ADR-0051).
-// Requirements: US-21
-TEST(WatchedCameraTest, TheCameraLooksAtTheWatchedPlayersPitchWhenItIsKnown) {
-  const RemoteBody standing{.position = Vec3(1.0F, 0.0F, 2.0F), .velocity = {}, .yaw = -0.4F, .stance = {}};
+// A spectator is shown the watched player's pitch, which its state carries
+// (ADR-0066).
+// Requirements: US-13, US-21
+TEST(WatchedCameraTest, TheCameraLooksAtTheWatchedPlayersPitch) {
+  const RemoteBody standing{.position = Vec3(1.0F, 0.0F, 2.0F), .velocity = {}, .yaw = -0.4F, .pitch = 0.3F};
 
-  const Camera camera = WatchedCamera(standing, kStandingEye, 0.3F);
+  const Camera camera = WatchedCamera(standing, kStandingEye);
 
   EXPECT_EQ(camera.rotation, augusta::command::ViewRotation(-0.4F, 0.3F));
 }

@@ -100,12 +100,91 @@ def decode_mesh(
     return points, indices
 
 
-def decode_hitbox(
-    blob: bytes,
-) -> tuple[int, list[tuple[float, float, float]], list[int]]:
-    """A hitbox blob: u8 body part, then a mesh blob."""
-    points, indices = decode_mesh(blob[1:])
-    return blob[0], points, indices
+@dataclass(frozen=True)
+class Hitbox:
+    body_part: int
+    joint: str
+    points: list[tuple[float, float, float]]
+    indices: list[int]
+
+
+def decode_hitbox(blob: bytes) -> Hitbox:
+    """A hitbox blob: u8 body part, the joint's name, then a mesh blob.
+
+    The name is a u32 length and its bytes.
+    """
+    (length,) = struct.unpack_from("<I", blob, 1)
+    joint = blob[5 : 5 + length].decode("utf-8")
+    points, indices = decode_mesh(blob[5 + length :])
+    return Hitbox(blob[0], joint, points, indices)
+
+
+@dataclass(frozen=True)
+class Joint:
+    name: str
+    parent: int
+    translation: tuple[float, float, float]
+    # x, y, z, w.
+    rotation: tuple[float, float, float, float]
+    scale: tuple[float, float, float]
+
+
+def decode_skeleton(blob: bytes) -> list[Joint]:
+    """A skeleton blob's joints, in order.
+
+    The blob is a u32 joint count, then each joint's name as a u32 length and
+    its bytes, its parent's index as a u32, then its translation xyz, rotation
+    xyzw and scale xyz, all f32.
+    """
+    (count,) = struct.unpack_from("<I", blob, 0)
+    offset = 4
+    joints = []
+    for _ in range(count):
+        (length,) = struct.unpack_from("<I", blob, offset)
+        name = blob[offset + 4 : offset + 4 + length].decode("utf-8")
+        offset += 4 + length
+        parent, *transform = struct.unpack_from("<I10f", blob, offset)
+        offset += 44
+        joints.append(
+            Joint(
+                name,
+                parent,
+                tuple(transform[0:3]),
+                tuple(transform[3:7]),
+                tuple(transform[7:10]),
+            )
+        )
+    assert offset == len(blob)
+    return joints
+
+
+@dataclass(frozen=True)
+class WeaponSocket:
+    right_hand: str
+    translation: tuple[float, float, float]
+    # x, y, z, w.
+    rotation: tuple[float, float, float, float]
+    left_hand: str
+
+
+def decode_weapon_socket(blob: bytes) -> WeaponSocket:
+    """A weapon socket blob.
+
+    The blob is its right hand's joint's name as a u32 length and its bytes,
+    its translation xyz and rotation xyzw, all f32, then the left hand's
+    joint's name as the first is.
+    """
+    (length,) = struct.unpack_from("<I", blob, 0)
+    right_hand = blob[4 : 4 + length].decode("utf-8")
+    offset = 4 + length
+    transform = struct.unpack_from("<7f", blob, offset)
+    offset += 28
+    (length,) = struct.unpack_from("<I", blob, offset)
+    left_hand = blob[offset + 4 : offset + 4 + length].decode("utf-8")
+    assert offset + 4 + length == len(blob)
+    return WeaponSocket(
+        right_hand, tuple(transform[0:3]), tuple(transform[3:7]), left_hand
+    )
 
 
 def decode_spawn_point(
@@ -296,3 +375,34 @@ def decode_cue_sound(blob: bytes) -> tuple[float, list[str]]:
         offset += 4 + length
     assert offset == len(blob)
     return gain_db, variants
+
+
+@dataclass(frozen=True)
+class Clip:
+    stride_length: float
+    # (foot, ratio of the clip's duration), foot 0 left and 1 right.
+    foot_contacts: list[tuple[int, float]]
+    archive: bytes
+
+
+def decode_clip(blob: bytes) -> Clip:
+    """A clip blob: its stride length, Foot contacts and archive.
+
+    The blob is an f32 stride length, a u8 contact count, each contact's u8
+    foot and f32 ratio, then the ozz-animation archive as the rest.
+    """
+    stride_length, count = struct.unpack_from("<fB", blob, 0)
+    offset = 5
+    contacts = []
+    for _ in range(count):
+        contacts.append(struct.unpack_from("<Bf", blob, offset))
+        offset += 5
+    return Clip(stride_length, contacts, blob[offset:])
+
+
+def decode_stance_transitions(blob: bytes) -> tuple[float, float, float]:
+    """A stance-transitions blob's durations, in seconds.
+
+    Standing-crouching, standing-prone, then crouching-prone, each an f32.
+    """
+    return struct.unpack("<3f", blob)

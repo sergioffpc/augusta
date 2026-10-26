@@ -11,16 +11,25 @@
 
 # What the client loads from its verified pack at startup: the scene graph as
 # renderer::Scene (see client_scene_loader.h), the characters other players
-# bring (see client_character_loader.h), the map's collision and every cue's
-# sound (see client_content.h).
+# bring (see client_character_loader.h), the map's collision, every cue's sound,
+# the local player's Character's Skeleton and Clips and the scenario's rifle (see
+# client_content.h).
 add_library(augusta_client_content STATIC client_scene_loader.cpp client_character_loader.cpp client_content.cpp)
 target_include_directories(
   augusta_client_content
-  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src/modules/renderer/include
+  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/src/modules/renderer/include
 )
 target_link_libraries(
   augusta_client_content
-  PUBLIC augusta_assets augusta_cues augusta_failure augusta_math augusta_physics augusta_window_events
+  PUBLIC
+    augusta_animation
+    augusta_assets
+    augusta_cues
+    augusta_failure
+    augusta_gameplay
+    augusta_math
+    augusta_physics
+    augusta_window_events
   PRIVATE augusta_logging
 )
 augusta_set_module_scope(augusta_client_content CLIENT_ONLY)
@@ -35,8 +44,9 @@ target_link_libraries(
 )
 augusta_set_module_scope(augusta_client_frame_mapping CLIENT_ONLY)
 if(AUGUSTA_DEBUG_TOOLS)
-  # augusta_gameplay: a character's Hitboxes, for the Hitboxes Debug overlay.
-  target_link_libraries(augusta_client_content PUBLIC augusta_debug augusta_gameplay)
+  # A character's Hitboxes (augusta_gameplay), for the Hitboxes Debug overlay,
+  # placed in its space by augusta_animation's Rest pose.
+  target_link_libraries(augusta_client_content PUBLIC augusta_debug)
   target_link_libraries(augusta_client_frame_mapping PUBLIC augusta_debug)
 endif()
 
@@ -53,14 +63,17 @@ endif()
 target_compile_definitions(augusta_client_net_stats PRIVATE NOMINMAX)
 augusta_set_module_scope(augusta_client_net_stats CLIENT_ONLY)
 
-# The Profiling Debug panel (see profiling_panel.h), in a Development build
-# only (ADR-0074): its state, which says when the capture window opens and
+# The Profiling Debug panel (see debug_profiling_panel.h), in a Development
+# build only (ADR-0074): its state, which says when the capture window opens and
 # closes; the client Runtime opens and closes the NVTX range.
 if(AUGUSTA_DEBUG_TOOLS)
-  add_library(augusta_client_profiling_panel STATIC profiling_panel.cpp)
-  target_include_directories(augusta_client_profiling_panel PUBLIC ${CMAKE_SOURCE_DIR}/src/modules/renderer/include)
-  target_link_libraries(augusta_client_profiling_panel PUBLIC augusta_debug augusta_window_events)
-  augusta_set_module_scope(augusta_client_profiling_panel CLIENT_ONLY)
+  add_library(augusta_client_debug_profiling_panel STATIC debug_profiling_panel.cpp)
+  target_include_directories(
+    augusta_client_debug_profiling_panel
+    PUBLIC ${CMAKE_SOURCE_DIR}/src/modules/renderer/include
+  )
+  target_link_libraries(augusta_client_debug_profiling_panel PUBLIC augusta_debug augusta_window_events)
+  augusta_set_module_scope(augusta_client_debug_profiling_panel CLIENT_ONLY)
 
   # Which debug tools the Debug index lists, and which Physics overlays start
   # on, by the client's mode (see debug_index_entries.h), in a Development
@@ -72,29 +85,29 @@ if(AUGUSTA_DEBUG_TOOLS)
   target_link_libraries(
     augusta_client_debug_index_entries
     PUBLIC augusta_client_config augusta_debug augusta_presentation
-    PRIVATE augusta_client_network_panel augusta_client_profiling_panel
+    PRIVATE augusta_client_debug_network_panel augusta_client_debug_profiling_panel
   )
   augusta_set_module_scope(augusta_client_debug_index_entries CLIENT_ONLY)
 endif()
 
-# The Network Debug panel (see network_panel.h), in a Development build only
-# (ADR-0074): its builder, from plain samples of the connection and its traffic
-# per message type, the corrections and the interpolation slack. Its numbers
-# come from link, prediction and presentation, which ship in every build and may
-# not depend on augusta_debug, so the builder is a client Runtime piece
+# The Network Debug panel (see debug_network_panel.h), in a Development build
+# only (ADR-0074): its builder, from plain samples of the connection and its
+# traffic per message type, the corrections and the interpolation slack. Its
+# numbers come from link, prediction and presentation, which ship in every build
+# and may not depend on augusta_debug, so the builder is a client Runtime piece
 # (ADR-0075). It takes the HUD's packet-loss percent from net_stats.h, its
 # units for bytes from hud, and the Interpolation delay from presentation.
 if(AUGUSTA_DEBUG_TOOLS)
-  add_library(augusta_client_network_panel STATIC network_panel.cpp)
+  add_library(augusta_client_debug_network_panel STATIC debug_network_panel.cpp)
   target_link_libraries(
-    augusta_client_network_panel
+    augusta_client_debug_network_panel
     PUBLIC augusta_debug augusta_link augusta_prediction
     PRIVATE augusta_client_net_stats augusta_hud augusta_presentation
   )
   # NOMINMAX, as augusta_client_net_stats has it: net_stats.h's includes pull in
   # <windows.h>, whose min/max macros would break std::min/std::max.
-  target_compile_definitions(augusta_client_network_panel PRIVATE NOMINMAX)
-  augusta_set_module_scope(augusta_client_network_panel CLIENT_ONLY)
+  target_compile_definitions(augusta_client_debug_network_panel PRIVATE NOMINMAX)
+  augusta_set_module_scope(augusta_client_debug_network_panel CLIENT_ONLY)
 endif()
 
 # What the client loads in the Lobby before it reports Ready, and for which
@@ -108,7 +121,7 @@ augusta_set_module_scope(augusta_client_lobby_readiness CLIENT_ONLY)
 # boundary (see client_phases.h, ADR-0033): no window or GPU, so its tests need
 # no renderer.
 add_library(augusta_client_phases STATIC client_phases.cpp)
-target_include_directories(augusta_client_phases PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(augusta_client_phases PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augusta_client_phases
   PUBLIC augusta_client_content augusta_assets augusta_client_config augusta_config augusta_failure augusta_harness
@@ -120,7 +133,7 @@ augusta_set_module_scope(augusta_client_phases CLIENT_ONLY)
 # wiring of the Harness to the renderer, the HUD, input, PresentationWorld and
 # audio. It links publicly only what its header names.
 add_library(augusta_client STATIC client.cpp)
-target_include_directories(augusta_client PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(augusta_client PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augusta_client
   PUBLIC augusta_client_content augusta_assets augusta_failure augusta_harness augusta_input Boost::uuid
@@ -146,14 +159,17 @@ target_link_libraries(
 # The debug HUD's lines, the Debug overlays' shapes, the Debug panels, the
 # Debug index and Debug interaction, and the pcapng writer the connection is
 # tapped with, with the engine version its file names, in a Development build
-# only (ADR-0074, ADR-0075, ADR-0076).
+# only (ADR-0074, ADR-0075, ADR-0076). The Runtime drives the debug tools on its
+# Main/Render thread (see debug_tools.h), from the connection's readings the
+# Network I/O thread hands it (see debug_connection_readings.h).
 if(AUGUSTA_DEBUG_TOOLS)
+  target_sources(augusta_client PRIVATE debug_connection_readings.cpp debug_tools.cpp)
   target_link_libraries(
     augusta_client
     PRIVATE
       augusta_client_debug_index_entries
-      augusta_client_network_panel
-      augusta_client_profiling_panel
+      augusta_client_debug_network_panel
+      augusta_client_debug_profiling_panel
       augusta_debug
       augusta_hud
       augusta_pcapng
@@ -168,12 +184,12 @@ target_compile_definitions(augusta_client PRIVATE NOMINMAX)
 augusta_set_module_scope(augusta_client CLIENT_ONLY)
 
 # augustac's runs behind the application boundary (see client_application.h,
-# ADR-0033): listing a replay server's Replays, and the Lifecycle that starts
+# ADR-0033): listing a replay server's Replays, and the Program that starts
 # the transport and constructs and runs the client Runtime. What augustac's
 # entry point links of the Runtime: the Runtime and the transport are linked
 # privately, so it reaches neither.
 add_library(augusta_client_application STATIC client_application.cpp)
-target_include_directories(augusta_client_application PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(augusta_client_application PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augusta_client_application
   PUBLIC augusta_application augusta_client_config augusta_client_phases augusta_harness Boost::uuid
@@ -184,7 +200,7 @@ augusta_set_module_scope(augusta_client_application CLIENT_ONLY)
 # The files a Run leaves beside the executable (see run_files.h): their names
 # from the Run ID, which Runs are kept, and how the previous one ended.
 add_library(augusta_client_run_files STATIC run_files.cpp)
-target_include_directories(augusta_client_run_files PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(augusta_client_run_files PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # It reads a log's last line for the events crash and application write.
 target_link_libraries(augusta_client_run_files PUBLIC Boost::uuid PRIVATE augusta_application augusta_crash)
 augusta_set_module_scope(augusta_client_run_files CLIENT_ONLY)
@@ -192,7 +208,7 @@ augusta_set_module_scope(augusta_client_run_files CLIENT_ONLY)
 # The start of one Run (see client_run.h): its Run ID, its log file and its
 # first lines, before augustac reads its config.
 add_library(augusta_client_run STATIC client_run.cpp)
-target_include_directories(augusta_client_run PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(augusta_client_run PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augusta_client_run
   PUBLIC augusta_crash Boost::uuid
@@ -279,7 +295,13 @@ else()
   # The shared libraries the folder bundles are found beside augustac, wherever
   # it is extracted, with no launcher script setting a library path. In the
   # build tree too, so the installed augustac is the built one, byte for byte.
-  set_target_properties(augustac PROPERTIES BUILD_WITH_INSTALL_RPATH ON INSTALL_RPATH "$ORIGIN")
+  # macOS names the executable's folder @executable_path.
+  if(APPLE)
+    set(augustac_rpath "@executable_path")
+  else()
+    set(augustac_rpath "$ORIGIN")
+  endif()
+  set_target_properties(augustac PROPERTIES BUILD_WITH_INSTALL_RPATH ON INSTALL_RPATH "${augustac_rpath}")
 
   # `cmake --install --component client` stages the client's runtime folder,
   # which a release tars (scripts/stage-client.sh): augustac and the shared

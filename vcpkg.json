@@ -1,10 +1,11 @@
 {
   "name": "augusta",
-  "version": "7.0.0",
+  "version": "8.0.0",
   "dependencies": [
     "abseil",
     "benchmark",
     "blake3",
+    "boost-asio",
     "boost-beast",
     "boost-dll",
     "boost-interprocess",
@@ -17,6 +18,7 @@
     "gtest",
     "libsodium",
     "lua",
+    "ozz-animation",
     "physx",
     "protobuf",
     {

@@ -27,22 +27,22 @@
 #include "augusta/host_log.h"
 #include "augusta/host_metrics.h"
 #include "augusta/link.h"
-#include "augusta/link_mapping.h"
 #include "augusta/link_types.h"
 #include "augusta/logging.h"
 #include "augusta/match.h"
 #include "augusta/misbehaviour.h"
 #include "augusta/parameters.h"
-#include "augusta/peer_gate.h"
 #include "augusta/policy_loader.h"
 #include "augusta/replay.h"
 #include "augusta/replay_catalog.h"
 #include "augusta/replication.h"
 #include "augusta/simulation.h"
-#include "augusta/simulation_mapping.h"
 #include "augusta/tick.h"
-#include "augusta/tick_messages.h"
 #include "augusta/version.h"
+#include "link_mapping.h"
+#include "peer_gate.h"
+#include "simulation_mapping.h"
+#include "tick_messages.h"
 
 namespace augusta::host {
 
@@ -93,7 +93,6 @@ std::expected<std::vector<link::Outgoing>, failure::Failure> ViewerMessages(cons
   for (const replication::Death& death : replication::PlanDeaths(state)) {
     messages.push_back(link::Encode(ToLink(death)));
   }
-  messages.push_back(link::Encode(ToLink(tick.views, state.tick)));
   if (tick.end.has_value()) {
     messages.push_back(link::Encode(ToLink(MatchEnd{.players = {}, .winner = tick.end->winner})));
   }

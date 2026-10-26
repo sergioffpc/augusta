@@ -7,8 +7,8 @@
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
-#include "augusta/client_character_loader.h"
 #include "augusta/math.h"
+#include "client_character_loader.h"
 
 // Unit tests for resolving what the client needs of a character. Links no
 // GPU or window: the loader only uses renderer.h's plain mesh types.

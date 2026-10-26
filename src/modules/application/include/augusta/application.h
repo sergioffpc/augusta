@@ -24,7 +24,7 @@
 /// it, is the executable's Runtime's (src/client, src/server); the runtime
 /// supervisor (supervisor.h) is what hands a runtime's first cause back to it.
 /// Reading the command line and config file comes first, outside the
-/// Lifecycle, since the log level is set from it; its failure is concluded the
+/// Program, since the log level is set from it; its failure is concluded the
 /// same way. On Windows it raises the system timer resolution for as long as
 /// the phases run (TimerResolution, ADR-0005), for both executables.
 namespace augusta::application {
@@ -67,7 +67,7 @@ class TimerResolution {
 /// An executable's phases after its config is read, each run once, in order,
 /// on the thread that calls Execute.
 template <typename Runtime>
-struct Lifecycle {
+struct Program {
   /// Process-wide dependencies every runtime needs (the transport), set up
   /// before any runtime exists.
   std::function<std::expected<void, failure::Failure>()> initialize;
@@ -95,7 +95,7 @@ auto Phase(std::string_view phase, failure::Code code, const Body& body) -> std:
 
 }  // namespace detail
 
-/// Runs lifecycle's phases in order until one fails, and returns how the
+/// Runs program's phases in order until one fails, and returns how the
 /// executable ended. An exception escaping initialize or construct becomes
 /// failure::Code::kDependencyInitFailed, and one escaping run - the calling
 /// thread is then the runtime's last worker - kWorkerFailed, each with
@@ -105,17 +105,17 @@ auto Phase(std::string_view phase, failure::Code code, const Body& body) -> std:
 /// the runtime has gone, so it outlasts every thread the runtime ran. Never
 /// throws.
 template <typename Runtime>
-[[nodiscard]] Outcome Execute(const Lifecycle<Runtime>& lifecycle) {
+[[nodiscard]] Outcome Execute(const Program<Runtime>& program) {
   const TimerResolution timer_resolution;
-  if (auto initialized = detail::Phase("initialize", failure::Code::kDependencyInitFailed, lifecycle.initialize);
+  if (auto initialized = detail::Phase("initialize", failure::Code::kDependencyInitFailed, program.initialize);
       !initialized) {
     return std::move(initialized.error());
   }
-  auto runtime = detail::Phase("construct", failure::Code::kDependencyInitFailed, lifecycle.construct);
+  auto runtime = detail::Phase("construct", failure::Code::kDependencyInitFailed, program.construct);
   if (!runtime) {
     return std::move(runtime.error());
   }
-  const auto run = [&]() -> std::expected<Outcome, failure::Failure> { return lifecycle.run(**runtime); };
+  const auto run = [&]() -> std::expected<Outcome, failure::Failure> { return program.run(**runtime); };
   auto ran = detail::Phase("run", failure::Code::kWorkerFailed, run);
   runtime->reset();
   return ran ? *std::move(ran) : Outcome(std::move(ran.error()));

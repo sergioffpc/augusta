@@ -1,4 +1,4 @@
-#include "augusta/parameters_loader.h"
+#include "parameters_loader.h"
 
 #include <algorithm>
 #include <array>
@@ -36,9 +36,9 @@ constexpr std::array<std::string_view, 5> kRootKeys{
 };
 constexpr std::array<std::string_view, 3> kStaminaKeys{"deplete_per_second", "regen_per_second", "forced_walk_below"};
 constexpr std::string_view kRecoilPatternKey = "recoil_pattern";
-constexpr std::array<std::string_view, 8> kRifleKeys{
-    "magazine_capacity", "rounds_per_minute",          "muzzle_velocity",  "reload_seconds",
-    kRecoilPatternKey,   "recoil_recovery_per_second", "ads_recoil_scale", "ads_field_of_view",
+constexpr std::array<std::string_view, 9> kRifleKeys{
+    "magazine_capacity",          "rounds_per_minute", "muzzle_velocity",   "reload_seconds", kRecoilPatternKey,
+    "recoil_recovery_per_second", "ads_recoil_scale",  "ads_field_of_view", "zero_range",
 };
 constexpr std::array<std::string_view, 2> kRecoilKickKeys{"pitch", "yaw"};
 constexpr std::string_view kDamageKey = "damage";
@@ -259,6 +259,7 @@ std::expected<weapon::Rifle, ParametersLoadError> ReadRifle(const sol::table& ro
   constexpr auto kAiming = std::to_array<FloatKey<weapon::Rifle>>({
       {.key = "ads_recoil_scale", .field = &weapon::Rifle::ads_recoil_scale},
       {.key = "ads_field_of_view", .field = &weapon::Rifle::ads_field_of_view},
+      {.key = "zero_range", .field = &weapon::Rifle::zero_range},
   });
   if (const auto read = ReadFloats(*table, kRifleKey, kAiming, rifle); !read) {
     return std::unexpected(read.error());

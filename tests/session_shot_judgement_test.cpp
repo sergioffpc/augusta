@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
@@ -20,6 +21,7 @@
 #include "augusta/parameters.h"
 #include "augusta/protocol.h"
 #include "augusta/tick.h"
+#include "scenario_fixture.h"
 #include "session_test.h"
 
 // Shot judgements reaching a Session (ADR-0038, ADR-0074): end to end, on a
@@ -50,6 +52,7 @@ using augusta::session_test::FloorAt;
 using augusta::session_test::kCharacter;
 using augusta::session_test::kFixedTick;
 using augusta::session_test::kScriptedEntity;
+using augusta::session_test::NeverArrived;
 using augusta::session_test::Pointers;
 using augusta::session_test::ScriptedServer;
 using augusta::session_test::Settle;
@@ -58,15 +61,16 @@ using augusta::session_test::TestSessionConfig;
 using augusta::session_test::WithPlayerCount;
 using augusta::session_test::WorldWithFloorAt;
 
-// A hitbox of part: the box from low to high, as the twelve triangles of its faces.
-augusta::assets::HitboxData BoxHitbox(augusta::assets::BodyPart part, const Vec3& low, const Vec3& high) {
-  return augusta::assets::HitboxData{
+// A hitbox of part on RootSkeleton's Joint: the box from low to high, as the
+// twelve triangles of its faces.
+augusta::assets::JointHitbox BoxHitbox(augusta::assets::BodyPart part, const Vec3& low, const Vec3& high) {
+  return augusta::session_test::OnRoot(augusta::assets::HitboxData{
       .part = part,
       .mesh = {.points = {Vec3(low.x, low.y, low.z), Vec3(high.x, low.y, low.z), Vec3(high.x, high.y, low.z),
                           Vec3(low.x, high.y, low.z), Vec3(low.x, low.y, high.z), Vec3(high.x, low.y, high.z),
                           Vec3(high.x, high.y, high.z), Vec3(low.x, high.y, high.z)},
                .indices = {0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 0, 4, 5, 0, 5, 1,
-                           3, 2, 6, 3, 6, 7, 0, 3, 7, 0, 7, 4, 1, 5, 6, 1, 6, 2}}};
+                           3, 2, 6, 3, 6, 7, 0, 3, 7, 0, 7, 4, 1, 5, 6, 1, 6, 2}}});
 }
 
 // A match of two standing 10 m apart down -Z on a floor, a view of yaw 0
@@ -81,7 +85,6 @@ class ShotJudgementMatchTest : public ::testing::Test {
   static constexpr float kTorsoHeight = 1.2F;
   static constexpr int kSettleTicks = 30;
   static constexpr auto kNetworkDelay = std::chrono::milliseconds(8);
-  static constexpr auto kStepPatience = std::chrono::milliseconds(250);
 
   explicit ShotJudgementMatchTest(bool shot_judgements = true) : host_(Config(shot_judgements), InALine()) {}
 
@@ -100,10 +103,12 @@ class ShotJudgementMatchTest : public ::testing::Test {
   static Scenario InALine() {
     return Scenario{.collision = {FloorAt(kFloorY)},
                     .spawn_points = {Vec3(0.0F, kFloorY, 0.0F), Vec3(0.0F, kFloorY, -kSpacing)},
-                    .characters = {{.path = kCharacter,
-                                    .hitboxes = {BoxHitbox(augusta::assets::BodyPart::kTorso, Vec3(-0.2F, 0.0F, -0.1F),
-                                                           Vec3(0.2F, 1.8F, 0.1F))},
-                                    .eye = Vec3(0.0F, kEyeHeight, 0.0F)}}};
+                    .characters = {augusta::scenario_fixture::Rigged(
+                        {.path = kCharacter,
+                         .hitboxes = {BoxHitbox(augusta::assets::BodyPart::kTorso, Vec3(-0.2F, 0.0F, -0.1F),
+                                                Vec3(0.2F, 1.8F, 0.1F))},
+                         .skeleton = augusta::session_test::RootSkeleton(),
+                         .eye = Vec3(0.0F, kEyeHeight, 0.0F)})}};
   }
 
   // Joins two clients and plays them into a match, then settles it.
@@ -146,25 +151,27 @@ class ShotJudgementMatchTest : public ::testing::Test {
   }
 
   // Runs the match for ticks ticks, each client on its command: every client
-  // predicts and sends it, the server ticks once they have all reached it (or
-  // kStepPatience has passed), and the states come back.
+  // predicts and sends it, the server ticks once they have all reached it, and
+  // the states come back. No test here loses a command, so only a fault holds
+  // one back past ExchangeUntil's kPollDeadline: the test fails fatally there,
+  // naming it, rather than tick the server without it.
   void Fight(int ticks) {
-    for (int tick = 0; tick < ticks; ++tick) {
+    for (int tick = 0; tick < ticks && !HasFatalFailure(); ++tick) {
       for (std::size_t i = 0; i < sessions_.size(); ++i) {
         sessions_[i]->Tick(commands_[i], kFixedTick);
       }
-      const auto give_up = std::chrono::steady_clock::now() + kStepPatience;
-      ExchangeUntil(host_, Pointers(sessions_), [&] {
-        if (std::chrono::steady_clock::now() >= give_up) {
-          return true;
+      // The first client whose command the server does not hold yet.
+      const auto waiting = [&] {
+        return std::ranges::find_if(sessions_, [&](const auto& session) {
+          return host_.QueuedCommands(session->GetServerView()->accepted->session) == 0;
+        });
+      };
+      if (!ExchangeUntil(host_, Pointers(sessions_), [&] { return waiting() == sessions_.end(); })) {
+        const auto never = waiting();
+        if (never != sessions_.end()) {
+          FAIL() << NeverArrived(static_cast<std::size_t>(never - sessions_.begin()), **never);
         }
-        for (const auto& session : sessions_) {
-          if (host_.QueuedCommands(session->GetServerView()->accepted->session) == 0) {
-            return false;
-          }
-        }
-        return true;
-      });
+      }
       host_.Tick(kFixedTick);
       std::this_thread::sleep_for(kNetworkDelay);
       Exchange();

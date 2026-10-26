@@ -1,5 +1,8 @@
 #include "augusta/physics.h"
 
+#include <algorithm>
+#include <cstdint>
+
 #include <gtest/gtest.h>
 
 #include "augusta/math.h"
@@ -16,8 +19,10 @@ using augusta::physics::BodyState;
 using augusta::physics::CollisionMesh;
 using augusta::physics::CollisionMeshError;
 using augusta::physics::FallState;
+using augusta::physics::kStanceProgressSteps;
 using augusta::physics::MapRaycastHit;
 using augusta::physics::MovementInput;
+using augusta::physics::Pacing;
 using augusta::physics::RaycastHit;
 using augusta::physics::StaminaConfig;
 using augusta::physics::Stance;
@@ -455,6 +460,24 @@ TEST(StaticGeometryTest, WithoutAFloorABodyKeepsFalling) {
   EXPECT_LT(state.position.y, -3.0F);
 }
 
+// kGrounded (ADR-0062): set every tick a body stands or walks on the floor,
+// clear every tick it falls.
+TEST(StaticGeometryTest, ABodyIsGroundedOnTheFloorAndNotWhileItFalls) {
+  World world = WorldWithFloor();
+  const auto body = world.CreateBody(Vec3(0.0F, 3.0F, 0.0F));
+  MovementInput walk{};
+  walk.direction = Vec3(1.0F, 0.0F, 0.0F);
+
+  const BodyState falling = world.Step(body, MovementInput{}, kFixedTick);
+  Settle(world, body, MovementInput{}, 120);
+  for (int i = 0; i < 60; ++i) {
+    const BodyState walking = world.Step(body, i % 2 == 0 ? walk : MovementInput{}, kFixedTick);
+    ASSERT_TRUE(walking.grounded) << "tick " << i;
+  }
+
+  EXPECT_FALSE(falling.grounded);
+}
+
 class WallTest : public ::testing::TestWithParam<bool> {};
 
 // A cooked map's triangles can face either way, so the wall must stop a body
@@ -647,6 +670,189 @@ TEST(StaticGeometryTest, AnIndexCountThatIsNotWholeTrianglesIsRejected) {
 
   ASSERT_FALSE(result.has_value());
   EXPECT_EQ(result.error(), CollisionMeshError::kInvalidIndex);
+}
+
+// The Stride (ADR-0066): one byte, 256 steps to a cycle of two steps.
+constexpr int kStrideSteps = 256;
+
+// How far apart two Strides are, the short way round the cycle.
+int StrideDistance(std::uint8_t a, std::uint8_t b) {
+  const int forward = (a - b + kStrideSteps) % kStrideSteps;
+  return std::min(forward, kStrideSteps - forward);
+}
+
+// A body settled on the floor with its Stride at stride, walking along +x.
+class StrideTest : public ::testing::Test {
+ protected:
+  static constexpr std::uint8_t kStartStride = 40;
+
+  StrideTest() : world_(WorldWithFloor()), body_(world_.CreateBody(Vec3(0.0F, 0.0F, 0.0F))) {
+    BodyState settled = Settle(world_, body_, MovementInput{}, 60);
+    settled.stride = kStartStride;
+    world_.Restore(body_, settled, world_.Fall(body_));
+    walk_.direction = Vec3(1.0F, 0.0F, 0.0F);
+  }
+
+  BodyState Walk(int ticks, float stride_length) { return Run(ticks, walk_, stride_length); }
+
+  // Steps the body ticks times by input, paced by stride_length.
+  BodyState Run(int ticks, const MovementInput& input, float stride_length) {
+    BodyState state{};
+    for (int i = 0; i < ticks; ++i) {
+      state = world_.Step(body_, input, kFixedTick, {.stride_length = stride_length});
+    }
+    return state;
+  }
+
+  World world_;
+  augusta::physics::BodyHandle body_;
+  MovementInput walk_{};
+};
+
+// At 3 m/s, 15 ticks walk 0.75 m: half of a 1.5 m stride, half a cycle on. Each
+// tick's advance is rounded to a whole step, so a tick may be up to half a step off.
+TEST_F(StrideTest, WalkingAdvancesTheStrideByTheDistanceMovedOverTheStrideLength) {
+  constexpr int kTicks = 15;
+
+  const BodyState state = Walk(kTicks, 1.5F);
+
+  EXPECT_LE(StrideDistance(state.stride, kStartStride + (kStrideSteps / 2)), kTicks / 2 + 1);
+}
+
+TEST_F(StrideTest, TheSameDistanceOverALongerStrideLengthAdvancesItLess) {
+  const BodyState state = Walk(15, 3.0F);
+
+  EXPECT_LE(StrideDistance(state.stride, kStartStride + (kStrideSteps / 4)), 8);
+}
+
+// Paced by the stride length a walk advances it by, a body standing still moves
+// nowhere, so its Stride holds, where the same body walking advances it.
+TEST_F(StrideTest, AStillBodyHoldsItsStride) {
+  const BodyState still = Run(15, MovementInput{}, 1.5F);
+  const BodyState walking = Walk(15, 1.5F);
+
+  EXPECT_EQ(still.stride, kStartStride);
+  EXPECT_GT(StrideDistance(walking.stride, kStartStride), kStrideSteps / 4);
+}
+
+TEST_F(StrideTest, WithoutAStrideLengthTheStrideHolds) {
+  const BodyState state = Walk(15, 0.0F);
+
+  EXPECT_GT(state.position.x, 0.5F);
+  EXPECT_EQ(state.stride, kStartStride);
+}
+
+TEST_F(StrideTest, AStrideRestoredIsWhereTheNextStepAdvancesFrom) {
+  BodyState restored = Walk(1, 1.2F);
+  restored.stride = 250;
+  world_.Restore(body_, restored, world_.Fall(body_));
+
+  const BodyState state = Walk(1, 1.2F);
+
+  // One tick walks 51/1024 m on the position grid: 10.6 steps of a 1.2 m
+  // stride, rounded to 11, from 250 round the cycle to 5.
+  EXPECT_EQ(state.stride, 5);
+}
+
+// ---- A change of stance's progress (ADR-0066) ----
+
+// A Character's transition durations: 0.25 s between standing and crouching,
+// 15 ticks, 17 steps of progress a tick; 0.8 s between standing and prone.
+const Pacing kPacing{.transitions = {.standing_crouching = 0.25F, .standing_prone = 0.8F, .crouching_prone = 0.6F}};
+constexpr int kCrouchStepsPerTick = 17;
+
+// A body settled standing on the floor.
+class StanceProgressTest : public ::testing::Test {
+ protected:
+  StanceProgressTest() : world_(WorldWithFloor()), body_(world_.CreateBody(Vec3(0.0F))) {
+    Settle(world_, body_, MovementInput{}, 30);
+  }
+
+  BodyState Hold(Stance stance, int ticks, const Pacing& pacing = kPacing) {
+    MovementInput input{};
+    input.desired_stance = stance;
+    BodyState state{};
+    for (int i = 0; i < ticks; ++i) {
+      state = world_.Step(body_, input, kFixedTick, pacing);
+    }
+    return state;
+  }
+
+  World world_;
+  augusta::physics::BodyHandle body_;
+};
+
+TEST_F(StanceProgressTest, ABodyThatNeverChangedStanceIsAllInItsStance) {
+  const BodyState state = Hold(Stance::kStanding, 1);
+
+  EXPECT_EQ(state.previous_stance, Stance::kStanding);
+  EXPECT_EQ(state.stance_progress, kStanceProgressSteps);
+}
+
+// The collider crouches on the tick it changes; the pose starts from standing.
+TEST_F(StanceProgressTest, AChangeOfStanceStartsFromTheStanceItLeaves) {
+  const BodyState state = Hold(Stance::kCrouching, 1);
+
+  EXPECT_EQ(state.stance, Stance::kCrouching);
+  EXPECT_EQ(state.previous_stance, Stance::kStanding);
+  EXPECT_EQ(state.stance_progress, kCrouchStepsPerTick);
+}
+
+TEST_F(StanceProgressTest, AChangeIsOverAfterItsPairsTransitionDuration) {
+  const BodyState under_way = Hold(Stance::kCrouching, 14);
+  const BodyState over = Hold(Stance::kCrouching, 1);
+
+  EXPECT_EQ(under_way.stance_progress, 14 * kCrouchStepsPerTick);
+  EXPECT_EQ(over.stance_progress, kStanceProgressSteps);
+  EXPECT_EQ(Hold(Stance::kCrouching, 10).stance_progress, kStanceProgressSteps);
+}
+
+// Going prone takes 0.8 s: 15 ticks are under a third of it. Each tick's advance
+// is rounded to a whole step, so a tick may be up to half a step off.
+TEST_F(StanceProgressTest, EachPairOfStancesTakesItsOwnTransitionDuration) {
+  constexpr int kTicks = 15;
+
+  const BodyState state = Hold(Stance::kProne, kTicks);
+
+  const float expected = kTicks * kFixedTick / kPacing.transitions.standing_prone * kStanceProgressSteps;
+  EXPECT_NEAR(state.stance_progress, expected, kTicks / 2.0F);
+}
+
+// Halfway down into a crouch and back up: the change turns round where it got
+// to, 5 ticks down, so the body comes back up from there.
+TEST_F(StanceProgressTest, BackToTheStanceAChangeUnderWayLeftItTurnsRoundWhereItGotTo) {
+  Hold(Stance::kCrouching, 5);
+
+  const BodyState state = Hold(Stance::kStanding, 1);
+
+  EXPECT_EQ(state.stance, Stance::kStanding);
+  EXPECT_EQ(state.previous_stance, Stance::kCrouching);
+  EXPECT_EQ(state.stance_progress, kStanceProgressSteps - (5 * kCrouchStepsPerTick) + kCrouchStepsPerTick);
+}
+
+TEST_F(StanceProgressTest, OnToAThirdStanceANewChangeStartsFromTheStanceItLeaves) {
+  Hold(Stance::kCrouching, 5);
+
+  const BodyState state = Hold(Stance::kProne, 1);
+
+  EXPECT_EQ(state.previous_stance, Stance::kCrouching);
+  // 0.6 s from crouching to prone: 7.08 steps a tick.
+  EXPECT_EQ(state.stance_progress, 7);
+}
+
+TEST_F(StanceProgressTest, WithoutTransitionDurationsAChangeIsOverOnTheTickItStarts) {
+  const BodyState state = Hold(Stance::kCrouching, 1, Pacing{});
+
+  EXPECT_EQ(state.previous_stance, Stance::kStanding);
+  EXPECT_EQ(state.stance_progress, kStanceProgressSteps);
+}
+
+TEST_F(StanceProgressTest, AProgressRestoredIsWhereTheNextStepAdvancesFrom) {
+  BodyState restored = Hold(Stance::kCrouching, 1);
+  restored.stance_progress = 100;
+  world_.Restore(body_, restored, world_.Fall(body_));
+
+  EXPECT_EQ(Hold(Stance::kCrouching, 1).stance_progress, 100 + kCrouchStepsPerTick);
 }
 
 }  // namespace

@@ -1,4 +1,4 @@
-#include "augusta/reconciliation.h"
+#include "reconciliation.h"
 
 #include <cstdint>
 #include <vector>
@@ -24,7 +24,7 @@ using augusta::prediction::Predicted;
 Predicted At(float x, float vertical_speed = 0.0F) {
   BodyState body{};
   body.position = Vec3(x, 0.0F, 0.0F);
-  return Predicted{.body = body, .fall = FallState{.vertical_speed = vertical_speed, .grounded = false}};
+  return Predicted{.body = body, .fall = FallState{.vertical_speed = vertical_speed}};
 }
 
 // A command that can be told from another by its direction.

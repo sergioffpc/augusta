@@ -7,13 +7,17 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <thread>
+#include <utility>
 #include <variant>
 #include <vector>
 
+#include <boost/uuid/uuid_io.hpp>
 #include <gtest/gtest.h>
 
+#include "augusta/assets.h"
 #include "augusta/harness.h"
 #include "augusta/host.h"
 #include "augusta/link.h"
@@ -23,8 +27,9 @@
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/protocol.h"
-#include "augusta/raw_link.h"
 #include "augusta/version.h"
+#include "clips_fixture.h"
+#include "raw_link.h"
 
 // What the Session tests' files share: a real server host and real client
 // sessions over loopback, driven by hand, and a client and a server speaking
@@ -53,6 +58,19 @@ inline std::optional<SessionId> AdmittedSession(const ServerView& view) {
   return view.accepted.has_value() ? std::optional<SessionId>(view.accepted->session) : std::nullopt;
 }
 
+// How a test that waited for the command of client, of that index, names it
+// once it never reached the server: whose, and for the tick after the newest
+// client was told of.
+inline std::string NeverArrived(std::size_t index, const Session& client) {
+  const auto view = client.GetServerView();
+  std::ostringstream named;
+  named << "the command of client " << index << " (Session " << view->accepted->session
+        << ") never reached the server, for the tick after "
+        << (view->authoritative.has_value() ? std::to_string(view->authoritative->tick) : "none")
+        << ", the newest it was told of";
+  return named.str();
+}
+
 inline constexpr auto kPollInterval = std::chrono::milliseconds(10);
 inline constexpr auto kPollDeadline = std::chrono::seconds(5);
 inline constexpr float kFixedTick = 1.0F / 60.0F;
@@ -66,6 +84,16 @@ inline const Parameters kTestParameters{};
 // unless a test says otherwise.
 inline constexpr const char* kCharacter = "soldier";
 
+// A Skeleton of one Joint at the character's feet, so a test's hitboxes, on it,
+// sit in the character's space as they are written.
+inline assets::Skeleton RootSkeleton() { return {.joints = {{.name = "Root"}}, .rest_transforms = {math::Mat4(1.0F)}}; }
+
+// hitbox, on RootSkeleton's Joint.
+inline assets::JointHitbox OnRoot(assets::HitboxData hitbox) {
+  hitbox.joint = "Root";
+  return {.joint = 0, .hitbox = std::move(hitbox)};
+}
+
 // The test parameters, for a match of count players.
 inline Parameters WithPlayerCount(std::uint8_t count) {
   Parameters parameters = kTestParameters;
@@ -74,7 +102,9 @@ inline Parameters WithPlayerCount(std::uint8_t count) {
 }
 
 // A PredictionWorld with no map, and nothing decided yet: a server decides it on the client's join.
-inline augusta::prediction::World EmptyWorld() { return augusta::prediction::World(); }
+inline augusta::prediction::World EmptyWorld() {
+  return augusta::prediction::World(augusta::clips_fixture::TestClips());
+}
 
 // ctest runs every test case in its own process, possibly in parallel, so a
 // fixed port would collide: each server binds port 0, a free one of its own

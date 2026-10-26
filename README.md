@@ -18,8 +18,18 @@ dedicated server.
 
 - [Highlights](#highlights)
 - [Status](#status)
+- [Installation](#installation)
+    - [Client](#client)
+    - [Server](#server)
+        - [k3s node (Debian 13)](#k3s-node-debian-13)
+        - [Standalone](#standalone)
 - [Development Setup](#development-setup)
-    - [Bootstrap](#bootstrap)
+    - [Development Environment](#development-environment)
+        - [Windows (client)](#windows-client)
+        - [Linux (server and shared core, Ubuntu 26.04)](#linux-server-and-shared-core-ubuntu-2604)
+        - [macOS (client, server and shared core, Apple silicon)](#macos-client-server-and-shared-core-apple-silicon)
+        - [Dev container or Codespaces (server and shared core)](#dev-container-or-codespaces-server-and-shared-core)
+        - [Uninstall](#uninstall)
     - [Build and Run](#build-and-run)
     - [Tests](#tests)
     - [Agent Skills](#agent-skills)
@@ -45,80 +55,169 @@ dedicated server.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the milestone plan.
 
-Each [release](https://github.com/sergioffpc/augusta/releases/latest) publishes
-the client for Windows x64 (`augustac-windows-x64.zip`) and Linux x64
-(`augustac-linux-x64.tar.gz`): extract either anywhere and run `augustac` from
-its folder. The Linux client needs the glibc of Ubuntu 26.04 or newer, a Vulkan
-1.3 driver, and an X11 or Wayland session.
-
 The [documentation site](https://sergioffpc.github.io/augusta/) publishes these
 docs, the decisions behind the engine (ADRs) and the C++ API reference.
 
-## Development Setup
+## Installation
 
-### Bootstrap
+Running the engine needs no checkout and no toolchain: a player installs the
+client, an operator the server. To build them, see
+[Development Setup](#development-setup).
 
-[scripts/bootstrap.sh](scripts/bootstrap.sh) installs the toolchain, clones the
-repository into `./augusta` (or `$AUGUSTA_DIR`) and readies the checkout. In an
-existing checkout, run `scripts/bootstrap.sh` instead.
+### Client
 
-**Windows (client):** in PowerShell as Administrator (Win+X → "Terminal
-(Admin)"). This installs Git for Windows, then runs the bootstrap in its Git
-Bash, which installs Visual Studio Build Tools and GNU make among the rest:
+Each [release](https://github.com/sergioffpc/augusta/releases/latest) publishes
+the client for Windows x64 (`augustac-windows-x64.zip`) and Linux x64
+(`augustac-linux-x64.tar.gz`): extract either anywhere and run `augustac` from
+its folder. It needs a Vulkan 1.3 driver; the Linux client also needs the glibc
+of Ubuntu 26.04 or newer and an X11 or Wayland session.
+
+Before the first run, create `augustac.yaml` beside `augustac` from
+[config/augustac.example.yaml](config/augustac.example.yaml), and point it at:
+
+- the client pack and the public key it is signed with, from the same cook as
+  the server's pack: Join refuses any other. No channel distributes them; they
+  are copied by hand
+  ([pack-key-rotation.md](docs/runbooks/pack-key-rotation.md));
+- the server, `network.server_address`: the cluster node's address with the
+  environment's node port, `30700` for `develop` and `30800` for `staging`, or
+  `127.0.0.1:27015` for a local server.
+
+Then, on Windows and on Linux:
 
 ```powershell
-winget install --id Git.Git --exact --source winget --accept-package-agreements --accept-source-agreements; & "$env:ProgramFiles\Git\bin\bash.exe" -c "curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap.sh | bash"
+.\augustac.exe
 ```
-
-Open a new terminal after setup. The Makefile loads the Visual Studio Build
-Tools environment automatically for each command on Windows.
-
-**Linux host (server / shared core, Ubuntu 26.04):** installs the dev
-container's toolchain on the host, through sudo:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap.sh | bash
+./augustac
 ```
 
-**Dev container (server / shared core):** open the repository in VS Code's Dev
-Containers or in GitHub Codespaces. The container reproduces CI's Linux build
-environment, so `make test` builds and tests the `linux` preset with nothing
-else to install. The first build compiles the vcpkg dependencies; later ones
-reuse them from `.vcpkg-bincache`, and sccache's objects from a volume.
+`--config <file>` reads a config kept elsewhere.
 
-**macOS (server / shared core, through the dev container):** nothing builds
-natively. With [Homebrew](https://brew.sh) installed, this installs git, Git LFS
-and Podman (unless Docker is already there), starts Podman's machine, then
-builds the dev container's image and creates the checkout's container:
+### Server
+
+The production server is a Linux x86-64 or arm64 one. Its environments,
+`develop` and `staging`, run on a k3s node that Flux deploys from Git; a server
+also runs on its own, from an install.
+
+#### k3s node (Debian 13)
+
+Over SSH, by key, as your own user:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap.sh | bash
+curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap-node.sh | bash
 ```
 
-`scripts/dev-container.sh` opens a shell in that container from a terminal (or
-runs the command it's given), and the git hooks run their checks there. Run
-`scripts/dev-container.sh make configure PRESET=linux-debug` once so the
-`pre-push` hook can run clang-tidy.
-
-Every bootstrap and the container initialize the vendored submodules and
-configure the Conventional Commits `commit-msg` hook.
-
-**k3s node (the cluster's server, Debian 13):**
 [scripts/bootstrap-node.sh](scripts/bootstrap-node.sh) sets up the node that
 runs `develop` and `staging`, through sudo, without a checkout: the crash-core
 handler, Podman and lldb to read a core, the server's `augusta` user, the
 asset-pack volume, the capture filesystem, the OS's hardening (a firewall, SSH
 by key only, unattended security updates, auditd), k3s at the cluster's release,
 and Flux, which then installs the monitoring stack and both environments from
-Git. It skips what the node already has. Run it over SSH, by key, as your own
-user: the firewall then lets only that session's address, or those given with
-`--admin`, reach SSH and the API server. The asset packs are the one state not
-in Git: `augusta-publish` puts them on the node, or `--packs` unpacks a copy
-([k3s-node-recovery.md](docs/runbooks/k3s-node-recovery.md)):
+Git. It skips what the node already has. The firewall then lets only the SSH
+session's address, or those given with `--admin`, reach SSH and the API server.
+The asset packs are the one state not in Git: `augusta-publish` puts them on the
+node, or `--packs` unpacks a copy
+([k3s-node-recovery.md](docs/runbooks/k3s-node-recovery.md)).
+
+#### Standalone
+
+From a checkout with the [development environment](#development-environment),
+`make install` builds the server and installs it with its libraries (the client
+is never installed: it runs from its build directory or a release's folder):
 
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap-node.sh | bash
+make install prefix="$HOME/augusta"
 ```
+
+On Windows, `prefix=C:/augusta` installs a development build. Create
+`augustad.yaml` from
+[config/augustad.example.yaml](config/augustad.example.yaml), pointing it at the
+server pack and its public key, then start it:
+
+```bash
+~/augusta/bin/augustad --config augustad.yaml
+```
+
+It listens on UDP `0.0.0.0:27015` and serves its metrics on TCP `9464`.
+
+## Development Setup
+
+### Development Environment
+
+One command per platform sets up a machine and a checkout ready to build, test
+and commit: it installs the system's packages and the pinned tools (the
+`platform` step, once per machine), clones the repository into `./augusta` (or
+`$AUGUSTA_DIR`) and readies the checkout (the `checkout` step: submodules,
+vcpkg, the git hooks, and `make toolchain`, which links the checkout's
+`.toolchain/` to the pinned tools). In an existing checkout, run
+`scripts/bootstrap.sh` instead, or `scripts/bootstrap.sh checkout` on a machine
+already bootstrapped. Run `make toolchain` after a pull that bumps a tool's
+version; `make toolchain-check` says which tools are stale, and
+`source .toolchain/activate` puts them on a shell's PATH. The reference editor
+is [VS Code](https://code.visualstudio.com): open the checkout's folder in it,
+trust it, and install the extensions it recommends.
+
+#### Windows (client)
+
+In PowerShell as Administrator (Win+X → "Terminal (Admin)"):
+
+```powershell
+winget install --id Git.Git --exact --source winget --accept-package-agreements --accept-source-agreements; & "$env:ProgramFiles\Git\bin\bash.exe" -c "curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap.sh | bash"
+```
+
+It installs Git for Windows, then runs the bootstrap in its Git Bash, which
+installs Visual Studio Build Tools, LLVM, GNU make and the rest, and Podman with
+its WSL 2 machine. Open a new terminal afterwards: the Makefile loads the Build
+Tools' environment for each command.
+
+#### Linux (server and shared core, Ubuntu 26.04)
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap.sh | bash
+```
+
+It installs the dev container's packages and pinned tools on the host, the
+packages through sudo.
+
+#### macOS (client, server and shared core, Apple silicon)
+
+With the Command Line Tools (`xcode-select --install`) and
+[Homebrew](https://brew.sh) installed:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap.sh | bash
+```
+
+Everything builds natively, as on Linux: it installs LLVM 21 (CI's), CMake,
+Ninja and Mesa's Vulkan through Homebrew, and the pinned tools from their
+releases, without sudo; it puts GNU make on PATH in `~/.zprofile` (open a new
+terminal after it). `make` builds the `macos` preset,
+`make test PRESET=macos-debug` a Debug build; configure one once so the
+`pre-push` hook can run clang-tidy. Xcode is not needed.
+
+#### Dev container or Codespaces (server and shared core)
+
+Open the repository in VS Code's Dev Containers or in GitHub Codespaces: there
+is nothing to run. The container reproduces CI's Linux build environment, so
+`make test` builds and tests the `linux` preset. The first build compiles the
+vcpkg dependencies; later ones reuse them from `.vcpkg-bincache`, and sccache's
+objects from a volume.
+
+#### Uninstall
+
+```bash
+scripts/bootstrap.sh uninstall
+```
+
+In Git Bash as Administrator on Windows. It removes what the bootstrap installed
+that was not there before, the pinned tools' store among it, newest first
+(`uninstall platform` alone), and the checkout's readying (`uninstall checkout`
+alone): `.toolchain/`, vcpkg's tool and binary cache, the git hooks and the
+submodules, and on macOS an earlier bootstrap's dev containers. The repository's
+files and your work stay. A machine bootstrapped before the bootstrap kept a
+record of what it installed keeps what it installed then.
 
 ### Build and Run
 
@@ -155,11 +254,9 @@ one client per captured player, all at once, each the player of the capture
 
 Create each local YAML from its `*.example.yaml` file and edit its pack and
 public-key paths to point to cooked content before running. `make` builds the
-default release preset (`windows` on Windows, `linux` on Linux). `make install`
-installs only the server; the client has no install step and runs from its build
-directory. Use `prefix=C:/augusta` on Windows (a development build; Linux x86-64
-and Linux arm64 are the production server platforms) or a Unix-style prefix on
-Linux. Configuring on any other platform stops with the supported list (NFR-04).
+default release preset (`windows` on Windows, `linux` on Linux); `make install`
+installs the server ([Standalone](#standalone)). Configuring on any other
+platform stops with the supported list (NFR-04).
 
 ### Tests
 

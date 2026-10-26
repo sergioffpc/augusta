@@ -23,16 +23,16 @@
 #include "augusta/heartbeat.h"
 #include "augusta/host_metrics.h"
 #include "augusta/link.h"
-#include "augusta/link_mapping.h"
 #include "augusta/link_types.h"
 #include "augusta/logging.h"
 #include "augusta/match.h"
 #include "augusta/policy.h"
-#include "augusta/simulation_mapping.h"
 #include "augusta/tick.h"
-#include "augusta/tick_messages.h"
 #include "augusta/version.h"
 #include "host_impl.h"
+#include "link_mapping.h"
+#include "simulation_mapping.h"
+#include "tick_messages.h"
 
 namespace augusta::host {
 

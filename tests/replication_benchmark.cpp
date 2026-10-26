@@ -3,11 +3,11 @@
 #include <benchmark/benchmark.h>
 
 #include "augusta/link.h"
-#include "augusta/link_mapping.h"
 #include "augusta/link_types.h"
 #include "augusta/replication.h"
 #include "augusta/simulation.h"
 #include "benchmark_match.h"
+#include "link_mapping.h"
 
 // A full Match's Authoritative State replicated as host::Host replicates it
 // after each tick (ADR-0044): what each player in the Match is sent

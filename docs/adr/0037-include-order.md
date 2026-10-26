@@ -27,7 +27,7 @@ Rules `clang-format` can't check:
   in their own block after all unconditional ones; `clang-format` doesn't
   reorder across `#if`.
 - **A trailing comment on an include** is for a non-obvious _why_ (a header
-  included only for an inline body it defines), as in `networking.cpp`.
+  included only for an inline body it defines), as in `client.cpp`.
 
 ## Why not Google's stock order
 

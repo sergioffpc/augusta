@@ -27,8 +27,7 @@ add_library(augusta_host_misbehaviour STATIC misbehaviour.cpp)
 target_include_directories(augusta_host_misbehaviour PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 augusta_set_module_scope(augusta_host_misbehaviour SERVER_ONLY)
 
-# When a peer that has not been admitted is past its deadline (see
-# augusta/admission.h).
+# When a peer that has not been admitted is past its deadline (see admission.h).
 add_library(augusta_host_admission STATIC admission.cpp)
 target_include_directories(augusta_host_admission PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(augusta_host_admission PUBLIC augusta_link)
@@ -42,20 +41,23 @@ augusta_set_module_scope(augusta_host_heartbeat SERVER_ONLY)
 
 # The Host itself: the server's end of the Link and SimulationWorld, driven by
 # hand (see augusta/host.h), and the conversions it makes at its edges - into
-# the Link's messages (see augusta/link_mapping.h) and into SimulationWorld's (see
-# augusta/simulation_mapping.h) - with the Match capture it writes (see
+# the Link's messages (see link_mapping.h) and into SimulationWorld's (see
+# simulation_mapping.h) - with the Match capture it writes (see
 # augusta/capturer.h, ADR-0050) and what it counts for the metrics endpoint (see
 # augusta/host_metrics.h, ADR-0049).
 find_package(prometheus-cpp CONFIG REQUIRED)
 add_library(
   augusta_host
   STATIC
+  capture_metrics.cpp
   capture_retention.cpp
+  capture_writer.cpp
   capturer.cpp
   host.cpp
   host_log.cpp
   host_match.cpp
   host_metrics.cpp
+  host_metrics_collect.cpp
   host_network.cpp
   link_mapping.cpp
   peer_gate.cpp
@@ -89,7 +91,7 @@ target_link_libraries(
 )
 augusta_set_module_scope(augusta_host SERVER_ONLY)
 # Which streams of the server's state each peer subscribed to (see
-# augusta/debug_subscriptions.h), in a Development build alone (ADR-0074).
+# debug_subscriptions.h), in a Development build alone (ADR-0074).
 if(AUGUSTA_DEBUG_TOOLS)
   target_sources(augusta_host PRIVATE debug_subscriptions.cpp)
 endif()

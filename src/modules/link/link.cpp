@@ -334,8 +334,6 @@ std::expected<Outgoing, failure::Failure> Encode(const HitConfirmation& hit) {
 
 std::expected<Outgoing, failure::Failure> Encode(const Death& death) { return OutgoingAccess::Make(ToWire(death)); }
 
-std::expected<Outgoing, failure::Failure> Encode(const ReplayView& view) { return OutgoingAccess::Make(ToWire(view)); }
-
 std::expected<Outgoing, failure::Failure> Encode(const std::vector<ReplayListing>& listings) {
   return OutgoingAccess::Make(ToWire(listings));
 }

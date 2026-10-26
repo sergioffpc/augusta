@@ -13,24 +13,35 @@ split of ballistics between client and server.
 carries its Seen time, what the shooter was seeing when it fired: the tick of
 the Authoritative State update being shown and the interpolation fraction
 between it and the next one (0 to 1). The server keeps, for every player, the
-hitboxes of each of its recent ticks, as that tick's Authoritative State
-reported them, enough ticks to cover the cap at its tick rate (18 at 60 Hz). It
-tests the shot against the hitboxes interpolated between those two ticks at that
-fraction: position and facing interpolated, the facing along the shorter arc,
-and the stance of the nearer tick, which is how a client shows a body between
-two updates. The time between that Seen time and the tick the server takes the
-Command in is the Shooter's delay. A delay beyond 300 ms is clamped to 300 ms,
-not refused: the shot is judged against the oldest Seen time the cap allows. A
-real client's Shooter's delay is its round trip, plus the Interpolation delay,
-plus up to two ticks its fire Command waits queued, so the cap is set to cover
-ADR-0013's worst-case round trip (150 ms): 150 + 100 + 2 ticks at 60 Hz is no
-more than 300 ms, and a client on that link is judged exactly where it saw its
-target. A test holds the cap to that budget. The cap bounds how far into the
-past a high-latency player can hit, which is the cost the victim pays (being
-shot after reaching cover). The Seen time is only what a client says, so the
-server holds it within what it can have been shown: a fraction outside 0 to 1 is
-the nearer of the two, and a Seen time newer than the last Authoritative State
-the server emitted is that State, so a delay is never less than a tick.
+Hitbox history: its posed Joints of each of its recent ticks, as that tick's
+Authoritative State posed them (ADR-0061), enough ticks to cover the cap at its
+tick rate (18 at 60 Hz). Commit records, per tick, where the Hitbox pose put the
+Skeleton's root (its position, facing and stance) and the position and rotation,
+relative to its parent, of each Joint that carries a Hitbox or is the ancestor
+of one. No other Joint is kept, so ADR-0061's Joint cap bounds a tick's cost,
+and no scale is kept: a Joint's is its Skeleton's, which no pose changes. The
+server tests the shot against the Hitboxes composed from those Joints between
+those two ticks at that fraction. The root's position and facing are
+interpolated, the facing along the shorter arc, and its stance is the nearer
+tick's, which is how a client shows a body between two updates. Each Joint is
+interpolated relative to its parent, its position linearly and its rotation
+along the shorter arc, then composed onto its parent from the root down. The
+root is interpolated apart from the Joints because it is the body's position and
+facing, which interpolate as a client shows them; the stance it records moves
+nothing, how low a body is being its Clips' Joints (ADR-0066). The time between
+that Seen time and the tick the server takes the Command in is the Shooter's
+delay. A delay beyond 300 ms is clamped to 300 ms, not refused: the shot is
+judged against the oldest Seen time the cap allows. A real client's Shooter's
+delay is its round trip, plus the Interpolation delay, plus up to two ticks its
+fire Command waits queued, so the cap is set to cover ADR-0013's worst-case
+round trip (150 ms): 150 + 100 + 2 ticks at 60 Hz is no more than 300 ms, and a
+client on that link is judged exactly where it saw its target. A test holds the
+cap to that budget. The cap bounds how far into the past a high-latency player
+can hit, which is the cost the victim pays (being shot after reaching cover).
+The Seen time is only what a client says, so the server holds it within what it
+can have been shown: a fraction outside 0 to 1 is the nearer of the two, and a
+Seen time newer than the last Authoritative State the server emitted is that
+State, so a delay is never less than a tick.
 
 **A bullet lives in the shooter's time for its whole flight.** At 800 m/s a
 bullet takes several ticks to reach its target. The server fixes the Shooter's
@@ -40,6 +51,19 @@ ago; the Map is static and Props are judged where they are now (ADR-0045), so
 neither needs a history. A lead the shooter gave a moving target, judged on its
 own screen, then hits. Because the delay is fixed and capped, every tick of a
 flight finds the hitboxes it needs within the same bounded history.
+
+**A Muzzle in a wall fires into the wall.** Before a round flies, the server
+tests one segment against the Map: from the shoulder of the arm that holds the
+rifle, the grandparent Joint of the Weapon socket's right hand (ADR-0066), as
+the Posing phase poses it, to the Muzzle (ADR-0064). The test is one Map raycast
+per Shot: no hitbox and no Prop is part of it. If the segment is clear, the
+round flies from the Muzzle. If it is blocked, the round strikes the Map where
+the segment enters it, on the tick it is fired, and flies no further: that point
+is its Map impact, and its Shot judgement's (ADR-0038) is the Map. Its Shot
+leaves from the shoulder toward the Muzzle, on ADR-0038's grids, and the server
+tests the segment along that Shot, so the line every client is told of meets the
+Map where the server put the round. A player behind the wall the barrel pokes
+through is never hit by it.
 
 **Hit feedback is confirmed by the server, not predicted.** When a shot hits a
 player, the server sends the shooter a Hit confirmation: the target, the body
@@ -51,21 +75,27 @@ feedback (muzzle flash, sound, recoil, ammo), never a bullet's outcome
 (ADR-0024).
 
 **The server announces every Shot to everyone, reliably.** A Shot message (the
-shooter, by its Entity ID; the server tick; the origin and the direction) goes
-reliably to every client, the shooter's included: a gunshot's sound is gameplay
-information and must not be lost. With GameNetworkingSockets (ADR-0003), a lost
-reliable message does not delay unreliable ones, so the Authoritative State
-updates are not held back behind it.
+shooter, by its Entity ID; the server tick; the origin, the shooter's Muzzle as
+the server placed it, never its Eye; and the direction, the barrel's zeroed onto
+the line of sight, ADR-0064; or, for a round fired into a wall, its shoulder and
+the way to its Muzzle) goes reliably to every client, the shooter's included: a
+gunshot's sound is gameplay information and must not be lost. With
+GameNetworkingSockets (ADR-0003), a lost reliable message does not delay
+unreliable ones, so the Authoritative State updates are not held back behind it.
 
 **Clients draw a Shot's trajectory as a visual only.** Each client's
 PresentationWorld computes the announced bullet's trajectory with the same
 ballistics math the server uses and the ballistics values of the Parameters
-(ADR-0039), to draw the tracer and the impact on the Map. Hits on players
-(blood, hit reactions) are drawn only from the server's hit messages, never from
-that local trajectory, so a client's drawing can differ from the server's
-outcome without ever showing a hit that did not happen. Ballistics' trajectory
-math is therefore shared by client and server; deciding a bullet's outcome
-(HitDetection, Damage) stays the server's alone.
+(ADR-0039), to draw the tracer and the impact on the Map, from the Shot's
+origin; another player's muzzle flash shows there too, and the shooter's own,
+predicted, at the Muzzle its predicted body holds (ADR-0064). A round fired into
+a wall stops there by the client's own Map raycast, where the server put it,
+with no Map impacts sent. Hits on players (blood, hit reactions) are drawn only
+from the server's hit messages, never from that local trajectory, so a client's
+drawing can differ from the server's outcome without ever showing a hit that did
+not happen. Ballistics' trajectory math is therefore shared by client and
+server; deciding a bullet's outcome (HitDetection, Damage) stays the server's
+alone.
 
 **On the wire.** The Shot, the Hit confirmation and the Command's Seen time (its
 tick and fraction) follow ADR-0038: the smallest types, quantized numbers on its

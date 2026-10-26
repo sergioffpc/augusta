@@ -28,6 +28,7 @@
 #include "augusta/policy_loader.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
+#include "character_fixture.h"
 
 // The example scenario's shipped rules (last_man_standing.lua), run inside the real engine
 // through SimulationWorld (ADR-0013's decision for Lua gameplay scripts): loaded
@@ -104,8 +105,9 @@ Character Cross() {
     triangles.push_back({.a = -half, .b = half, .c = half + up});
     triangles.push_back({.a = -half, .b = half + up, .c = -half + up});
   }
-  return Character{.eye = Vec3(0.0F, 1.5F, 0.0F),
-                   .hitboxes = {{.part = augusta::body_part::BodyPart::kTorso, .triangles = std::move(triangles)}}};
+  return augusta::character_fixture::Rigged(
+      Character{.eye = Vec3(0.0F, 1.5F, 0.0F),
+                .hitboxes = {{.part = augusta::body_part::BodyPart::kTorso, .triangles = std::move(triangles)}}});
 }
 
 augusta::physics::CollisionMesh Floor() {

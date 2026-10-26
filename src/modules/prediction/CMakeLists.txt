@@ -3,6 +3,13 @@ target_include_directories(augusta_prediction PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
 target_link_libraries(
   augusta_prediction
   PUBLIC augusta_gameplay augusta_physics
-  PRIVATE augusta_logging nvtx3-cpp $<IF:$<TARGET_EXISTS:flecs::flecs>,flecs::flecs,flecs::flecs_static>
+  PRIVATE
+    augusta_animation
+    augusta_logging
+    nvtx3-cpp
+    $<IF:$<TARGET_EXISTS:flecs::flecs>,flecs::flecs,flecs::flecs_static>
 )
 augusta_set_module_scope(augusta_prediction CLIENT_ONLY)
+# NOMINMAX: nvtx3's headers pull in <windows.h>, whose min/max macros would break
+# the std::numeric_limits<...>::min()/max() of augusta/grid.h.
+target_compile_definitions(augusta_prediction PRIVATE NOMINMAX)

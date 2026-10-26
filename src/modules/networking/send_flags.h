@@ -10,7 +10,7 @@
 
 /// \file
 /// Decision half of every send, private to the module so it is tested apart
-/// from a live connection: which flags networking.cpp hands
+/// from a live connection: which flags gns_adapter.cpp hands
 /// GameNetworkingSockets a message with, and what the result it answers means
 /// (ADR-0033): accepted, a peer outcome, or a failure of the local transport.
 namespace augusta::networking {

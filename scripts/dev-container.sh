@@ -1,26 +1,30 @@
 #!/bin/bash
 # Runs a command in this checkout's Linux dev container (docs/ENGINEERING.md,
 # Developer Environment): the environment of .devcontainer/, from a terminal,
-# for a host that builds nothing natively - macOS. The git hooks run their
-# checks through it there; git itself (identity, signing, credentials, LFS)
-# stays on the host.
+# for a Linux build on a host with its own (macOS builds natively). git itself
+# (identity, signing, credentials, LFS) stays on the host.
 #
 # One container per checkout, kept running between calls. The checkout is
 # mounted at the path it has on the host, not /workspaces/<name> as
 # devcontainer.json mounts it, so a git worktree's .git (an absolute host
 # path) resolves inside too, as does its main repository's, mounted beside
-# it. Its build/ is a volume of its own, as devcontainer.json's; sccache's
-# cache and vcpkg's binary cache, downloads and build trees are volumes every
-# checkout shares, so a new worktree doesn't rebuild the vcpkg dependencies.
-# The image is rebuilt, and the container recreated, when the Dockerfile or
-# scripts/bootstrap.sh or scripts/bootstrap/linux.sh changes (not the
-# Windows half).
+# it. Its build/ and .toolchain/ are volumes of its own, as devcontainer.json's
+# (the host's .toolchain/ links into the host's store); sccache's cache and
+# vcpkg's binary cache, downloads and build trees are volumes every checkout
+# shares, so a new worktree doesn't rebuild the vcpkg dependencies.
+# The image is rebuilt, and the container recreated, when the Dockerfile,
+# scripts/bootstrap.sh, scripts/bootstrap/linux.sh or the toolchain's files it
+# copies change (not the Windows half): the image fills the toolchain's store.
 #
-# Docker or Podman (rootless Podman maps the host's user to the image's
-# ubuntu, so files written inside are the host user's).
+# Podman, or Docker where there is no Podman (rootless Podman maps the host's
+# user to the image's ubuntu, so files written inside are the host user's).
 #
 # Usage: scripts/dev-container.sh [command [argument...]]
 #   With no command, an interactive shell. Runs in the current directory.
+#        scripts/dev-container.sh --remove
+#   Removes this checkout's container and its build/ and .toolchain/ volumes
+#   (the bootstrap's uninstall), leaving the images and the volumes every
+#   checkout shares.
 set -euo pipefail
 
 # The git environment a hook runs with, which a command run from one needs
@@ -29,17 +33,25 @@ readonly GIT_ENV=(GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE)
 # Inside the image (.devcontainer/Dockerfile): its user's home.
 readonly HOME_IN=/home/ubuntu
 readonly VCPKG_CACHE="${HOME_IN}/.cache/augusta-vcpkg"
+# The files the image's build copies (.devcontainer/Dockerfile.dockerignore),
+# whose change rebuilds it.
+readonly IMAGE_FILES=(.devcontainer/Dockerfile scripts/bootstrap.sh
+  scripts/bootstrap/linux.sh scripts/bootstrap/toolchain.sh
+  scripts/bootstrap/toolchain/check.sh scripts/bootstrap/toolchain/link.sh
+  scripts/bootstrap/toolchain/store.sh scripts/bootstrap/toolchain/tools.sh
+  scripts/bootstrap/versions.env scripts/bootstrap/package.json
+  scripts/bootstrap/package-lock.json)
 
-# Prints the container engine: docker if there is one, podman otherwise.
+# Prints the container engine: podman if there is one, docker otherwise.
 engine() {
   local candidate
-  for candidate in docker podman; do
+  for candidate in podman docker; do
     if command -v "${candidate}" >/dev/null 2>&1; then
       echo "${candidate}"
       return
     fi
   done
-  echo "dev-container: neither docker nor podman found - install one (on" \
+  echo "dev-container: neither podman nor docker found - install one (on" \
     "macOS: brew install podman && podman machine init && podman machine" \
     "start)." >&2
   exit 1
@@ -48,6 +60,13 @@ engine() {
 # Prints a short, stable identifier of its argument.
 digest() {
   cksum | cut -d ' ' -f 1
+}
+
+# Prints the name of a checkout's volume for one of its directories.
+# Arguments:
+#   The directory (build, toolchain), the checkout.
+checkout_volume() {
+  echo "augusta-$1-$(printf '%s' "$2" | digest)"
 }
 
 # Builds the image tagged $1 from the checkout $2, unless it exists.
@@ -76,7 +95,8 @@ create_container() {
   local args=(
     run --detach --init --name "${name}" --label "augusta.image=${tag}"
     --volume "${top}:${top}"
-    --volume "augusta-build-$(printf '%s' "${top}" | digest):${top}/build"
+    --volume "$(checkout_volume build "${top}"):${top}/build"
+    --volume "$(checkout_volume toolchain "${top}"):${top}/.toolchain"
     --volume "augusta-sccache:${HOME_IN}/.cache/sccache"
     --volume "augusta-vcpkg:${VCPKG_CACHE}"
     --env "VCPKG_BINARY_SOURCES=clear;files,${VCPKG_CACHE}/bincache,readwrite"
@@ -108,9 +128,17 @@ main() {
   engine="$(engine)"
 
   local tag name
-  tag="augusta-dev:$(cat "${top}/.devcontainer/Dockerfile" \
-    "${top}/scripts/bootstrap.sh" "${top}/scripts/bootstrap/linux.sh" | digest)"
+  tag="augusta-dev:$(cd "${top}" && cat "${IMAGE_FILES[@]}" | digest)"
   name="augusta-dev-$(printf '%s' "${top}" | digest)"
+
+  if [[ "${1:-}" = --remove ]]; then
+    "${engine}" rm --force "${name}" >/dev/null 2>&1 || true
+    "${engine}" volume rm --force "$(checkout_volume build "${top}")" \
+      "$(checkout_volume toolchain "${top}")" >/dev/null 2>&1 || true
+    echo "dev-container: removed ${name} and its build and toolchain" \
+      "volumes." >&2
+    return
+  fi
 
   build_image "${engine}" "${tag}" "${top}"
   local current

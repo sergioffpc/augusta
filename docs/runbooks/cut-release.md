@@ -21,7 +21,7 @@ skipped: a branch cut from `main` already has everything `main` has.
 ## Pack format changes
 
 The engine reads packs of one pack format version, `kFormatVersion` in
-[`src/modules/assets/assets.cpp`](../../src/modules/assets/assets.cpp)
+[`src/modules/assets/pack_format.h`](../../src/modules/assets/pack_format.h)
 (ADR-0031), and a server exits at startup on a pack of any other. Each server in
 [`clusters/onprem/apps/`](../../clusters/onprem/apps/) records the `packFormat`
 its pack was cooked in beside its `packVersion`, and CI's `format` job, a
@@ -71,8 +71,11 @@ cut that release first and the hotfix off it.
   [`scripts/changelog.sh`](../../scripts/changelog.sh), which runs git-cliff
   through `uvx` with [`cliff.toml`](../../cliff.toml): WSL, the dev container,
   or Git Bash on Windows.
-- `docker` with buildx, `jq` and `cosign`, for step 8's wait on the image. GHCR
-  serves the image and its signatures without a login.
+- `podman`, `jq` and `cosign`, for step 8's wait on the image:
+  `scripts/bootstrap.sh` installs `podman` and `jq`, and `cosign` is the
+  toolchain's, the one CI signs with. Run `make toolchain`, then
+  `source .toolchain/activate` in the shell that runs step 8. GHCR serves the
+  image and its signatures without a login.
 - Access to the cluster's `develop` environment, for the NFR-01 check in step 6.
 
 ## Steps
@@ -186,7 +189,7 @@ cut that release first and the hotfix off it.
     image=ghcr.io/sergioffpc/augustad:sha-$(git rev-parse --short=12 origin/main)
     both='[.manifests[]?.platform.architecture] | contains(["amd64", "arm64"])'
     signer=https://github.com/sergioffpc/augusta/.github/workflows/ci.yml@refs/heads/main
-    until docker buildx imagetools inspect "$image" --format '{{json .Manifest}}' 2>/dev/null \
+    until podman manifest inspect "$image" 2>/dev/null \
         | jq --exit-status "$both" >/dev/null \
       && cosign verify "$image" --certificate-identity "$signer" \
         --certificate-oidc-issuer https://token.actions.githubusercontent.com >/dev/null 2>&1; do
@@ -252,7 +255,7 @@ gh attestation verify release-vX.Y.Z/augustac-linux-x64.tar.gz --repo sergioffpc
 gh attestation verify release-vX.Y.Z/augustad-linux-x64 --repo sergioffpc/augusta
 gh attestation verify release-vX.Y.Z/augustad-linux-arm64 --repo sergioffpc/augusta
 gh attestation verify oci://ghcr.io/sergioffpc/augustad:sha-<12> --repo sergioffpc/augusta
-docker buildx imagetools inspect ghcr.io/sergioffpc/augustad:sha-<12>  # amd64 + arm64
+podman manifest inspect ghcr.io/sergioffpc/augustad:sha-<12>  # amd64 + arm64
 git log --oneline -1 origin/develop      # the back-merge
 flux get sources git augusta-release -n flux-system   # vX.Y.Z, verified
 flux get helmreleases -n flux-system     # augustad-staging at X.Y.Z+<12>

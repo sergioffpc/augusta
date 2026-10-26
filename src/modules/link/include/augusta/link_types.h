@@ -52,6 +52,10 @@ struct EntityBody {
   physics::BodyState body{};
   /// Where the body faces: the yaw of its player's view (command::Command), in radians.
   float yaw = 0.0F;
+  /// Where its player's view looks up or down, in radians (command::Command).
+  float pitch = 0.0F;
+  /// Whether its player aims down sights.
+  bool ads = false;
 };
 
 /// What the server said about every body as of one of its ticks: its
@@ -98,23 +102,6 @@ struct HitConfirmation {
   float damage = 0.0F;
   /// Where on the body it struck.
   body_part::BodyPart part = body_part::BodyPart::kTorso;
-};
-
-/// Where one player of a Replay looked on one tick, from the Command the
-/// replay server's World ran (ADR-0051): what its Replay viewer is shown, which
-/// no Authoritative State carries.
-struct PlayerView {
-  EntityId entity{};
-  /// The view's pitch, in radians (command::Command).
-  float pitch = 0.0F;
-  bool ads = false;
-};
-
-/// Every player's view on one tick of a Replay, as its replay server sends it.
-struct ReplayView {
-  /// The tick, as the Authoritative State of the same tick names it.
-  tick::Tick tick = 0;
-  std::vector<PlayerView> players;
 };
 
 /// A player in the match died (US-13), as the server told every client in it:
@@ -350,7 +337,7 @@ struct ShotJudgement {
 /// (its reason), and the rest each as what it says; a Replay list as the
 /// captures it names; in a Development build, a Shot judgement too.
 using ServerMessage = std::variant<Admission, JoinRefusal, Lobby, MatchStart, MatchEnd, AuthoritativeState, Shot,
-                                   HitConfirmation, Death, ReplayView, std::vector<ReplayListing>
+                                   HitConfirmation, Death, std::vector<ReplayListing>
 #if AUGUSTA_DEBUG_TOOLS
                                    ,
                                    ShotJudgement
@@ -385,7 +372,6 @@ enum class MessageType : std::uint8_t {
   kReplayListRequest,
   kReplayList,
   kReplayRequest,
-  kReplayView,
   kReenactRequest,
 #if AUGUSTA_DEBUG_TOOLS
   /// A Development build's alone (ADR-0074).
@@ -435,8 +421,6 @@ inline constexpr MessageType kLastMessageType = MessageType::kReenactRequest;
       return "replay_list";
     case MessageType::kReplayRequest:
       return "replay_request";
-    case MessageType::kReplayView:
-      return "replay_view";
     case MessageType::kReenactRequest:
       return "reenact_request";
 #if AUGUSTA_DEBUG_TOOLS

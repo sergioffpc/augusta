@@ -16,8 +16,8 @@
 #include <variant>
 #include <vector>
 
-#include "augusta/agent.h"
-#include "augusta/agent_report.h"
+#include "agent.h"
+#include "agent_report.h"
 #include "augusta/command.h"
 #include "augusta/harness.h"
 #include "augusta/intent.h"

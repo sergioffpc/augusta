@@ -39,31 +39,51 @@ never collide with it.
 
 Windows compiles our code with `clang-cl` and links it with `lld-link`, from
 LLVM 21.1.8, the version that already gives `clang-format` and `clang-tidy` on
-both platforms: one LLVM version to bump. The `windows` and `windows-debug`
-presets name them (`CMAKE_CXX_COMPILER` `clang-cl`, `CMAKE_LINKER_TYPE` `LLD`);
-the Windows bootstrap installs that LLVM, and CI's and the release's Windows
-client jobs install it through `.github/actions/setup-windows-llvm`. The Visual
-Studio Build Tools and their developer environment (`scripts/vcenv.cmd`, CI's
+both platforms: one LLVM version to bump, `LLVM_VERSION` in
+`scripts/bootstrap/versions.env`. The `windows` and `windows-debug` presets name
+them (`CMAKE_CXX_COMPILER` `clang-cl`, `CMAKE_LINKER_TYPE` `LLD`); the Windows
+bootstrap installs that LLVM, and CI's and the release's Windows client jobs
+install it through `.github/actions/setup-windows-llvm`. The Visual Studio Build
+Tools and their developer environment (`scripts/vcenv.cmd`, CI's
 `.github/actions/setup-windows-msvc`) stay: `clang-cl` takes the MSVC STL, the
 CRT and the Windows SDK from them, and sets CMake's `MSVC`, so the MSVC build
 settings apply to it unchanged. Its `/W4 /WX` is clang's
 `-Wall -Wextra -Werror`, Linux's warning set; `/Wall` would be `-Weverything`.
-The dependencies stay on MSVC `cl`, under vcpkg's stock `x64-windows` triplet
-(`mesa[lavapipe]` included), with no custom triplet: `clang-cl` is
-ABI-compatible with what `cl` builds, the same STL and CRT, and those ports are
-built and tested upstream with `cl`. The presets require CMake 3.29, the first
-to read `CMAKE_LINKER_TYPE`. The root project, the server, the client and their
-tests are then compiled by one compiler family everywhere: code that clang
-rejects or warns on fails the pull request's Windows build rather than the
-nightly's Linux client, a clean build on one platform is clean on the other, and
-`clang-tidy` on Windows reads compile commands written for the compiler that
-builds the code. The tools' native modules (`tools/agent`, `tools/pack`) are
-built by the root project too, so with `clang-cl` as well. `clang-cl` defines
-both `_MSC_VER` and `__clang__`; no check in our code takes either. `clang-cl`
-was once rejected because vcpkg's `x64-windows` triplet and NVIDIA's SDKs are
-built and tested with MSVC. That does not hold for our own code: the
-dependencies, NVIDIA's included, stay on `cl` and its triplet, and `clang-cl`
-links against what they build.
+The dependencies stay on MSVC `cl`, under vcpkg's stock `x64-windows` settings
+(`mesa[lavapipe]` included): `clang-cl` is ABI-compatible with what `cl` builds,
+the same STL and CRT, and those ports are built and tested upstream with `cl`.
+The overlay `triplets/x64-windows.cmake` repeats the stock triplet and only
+builds `llvm` and `mesa` release-only: Mesa is loaded only as lavapipe's Vulkan
+ICD, from its own DLL, so a release Mesa serves a debug build with no two CRTs
+in one image, and LLVM exists only to build Mesa. The presets require CMake
+3.29, the first to read `CMAKE_LINKER_TYPE`. The root project, the server, the
+client and their tests are then compiled by one compiler family everywhere: code
+that clang rejects or warns on fails the pull request's Windows build rather
+than the nightly's Linux client, a clean build on one platform is clean on the
+other, and `clang-tidy` on Windows reads compile commands written for the
+compiler that builds the code. The tools' native modules (`tools/agent`,
+`tools/pack`) are built by the root project too, so with `clang-cl` as well.
+`clang-cl` defines both `_MSC_VER` and `__clang__`; no check in our code takes
+either. `clang-cl` was once rejected because vcpkg's `x64-windows` triplet and
+NVIDIA's SDKs are built and tested with MSVC. That does not hold for our own
+code: the dependencies, NVIDIA's included, stay on `cl` and its triplet, and
+`clang-cl` links against what they build.
+
+macOS (arm64, a development build of the client, the server and their tests)
+builds with Homebrew's LLVM 21 (`llvm@21`, `lld@21`), the version Linux and
+Windows build with, not Apple's clang: clang compiles against LLVM's libc++,
+linked dynamically from Homebrew's prefix as its LLVM documents, lld links, and
+LLVM's binary tools stand in for Apple's; the Command Line Tools give the SDK
+alone. `cmake/LlvmMacosToolchain.cmake` states it, chainloaded as on Linux, from
+the macos presets and from `triplets/arm64-osx.cmake`, so its ports build with
+it too. The nightly builds and tests it (`client-arm64-macos`, ADR-0013), and so
+it gates every release.
+
+clang is then the project's one compiler: `clang-cl` on Windows, LLVM's clang on
+Linux and macOS. The root project refuses any other when it is configured - GCC,
+MSVC's `cl`, Apple's clang (CMake's `AppleClang`) - rather than build with it by
+accident. The Windows dependencies on `cl` are vcpkg's builds, not the
+project's.
 
 The client (`augustac`, its Renderer and their tests) builds with the
 `AUGUSTA_CLIENT` option, on by default on Windows and Linux, so

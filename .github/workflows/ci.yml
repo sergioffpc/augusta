@@ -70,8 +70,13 @@ jobs:
           # The paths more than one output matches, each written only here.
           ci_workflow='\.github/workflows/ci\.yml$'
           charts='charts/'
-          # The server and what builds its image.
-          server='src/|cmake/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|scripts/augustad-seccomp\.sh$|clusters/onprem/node/augustad-seccomp\.json$|Dockerfile$|\.dockerignore$|chisel/'
+          # The toolchain the jobs run their tools from: its pins, what
+          # installs them, Prettier's lockfile, Linux's release checksums, and
+          # the action.
+          toolchain='scripts/bootstrap/(versions\.env|package-lock\.json|toolchain\.sh|toolchain/.*|linux\.sh)$|\.github/actions/setup-toolchain/'
+          # The server and what builds its image: vcpkg's overlay ports and
+          # triplets among it, which every dependency is built by.
+          server='src/|cmake/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|ports/|triplets/|third_party/|scripts/augustad-seccomp\.sh$|clusters/onprem/node/augustad-seccomp\.json$|Dockerfile$|\.dockerignore$|chisel/'
 
           # The build jobs also build and test the tools (tools/agent,
           # tools/pack, tools/wireshark): their native and Python sources, the
@@ -82,29 +87,31 @@ jobs:
             "^(${server}|tests/|checks/|tools/agent/|tools/pack/|tools/wireshark/|tools/composer/examples/|tools/(pyproject\.toml|uv\.lock)$|config/|clusters/onprem/node/augusta-publish-receive\.sh$|\.clang-format$|\.clang-tidy$|${ci_workflow}|\.github/actions/)"
 
           set_output run_container \
-            "^(${server}|\.hadolint\.yaml$|${charts}|${ci_workflow}|\.github/actions/(build-server-image|restore-vcpkg-cache)/)"
+            "^(${server}|\.hadolint\.yaml$|${charts}|${ci_workflow}|${toolchain}|\.github/actions/(build-server-image|restore-vcpkg-cache)/)"
 
           # What Flux applies to the cluster: its own manifests, the chart the
           # HelmReleases there install, and the Kyverno policies (and their
           # negative fixtures) both are checked against, all under clusters/;
           # and the k3s release they run on.
           set_output run_manifests \
-            "^(${charts}|clusters/|scripts/bootstrap-node\.sh$|${ci_workflow})"
+            "^(${charts}|clusters/|scripts/bootstrap-node\.sh$|${ci_workflow}|${toolchain})"
 
           set_output run_yaml \
-            '(^\.(yamlfmt|yamllint|yamlignore|gitignore)$|(^|/)[^/]+\.ya?ml$)'
+            '(^\.(yamlfmt|yamllint|yamlignore|gitignore)$|^scripts/bootstrap/versions\.env$|(^|/)[^/]+\.ya?ml$)'
 
-          # The scenarios' Lua scripts, and the rules they are formatted and
-          # linted by.
+          # The scenarios' Lua scripts, the rules they are formatted and
+          # linted by, and the toolchain's pins.
           set_output run_lua \
-            "(\.lua$|^(stylua\.toml$|\.luacheckrc$|${ci_workflow}))"
+            "(\.lua$|^(stylua\.toml$|\.luacheckrc$|scripts/bootstrap/versions\.env$|${ci_workflow}))"
 
-          set_output run_toml "(\.toml$|^${ci_workflow})"
+          set_output run_toml \
+            "(\.toml$|^(scripts/bootstrap/versions\.env$|${ci_workflow}))"
 
           # Python, shell, Markdown, CMake, Protocol Buffers and the
-          # workflows, and the rules each is formatted and linted by.
+          # workflows, the rules each is formatted and linted by, and the
+          # toolchain's pins and the editor paths its check reads.
           set_output run_lint \
-            '(\.(py|sh|md|cmake|proto)$|(^|/)CMakeLists\.txt$|^\.githooks/|^\.github/workflows/|^\.github/actionlint\.yaml$|^(ruff\.toml|\.shellcheckrc|\.gersemirc|\.pymarkdown\.json|\.prettierrc\.yaml|\.editorconfig|buf\.yaml)$)'
+            '(\.(py|sh|md|cmake|proto)$|(^|/)CMakeLists\.txt$|^\.githooks/|^\.github/workflows/|^\.github/actionlint\.yaml$|^(ruff\.toml|\.shellcheckrc|\.gersemirc|\.pymarkdown\.json|\.prettierrc\.yaml|\.editorconfig|buf\.yaml|scripts/bootstrap/versions\.env|scripts/bootstrap/package(-lock)?\.json|\.vscode/settings\.json)$)'
   format:
     needs: changes
     if: >-
@@ -112,10 +119,11 @@ jobs:
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
-        if: needs.changes.outputs.run_build == 'true' || needs.changes.outputs.run_yaml == 'true' || needs.changes.outputs.run_lint == 'true'
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
+      # The formatters and linters the Makefile's format-check/* targets run.
+      - uses: ./.github/actions/setup-toolchain
       - name: Check the environments' pack formats
         # Every pack clusters/ names is of the pack format the engine reads,
         # so a change to the format fails here until every environment is
@@ -126,26 +134,9 @@ jobs:
         run: |
           uv run --no-project --with pyyaml==6.0.3 --with pytest==9.1.1 pytest checks/test_check_pack_formats.py
           uv run --no-project --with pyyaml==6.0.3 python scripts/check-pack-formats.py
-      - name: Install yamlfmt
-        if: needs.changes.outputs.run_yaml == 'true'
-        shell: bash
-        run: |
-          version=0.21.0
-          asset="yamlfmt_${version}_Linux_x86_64.tar.gz"
-          install_dir="$RUNNER_TEMP/yamlfmt"
-          mkdir -p "$install_dir"
-          curl -fsSLo "$install_dir/$asset" "https://github.com/google/yamlfmt/releases/download/v${version}/$asset"
-          printf '%s  %s\n' \
-            '1f300d9257b232bb3b541d7fb1b0e6b3c121bcbab381c86cd38cb8722be8a566' \
-            "$install_dir/$asset" | sha256sum --check --status
-          tar -xzf "$install_dir/$asset" -C "$install_dir"
-          echo "$install_dir" >> "$GITHUB_PATH"
-      - name: Install clang-format
-        if: needs.changes.outputs.run_build == 'true'
-        run: sudo apt-get update && sudo apt-get install -y clang-format
       - name: Check C++ formatting
         if: needs.changes.outputs.run_build == 'true'
-        run: find src tests tools \( -name '*.cpp' -o -name '*.h' \) -print0 | xargs -0 clang-format --dry-run --Werror
+        run: make format-check/clang-format
       - name: Check the tests' requirement markers
         # Every requirement a test names is one docs/REQUIREMENTS.md has, and
         # every marker is directly above a test (ADR-0013).
@@ -153,81 +144,33 @@ jobs:
         run: python3 scripts/requirements-matrix.py --check
       - name: Check YAML formatting and lint
         if: needs.changes.outputs.run_yaml == 'true'
-        run: |
-          yamlfmt -conf .yamlfmt -lint
-          uv tool run --from yamllint==1.37.1 yamllint --strict -c .yamllint .
-      - name: Install StyLua and luacheck
-        if: needs.changes.outputs.run_lua == 'true'
-        shell: bash
-        run: |
-          install_dir="$RUNNER_TEMP/lua-tools"
-          mkdir -p "$install_dir"
-          curl -fsSLo "$install_dir/stylua.zip" \
-            https://github.com/JohnnyMorganz/StyLua/releases/download/v2.5.2/stylua-linux-x86_64.zip
-          curl -fsSLo "$install_dir/luacheck" \
-            https://github.com/lunarmodules/luacheck/releases/download/v1.2.0/luacheck
-          printf '%s  %s\n' \
-            'bcb0d855e91f102f28a370e850f8566b3b44b79e6274d806ea5246837c0fd5ab' "$install_dir/stylua.zip" \
-            'd68da17fca0697d9e2fb04201f3884abd259fa558b3a449bccaed47f1390defc' "$install_dir/luacheck" \
-            | sha256sum --check --status
-          unzip -q "$install_dir/stylua.zip" -d "$install_dir"
-          chmod +x "$install_dir/stylua" "$install_dir/luacheck"
-          echo "$install_dir" >> "$GITHUB_PATH"
+        run: make format-check/yamlfmt format-check/yamllint
       - name: Check Lua formatting and lint
         if: needs.changes.outputs.run_lua == 'true'
-        run: |
-          git ls-files -z -- '*.lua' | xargs -0 stylua --check
-          git ls-files -z -- '*.lua' | xargs -0 luacheck
-      - name: Install taplo
-        if: needs.changes.outputs.run_toml == 'true'
-        shell: bash
-        run: |
-          install_dir="$RUNNER_TEMP/taplo"
-          mkdir -p "$install_dir"
-          curl -fsSLo "$install_dir/taplo.gz" \
-            https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-x86_64.gz
-          printf '%s  %s\n' '8fe196b894ccf9072f98d4e1013a180306e17d244830b03986ee5e8eabeb6156' "$install_dir/taplo.gz" \
-            | sha256sum --check --status
-          gunzip "$install_dir/taplo.gz"
-          chmod +x "$install_dir/taplo"
-          echo "$install_dir" >> "$GITHUB_PATH"
+        run: make format-check/stylua format-check/luacheck
       - name: Check TOML formatting and lint
         if: needs.changes.outputs.run_toml == 'true'
-        run: |
-          git ls-files -z -- '*.toml' ':!:third_party/*' | xargs -0 taplo fmt --check
-          git ls-files -z -- '*.toml' ':!:third_party/*' | xargs -0 taplo lint
-      # uv runs the rest at pinned versions, as the Makefile's format-check and
-      # the git hooks do.
+        run: make format-check/taplo
+      # The Makefile's own checks, from the toolchain (setup-toolchain), as the
+      # git hooks run them.
       - name: Check Python formatting and lint
         if: needs.changes.outputs.run_lint == 'true'
-        run: |
-          git ls-files -z -- '*.py' ':!:third_party/*' | xargs -0 uv tool run ruff@0.16.10 format --check
-          git ls-files -z -- '*.py' ':!:third_party/*' | xargs -0 uv tool run ruff@0.16.10 check
+        run: make format-check/ruff
       - name: Check shell formatting and lint
         if: needs.changes.outputs.run_lint == 'true'
-        run: |
-          git ls-files -z -- '*.sh' '.githooks/*' | xargs -0 uv tool run --from shfmt-py==4.2.0 shfmt -d
-          git ls-files -z -- '*.sh' '.githooks/*' | xargs -0 uv tool run --from shellcheck-py==0.11.0.1 shellcheck
+        run: make format-check/shfmt format-check/shellcheck
       - name: Lint the workflows
         if: needs.changes.outputs.run_lint == 'true'
-        run: uv tool run --from actionlint-py==1.7.12.25 --with shellcheck-py==0.11.0.1 actionlint
+        run: make format-check/actionlint
       - name: Check CMake formatting
         if: needs.changes.outputs.run_lint == 'true'
-        run: |
-          git ls-files -z -- 'CMakeLists.txt' '*/CMakeLists.txt' '*.cmake' ':!:third_party/*' \
-            | xargs -0 uv tool run gersemi@0.29.2 --check
+        run: make format-check/gersemi
       - name: Check Markdown formatting and lint
         if: needs.changes.outputs.run_lint == 'true'
-        run: |
-          git ls-files -z -- '*.md' ':!:third_party/*' ':!:CHANGELOG.md' \
-            | xargs -0 uv tool run --from nodejs-wheel==24.19.0 npx --yes prettier@3.9.9 --log-level warn --check
-          git ls-files -z -- '*.md' ':!:third_party/*' ':!:CHANGELOG.md' \
-            | xargs -0 uv tool run --from pymarkdownlnt==0.9.40 pymarkdown --config .pymarkdown.json scan
+        run: make format-check/prettier format-check/pymarkdown
       - name: Check Protocol Buffers formatting and lint
         if: needs.changes.outputs.run_lint == 'true'
-        run: |
-          uv tool run --from nodejs-wheel==24.19.0 npx --yes @bufbuild/buf@1.73.0 format -d --exit-code
-          uv tool run --from nodejs-wheel==24.19.0 npx --yes @bufbuild/buf@1.73.0 lint
+        run: make format-check/buf
   client-x64-windows:
     needs: [changes, format]
     if: needs.changes.outputs.run_build == 'true'
@@ -255,10 +198,11 @@ jobs:
       - uses: ./.github/actions/setup-windows-vcpkg
         with:
           feed-token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
           cache-dependency-glob: tools/uv.lock
+      - uses: ./.github/actions/setup-toolchain
       - uses: ./.github/actions/restore-ctcache-cache
       - name: Install the tools' packages
         # The interpreter the tools' modules are built against, the Agents'
@@ -303,8 +247,9 @@ jobs:
       - name: Lint
         id: lint
         # What the server-x64-linux job's Linux build can't lint, as it builds
-        # without the client. The client, the Renderer, the window module's
-        # GLFW half and their tests get .clang-tidy's full profile, from
+        # without the client or for Linux. The client, the Renderer, the window
+        # module's GLFW half, every module's Windows half (<module>_windows.cpp)
+        # and their tests get .clang-tidy's full profile, from
         # clang-cl's compile commands (tests/.clang-tidy leaves the tests'
         # literals alone); the audio module's output device gets
         # misc-include-cleaner alone (the Makefile's tidy target says why -w).
@@ -314,7 +259,7 @@ jobs:
         # renderer embeds its shaders and font from.
         run: |
           status=0
-          git ls-files 'src/client/*.cpp' 'src/modules/renderer/*.cpp' 'src/modules/window/window.cpp' 'src/modules/window/glfw_keys.cpp' 'tests/client_*.cpp' 'tests/renderer_*.cpp' | xargs -P "$NUMBER_OF_PROCESSORS" -n 1 clang-tidy-cache clang-tidy --quiet -p=build/x64-windows || status=1
+          git ls-files 'src/client/*.cpp' 'src/modules/renderer/*.cpp' 'src/modules/window/window.cpp' 'src/modules/window/glfw_keys.cpp' 'src/*_windows.cpp' 'tests/client_*.cpp' 'tests/renderer_*.cpp' | xargs -P "$NUMBER_OF_PROCESSORS" -n 1 clang-tidy-cache clang-tidy --quiet -p=build/x64-windows || status=1
           git ls-files 'src/modules/audio/output_miniaudio.cpp' 'src/modules/audio/miniaudio.cpp' | xargs -P "$NUMBER_OF_PROCESSORS" -n 1 clang-tidy-cache clang-tidy --quiet -p=build/x64-windows --checks=-*,misc-include-cleaner --extra-arg=-w || status=1
           exit "$status"
       - uses: ./.github/actions/save-ctcache-cache
@@ -377,16 +322,18 @@ jobs:
           lfs: true
       - uses: ./.github/actions/setup-linux-build
         with:
-          # The same distro version as the clang the presets compile with.
-          extra-packages: clang-tidy
+          # The same distro version as the clang the presets compile with,
+          # which the toolchain links.
+          extra-packages: clang-format clang-tidy clangd
           # It installs the tools' ports (the manifest's agent and pack
           # features: pybind11 and Python, meshoptimizer, ktx and stb), which no
           # other Linux job does and whose saves would drop: a cache of its own.
           vcpkg-cache-prefix: vcpkg-bincache-tools-linux-
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
           cache-dependency-glob: tools/uv.lock
+      - uses: ./.github/actions/setup-toolchain
       - uses: ./.github/actions/restore-ctcache-cache
       - name: Install the tools' packages
         # As the client-x64-windows job does, and the Wireshark dissector's
@@ -413,8 +360,8 @@ jobs:
         run: cmake --preset linux -DAUGUSTA_CLIENT=OFF "-DPYTHON_EXECUTABLE=$PWD/tools/.venv/bin/python"
       - uses: ./.github/actions/save-vcpkg-cache
       - name: Generate the protocol's C++
-        # protocol.cpp includes augusta.pb.h, which protoc writes at build
-        # time, and Lint runs before Build.
+        # The protocol's sources include augusta.pb.h, which protoc writes at
+        # build time, and Lint runs before Build.
         run: cmake --build --preset linux --target augusta_protocol_generated
       - name: Lint
         id: lint
@@ -428,7 +375,10 @@ jobs:
         # src/modules/audio/CMakeLists.txt), and aren't part of this
         # configure's build graph at all, so they have no compile_commands.json
         # entry here - excluded rather than linted against the wrong platform's
-        # (missing) compile flags. The renderer's vertices.cpp builds here but
+        # (missing) compile flags, as is every module's Windows half
+        # (<module>_windows.cpp), which the client job lints, and macOS half
+        # (<module>_macos.cpp), which no job builds. The renderer's
+        # vertices.cpp builds here but
         # is skipped too: the client job lints the whole Renderer, from its own
         # build.
         # One file per clang-tidy, on every core: a serial run over the
@@ -444,7 +394,7 @@ jobs:
         # are the client-x64-windows job's.
         run: |
           status=0
-          find src tools/agent -name '*.cpp' -not -path 'tools/*/tests/*' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_miniaudio.cpp' -not -path 'src/modules/audio/miniaudio.cpp' -not -path 'src/modules/window/window.cpp' -not -path 'src/modules/window/glfw_keys.cpp' -print0 | xargs -0 -P "$(nproc)" -n 1 clang-tidy-cache clang-tidy -p build/x64-linux || status=1
+          find src tools/agent -name '*.cpp' -not -path 'tools/*/tests/*' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_miniaudio.cpp' -not -path 'src/modules/audio/miniaudio.cpp' -not -path 'src/modules/window/window.cpp' -not -path 'src/modules/window/glfw_keys.cpp' -not -name '*_windows.cpp' -not -name '*_macos.cpp' -print0 | xargs -0 -P "$(nproc)" -n 1 clang-tidy-cache clang-tidy -p build/x64-linux || status=1
           git ls-files 'tests/*.cpp' 'tools/agent/tests/*.cpp' ':!:tests/client_*' | xargs -P "$(nproc)" -n 1 clang-tidy-cache clang-tidy --quiet -p build/x64-linux --checks=-*,misc-include-cleaner --extra-arg=-w || status=1
           exit "$status"
       - uses: ./.github/actions/save-ctcache-cache
@@ -563,7 +513,8 @@ jobs:
     # templating, not what it renders. Flux's own resources are checked
     # against the CRDs gotk-components.yaml installs, so a Flux upgrade
     # brings its schemas with it. Then the cluster's Kyverno policies run over
-    # all of it (ADR-0057). kubectl and yq come with the runner image.
+    # all of it (ADR-0057). kubectl comes with the runner image; kubeconform,
+    # the Kyverno CLI, promtool, amtool and yq are the toolchain's.
     needs: changes
     if: needs.changes.outputs.run_manifests == 'true'
     runs-on: ubuntu-26.04
@@ -588,38 +539,23 @@ jobs:
             exit 1
           fi
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
-      - name: Install kubeconform
+      - uses: ./.github/actions/setup-toolchain
+      - name: Download kubeconform's openapi2jsonschema.py
+        # From the tag of the toolchain's kubeconform: a bump of
+        # KUBECONFORM_VERSION fails here until its SHA-256 is bumped too.
         shell: bash
         run: |
-          install_dir="$RUNNER_TEMP/kubeconform"
-          mkdir -p "$install_dir"
-          curl -fsSLo "$install_dir/kubeconform.tar.gz" \
-            https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz
-          curl -fsSLo "$install_dir/openapi2jsonschema.py" \
-            https://raw.githubusercontent.com/yannh/kubeconform/v0.8.0/scripts/openapi2jsonschema.py
+          # shellcheck source=/dev/null
+          . scripts/bootstrap/versions.env
+          mkdir -p "$RUNNER_TEMP/kubeconform"
+          curl -fsSLo "$RUNNER_TEMP/kubeconform/openapi2jsonschema.py" \
+            "https://raw.githubusercontent.com/yannh/kubeconform/v$KUBECONFORM_VERSION/scripts/openapi2jsonschema.py"
           printf '%s  %s\n' \
-            '9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883' "$install_dir/kubeconform.tar.gz" \
-            'd145babfbb765004030764e1b4e518bfb7a4bd7f111691a08fa57983b81881f3' "$install_dir/openapi2jsonschema.py" \
+            'd145babfbb765004030764e1b4e518bfb7a4bd7f111691a08fa57983b81881f3' "$RUNNER_TEMP/kubeconform/openapi2jsonschema.py" \
             | sha256sum --check --status
-          tar -xzf "$install_dir/kubeconform.tar.gz" -C "$install_dir" kubeconform
-          echo "$install_dir" >> "$GITHUB_PATH"
-      - name: Install the Kyverno CLI
-        # The release of the Kyverno the cluster runs
-        # (clusters/onprem/infrastructure/kyverno.yaml), bumped with it.
-        shell: bash
-        run: |
-          install_dir="$RUNNER_TEMP/kyverno"
-          mkdir -p "$install_dir"
-          curl -fsSLo "$install_dir/kyverno.tar.gz" \
-            https://github.com/kyverno/kyverno/releases/download/v1.19.1/kyverno-cli_v1.19.1_linux_x86_64.tar.gz
-          printf '%s  %s\n' \
-            'b38228f367fc0fdc2b08f4c83ea50ac5f16c60ff8d62d76a66157c33c47b70ae' "$install_dir/kyverno.tar.gz" \
-            | sha256sum --check --status
-          tar -xzf "$install_dir/kyverno.tar.gz" -C "$install_dir" kyverno
-          echo "$install_dir" >> "$GITHUB_PATH"
       - name: Validate the chart, rendered per environment
         # With each HelmRelease's own values, as Flux renders it, and with the
         # chart of the ref its source follows: develop's branch (the chart CI
@@ -780,26 +716,6 @@ jobs:
               -schema-location "$RUNNER_TEMP/monitoring-crd-schemas/{{.Group}}_{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
               "$rendered"
           done
-      - name: Install promtool and amtool
-        # The releases of the Prometheus and Alertmanager the cluster runs
-        # (clusters/onprem/infrastructure/monitoring.yaml), bumped with them.
-        shell: bash
-        run: |
-          install_dir="$RUNNER_TEMP/prometheus"
-          mkdir -p "$install_dir"
-          curl -fsSLo "$install_dir/prometheus.tar.gz" \
-            https://github.com/prometheus/prometheus/releases/download/v3.15.0/prometheus-3.15.0.linux-amd64.tar.gz
-          curl -fsSLo "$install_dir/alertmanager.tar.gz" \
-            https://github.com/prometheus/alertmanager/releases/download/v0.34.1/alertmanager-0.34.1.linux-amd64.tar.gz
-          printf '%s  %s\n' \
-            '2a542df32eac02ee17b9d844fb2aa1de00dafa5476579ba8a3ba862e9d572ea0' "$install_dir/prometheus.tar.gz" \
-            '265b9d1e55ef0d5306a436018af6d2b686c2ce051f03d968f7464ecb1372a7e8' "$install_dir/alertmanager.tar.gz" \
-            | sha256sum --check --status
-          tar -xzf "$install_dir/prometheus.tar.gz" -C "$install_dir" --strip-components=1 \
-            prometheus-3.15.0.linux-amd64/promtool
-          tar -xzf "$install_dir/alertmanager.tar.gz" -C "$install_dir" --strip-components=1 \
-            alertmanager-0.34.1.linux-amd64/amtool
-          echo "$install_dir" >> "$GITHUB_PATH"
       - name: Test the alert rules and Alertmanager's routes
         # A rule kubeconform admits can still never fire, or fire late, and a
         # route can send an alert nowhere. promtool tests the
@@ -906,18 +822,9 @@ jobs:
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
       - name: Lint Helm chart
         run: helm lint charts/augustad
-      - name: Install hadolint
-        shell: bash
-        run: |
-          install_dir="$RUNNER_TEMP/hadolint"
-          mkdir -p "$install_dir"
-          curl -fsSLo "$install_dir/hadolint" \
-            https://github.com/hadolint/hadolint/releases/download/v2.15.1/hadolint-linux-x86_64
-          printf '%s  %s\n' \
-            'c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507' "$install_dir/hadolint" \
-            | sha256sum --check --status
-          chmod +x "$install_dir/hadolint"
-          echo "$install_dir" >> "$GITHUB_PATH"
+      # hadolint, and the trivy build-server-image scans with.
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-toolchain
       - name: Lint Dockerfile
         # .hadolint.yaml has the rules it doesn't apply, and why.
         run: hadolint Dockerfile
@@ -994,9 +901,13 @@ jobs:
     runs-on: ubuntu-26.04
     env:
       IMAGE: ghcr.io/${{ github.repository_owner }}/augustad:sha-${{ needs.container-verify.outputs.short-sha }}
+      # The image loads into Docker below, and Docker's runc is the runtime the
+      # Node's k3s runs it with, whose last syscalls the profile holds; the
+      # runner has Podman too, which the script would otherwise take.
+      AUGUSTA_CONTAINER_ENGINE: docker
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
           cache-dependency-glob: tools/uv.lock
@@ -1060,13 +971,18 @@ jobs:
       REPOSITORY: ghcr.io/${{ github.repository_owner }}/augustad
       SHA_TAG: sha-${{ needs.container-verify.outputs.short-sha }}
     steps:
-      # For the signing and attesting actions, and the branch's head, alone: it
-      # builds nothing.
+      # For the signing and attesting actions, the toolchain whose cosign and
+      # syft they run, and the branch's head, alone: it builds nothing.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: |
+            .github/actions/setup-toolchain
             .github/actions/sign-and-attest-server-image
             .github/actions/sign-artifact
+            .vscode
+            scripts/bootstrap
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-toolchain
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -1151,6 +1067,9 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # trivy, cosign and syft.
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-toolchain
       - name: Build and scan server image
         id: image
         uses: ./.github/actions/build-server-image
@@ -1202,10 +1121,16 @@ jobs:
       attestations: write
       artifact-metadata: write
     steps:
-      # For the signing action alone.
+      # For the signing action, and the toolchain whose cosign it runs, alone.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          sparse-checkout: .github/actions/sign-artifact
+          sparse-checkout: |
+            .github/actions/setup-toolchain
+            .github/actions/sign-artifact
+            .vscode
+            scripts/bootstrap
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-toolchain
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -1272,7 +1197,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
-      - uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
+      # oras, cosign and yq.
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-toolchain
       # Docker's login, which cosign and oras read, and Helm's own.
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0

@@ -23,6 +23,7 @@
 #include "augusta/policy_loader.h"
 #include "augusta/simulation.h"
 #include "benchmark_scene.h"
+#include "character_fixture.h"
 
 // The full Match the server-side benchmarks run (ADR-0023): the players stand
 // in a file, facing down it, walk back and forth together and hold fire,
@@ -68,7 +69,7 @@ inline simulation::Character SquaresCharacter() {
     character.hitboxes.push_back(
         hitbox::CharacterHitbox{.part = square.part, .triangles = Triangles(square, math::Vec3(0.0F))});
   }
-  return character;
+  return character_fixture::Rigged(character);
 }
 
 // The example's Game policy, as the server loads it; nullopt if it does not load.

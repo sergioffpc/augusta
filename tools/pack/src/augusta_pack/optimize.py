@@ -9,6 +9,7 @@ directly instead.
 from pathlib import Path
 
 from pxr import Usd
+from pxr import UsdUtils
 import usd_optimize.core as usd_optimize_core
 
 # triangulateMeshes first: cook.py's own topology validation
@@ -45,4 +46,12 @@ def optimize_stage(input_path: Path, output_path: Path) -> None:
         if not success:
             raise OptimizeError(f"{op} failed: {error}")
 
-    stage.GetRootLayer().Export(str(output_path))
+    # Exported elsewhere, a path relative to the authored stage would name
+    # another file, such as a character's Clips under authoring/animations/
+    # (ADR-0066): each is anchored to the authored stage first.
+    root_layer = stage.GetRootLayer()
+    UsdUtils.ModifyAssetPaths(
+        root_layer,
+        lambda path: root_layer.ComputeAbsolutePath(path) if path else path,
+    )
+    root_layer.Export(str(output_path))

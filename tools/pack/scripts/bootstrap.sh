@@ -1,8 +1,8 @@
 #!/bin/bash
 # Builds the hermetic cooking environment for the Asset Pipeline (ADR-0030)
 # entirely under <assets-root>, in Git Bash on Windows or on Linux - the
-# platforms vcpkg's ktx port, which the cooker's _native module wraps
-# (ADR-0017), builds for.
+# platforms usd-optimize, which the cooker depends on, ships wheels for. On
+# macOS it runs in the dev container (scripts/dev-container.sh).
 #
 # Cooking (always): a self-contained Python environment (uv-managed - no
 # system/global Python involved) with the tools/pack Python project installed
@@ -28,6 +28,7 @@ set -euo pipefail
 readonly EXAMPLE_PIECES=(
   maps/firebase.usda
   characters/soldier.usda
+  rifles/rifle.usda
   sounds/gunshot.wav
   sounds/hit_marker.wav
   sounds/hit_taken.wav
@@ -118,8 +119,9 @@ main() {
     compiler=(clang++ ld.lld)
   else
     echo "bootstrap: the cooker runs on Windows (Git Bash) or Linux only -" \
-      "vcpkg's ktx port, which its _native module wraps" \
-      "(ADR-0017), builds for no other platform." >&2
+      "usd-optimize, which it depends on, ships wheels for no other" \
+      "platform. On macOS, run it in the dev container:" \
+      "scripts/dev-container.sh $0 <assets-root>." >&2
     exit 1
   fi
 
@@ -149,13 +151,19 @@ main() {
   # A small worked authoring/ tree (tools/composer/examples/authoring -
   # committed, unlike everything else under the assets root) so a fresh
   # environment has something to cook straight away (`augusta-pack
-  # firebase`): one map (ADR-0015), one character (ADR-0040), placeholder cue
-  # sounds (ADR-0020), a Parameters script (ADR-0039) and rules (ADR-0022),
-  # and the scenario's manifest (ADR-0041) composing them. Seeded piece by
-  # piece rather than as one tree, so each survives local edits
-  # independently - left alone once it exists, like the signing key below.
+  # firebase`): one map (ADR-0015), one character (ADR-0040) and its Clips
+  # (ADR-0066), placeholder cue sounds (ADR-0020), a Parameters script
+  # (ADR-0039) and rules (ADR-0022), and the scenario's manifest (ADR-0041)
+  # composing them. Seeded piece by piece rather than as one tree, so each
+  # survives local edits independently - left alone once it exists, like the
+  # signing key below.
   local example_root="${repo_root}/tools/composer/examples/authoring" piece
-  for piece in "${EXAMPLE_PIECES[@]}"; do
+  local -a pieces=("${EXAMPLE_PIECES[@]}")
+  # The character's Clips, a file each.
+  for piece in "${example_root}"/animations/*.usda; do
+    pieces+=("animations/$(basename "${piece}")")
+  done
+  for piece in "${pieces[@]}"; do
     if [[ -e "${authoring_dir}/${piece}" ]]; then
       echo "Example ${piece} already exists at ${authoring_dir}/${piece} -" \
         "leaving it as is."

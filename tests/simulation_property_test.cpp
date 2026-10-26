@@ -19,7 +19,6 @@
 #include "augusta/ballistics.h"
 #include "augusta/body_part.h"
 #include "augusta/command.h"
-#include "augusta/input.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
@@ -30,6 +29,7 @@
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
 #include "augusta/weapon.h"
+#include "character_fixture.h"
 
 // Property-based tests of the simulation (ADR-0013), through the Worlds' public
 // interfaces: a player's stamina stays a fraction and its magazine within its
@@ -87,7 +87,12 @@ constexpr std::size_t kMaxCommands = 240;  // Four seconds of input.
 constexpr float kPi = 3.14159265F;
 constexpr augusta::simulation::EntityId kPlayer = static_cast<augusta::simulation::EntityId>(1);
 const Vec3 kSpawn(0.0F, 0.0F, 0.0F);
-const augusta::simulation::Character kCharacter{.eye = Vec3(0.0F, 1.7F, 0.0F), .hitboxes = {}};
+// A Character that sees from 1.7 m up, no hitbox, its Clips holding it still
+// (character_fixture.h).
+augusta::simulation::Character TestCharacter() {
+  return augusta::character_fixture::Rigged(
+      augusta::simulation::Character{.eye = Vec3(0.0F, 1.7F, 0.0F), .hitboxes = {}});
+}
 
 CollisionMesh Floor() {
   constexpr float kExtent = 100.0F;
@@ -105,7 +110,7 @@ rc::Gen<Command> RealCommand() {
   const auto yaw = rc::gen::map(rc::gen::inRange(-179'999, 180'001),
                                 [](int millidegrees) { return static_cast<float>(millidegrees) * kPi / 180'000.0F; });
   const auto pitch = rc::gen::map(rc::gen::inRange(-1000, 1001), [](int permille) {
-    return static_cast<float>(permille) * augusta::input::kMaxLookPitch / 1000.0F;
+    return static_cast<float>(permille) * augusta::command::kMaxLookPitch / 1000.0F;
   });
   const auto stance = rc::gen::element(Stance::kStanding, Stance::kCrouching, Stance::kProne);
   return rc::gen::apply(
@@ -154,7 +159,7 @@ RC_GTEST_PROP(SimulationPropertyTest, StaminaStaysWithinTheBarWhateverThePlayerD
 
   augusta::simulation::World world(augusta::parameters::Parameters{.stamina = stamina}, kTickRate);
   RC_ASSERT(world.AddCollisionMesh(Floor()).has_value());
-  world.AddPlayer(kPlayer, kSpawn, kCharacter);
+  world.AddPlayer(kPlayer, kSpawn, TestCharacter());
 
   for (const Command& command : commands) {
     const auto state = world.Tick({{.entity = kPlayer, .command = command}}, kTick).state;
@@ -193,7 +198,7 @@ RC_GTEST_PROP(SimulationPropertyTest, TheMagazineStaysWithinItsCapacityAndNoWind
 
   augusta::simulation::World world(parameters, kTickRate);
   RC_ASSERT(world.AddCollisionMesh(Floor()).has_value());
-  world.AddPlayer(kPlayer, kSpawn, kCharacter);
+  world.AddPlayer(kPlayer, kSpawn, TestCharacter());
 
   std::vector<std::size_t> fired;  // The ticks a round was fired on.
   for (std::size_t i = 0; i < commands.size(); ++i) {
@@ -229,9 +234,9 @@ augusta::simulation::Character WideTarget() {
     triangles.push_back({.a = -half, .b = half, .c = half + up});
     triangles.push_back({.a = -half, .b = half + up, .c = -half + up});
   }
-  return augusta::simulation::Character{
+  return augusta::character_fixture::Rigged(augusta::simulation::Character{
       .eye = Vec3(0.0F, 1.7F, 0.0F),
-      .hitboxes = {{.part = augusta::body_part::BodyPart::kTorso, .triangles = std::move(triangles)}}};
+      .hitboxes = {{.part = augusta::body_part::BodyPart::kTorso, .triangles = std::move(triangles)}}});
 }
 
 // commands with every view brought to within a fifth of a turn of yaw toward
@@ -437,6 +442,15 @@ RC_GTEST_PROP(SimulationPropertyTest, AtMostOneMatchEndPerMatchAndAWinnerIsAlway
 // step the same body in separate PhysX scenes.
 constexpr float kConvergedPosition = 0.005F;
 constexpr float kConvergedStamina = 0.001F;
+// A Stride a step apart is left uncorrected, as such a millimetre is.
+constexpr int kConvergedStride = 1;
+
+// How far apart two Strides are, the short way round their 256 steps.
+int StrideDistance(int a, int b) {
+  const int ahead =
+      ((a - b) % augusta::physics::kStrideSteps + augusta::physics::kStrideSteps) % augusta::physics::kStrideSteps;
+  return std::min(ahead, augusta::physics::kStrideSteps - ahead);
+}
 
 // The client predicts every command while the server loses some of them,
 // moving the player and handling its rifle for a lost one with no command, as
@@ -455,11 +469,14 @@ RC_GTEST_PROP(SimulationPropertyTest, AClientThatDivergedConvergesOnTheServersSt
   const auto lost = *rc::gen::container<std::set<std::size_t>>(rc::gen::inRange<std::size_t>(0, commands.size()));
   const std::size_t losses_end = commands.size() - delay - 1;
 
+  // Both sides advance the Stride and a change of stance by the same
+  // Character's Clips.
+  const augusta::simulation::Character character = TestCharacter();
   augusta::simulation::World server(parameters, kTickRate);
   RC_ASSERT(server.AddCollisionMesh(Floor()).has_value());
-  server.AddPlayer(kPlayer, kSpawn, kCharacter);
+  server.AddPlayer(kPlayer, kSpawn, character);
 
-  augusta::prediction::World client;
+  augusta::prediction::World client(character.clips);
   RC_ASSERT(client.AddCollisionMesh(Floor()).has_value());
   client.Start(kSpawn, parameters);
 
@@ -487,6 +504,10 @@ RC_GTEST_PROP(SimulationPropertyTest, AClientThatDivergedConvergesOnTheServersSt
   RC_ASSERT(std::abs(body.stamina - authoritative.stamina) < kConvergedStamina);
   RC_ASSERT(body.stance == authoritative.stance);
   RC_ASSERT(body.exhausted == authoritative.exhausted);
+  RC_ASSERT(StrideDistance(body.stride, authoritative.stride) <= kConvergedStride);
+  // A change of stance advances by time alone, the same on both sides.
+  RC_ASSERT(body.previous_stance == authoritative.previous_stance);
+  RC_ASSERT(body.stance_progress == authoritative.stance_progress);
   // The rifle is plain arithmetic, the same on both sides: it converges exactly.
   RC_ASSERT(predicted.rifle == answers.back().rifle);
   RC_CLASSIFY(predicted.rifle_corrections > 0, "the rifle was corrected");

@@ -12,8 +12,8 @@
 #include <gtest/gtest.h>
 
 #include "augusta/networking.h"
-#include "augusta/pcapng.h"
 #include "augusta/version.h"
+#include "pcapng.h"
 
 // The pcapng of the protocol_decode seeds (tests/fuzz/README.md), a Development
 // build's fixture for tools/wireshark's dissector test (ADR-0076): what the

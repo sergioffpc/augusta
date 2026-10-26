@@ -6,14 +6,14 @@
 #include <utility>
 
 #include "augusta/application.h"
-#include "augusta/client_application.h"
 #include "augusta/client_config.h"
-#include "augusta/client_phases.h"
-#include "augusta/client_run.h"
 #include "augusta/config.h"
 #include "augusta/crash.h"
 #include "augusta/logging.h"
 #include "augusta/version.h"
+#include "client_application.h"
+#include "client_phases.h"
+#include "client_run.h"
 
 namespace {
 
@@ -76,5 +76,5 @@ int main(int argc, char** argv) {
   }
 
   return conclude(augusta::application::Execute(
-      augusta::client::ClientLifecycle(*file_config, *std::move(reenactment), std::move(replay), client_run.id)));
+      augusta::client::ClientProgram(*file_config, *std::move(reenactment), std::move(replay), client_run.id)));
 }

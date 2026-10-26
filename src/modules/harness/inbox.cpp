@@ -67,8 +67,6 @@ void Inbox::Receive(link::ServerMessage message) {
           OnMatchStart(std::forward<Message>(said));
         } else if constexpr (std::is_same_v<Said, MatchEnd>) {
           OnMatchEnd(said);
-        } else if constexpr (std::is_same_v<Said, ReplayView>) {
-          OnReplayView(std::forward<Message>(said));
 #if AUGUSTA_DEBUG_TOOLS
         } else if constexpr (std::is_same_v<Said, ShotJudgement>) {
           OnShotJudgement(said);
@@ -149,7 +147,6 @@ void Inbox::OnMatchStart(MatchStart start) {
     next.match_end.reset();
     ForgetStates(next);
     next.dead.clear();
-    next.replay_view.reset();
   });
   LOG_INFO("subsystem=harness event=match_started players={}", players);
 }
@@ -158,7 +155,6 @@ void Inbox::OnMatchEnd(const MatchEnd& end) {
   Publish([&](ServerView& next) {
     next.in_match = false;
     ForgetStates(next);
-    next.replay_view.reset();
     next.match_end = end;
   });
   // The fight's last events, the Deaths that ended the match among them, are
@@ -262,28 +258,6 @@ void Inbox::OnAuthoritativeState(AuthoritativeState state) {
     return;
   }
   Publish([&](ServerView& next) { KeepState(next, std::move(state)); });
-}
-
-// Keeps view if it is newer than the one held and of the Replay in progress,
-// as OnAuthoritativeState keeps a state: it travels as unreliably. A player's
-// client is sent none.
-void Inbox::OnReplayView(ReplayView view) {
-  const std::shared_ptr<const ServerView> current = View();
-  if (!viewer_ || !current->in_match) {
-    LOG_TRACE("subsystem=harness event=dropped tick={} reason=\"replay view outside a replay\"", view.tick);
-    return;
-  }
-  const auto in_match = [&](const PlayerView& player) { return IsInMatch(*current->match_start, player.entity); };
-  if (!std::ranges::all_of(view.players, in_match)) {
-    LOG_WARN_LIMITED(drop_warnings_,
-                     "subsystem=harness event=dropped tick={} reason=\"replay view names a body not in the match\"",
-                     view.tick);
-    return;
-  }
-  if (current->replay_view.has_value() && view.tick <= current->replay_view->tick) {
-    return;
-  }
-  Publish([&](ServerView& next) { next.replay_view = std::move(view); });
 }
 
 }  // namespace augusta::harness

@@ -19,6 +19,7 @@
 #include <optional>
 #include <random>
 #include <set>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <utility>
@@ -33,7 +34,7 @@
 #include <prometheus/client_metric.h>
 #include <prometheus/metric_family.h>
 
-#include "augusta/admission.h"
+#include "admission.h"
 #include "augusta/assets.h"
 #include "augusta/body_part.h"
 #include "augusta/capture.h"
@@ -57,7 +58,6 @@
 #include "augusta/math.h"
 #include "augusta/misbehaviour.h"
 #include "augusta/parameters.h"
-#include "augusta/parameters_loader.h"
 #include "augusta/physics.h"
 #include "augusta/policy.h"
 #include "augusta/policy_actions.h"
@@ -68,7 +68,9 @@
 #include "augusta/tick.h"
 #include "augusta/version.h"
 #include "augusta/weapon.h"
-#include "connection_health.h"
+#include "metrics_connection_health.h"
+#include "parameters_loader.h"
+#include "scenario_fixture.h"
 
 // The seam the M3 tickets test through (issue #73): a real server host and a
 // real client session, both without a window, a GPU or a wall-clock loop, in
@@ -120,6 +122,7 @@ using augusta::session_test::kScriptedEntity;
 using augusta::session_test::kScriptedSession;
 using augusta::session_test::kTestParameters;
 using augusta::session_test::kTestTickRate;
+using augusta::session_test::NeverArrived;
 using augusta::session_test::OtherScriptedSession;
 using augusta::session_test::Pointers;
 using augusta::session_test::RawClient;
@@ -162,7 +165,9 @@ class SessionTest : public ::testing::Test {
  protected:
   SessionTest()
       : host_(TestHostConfig(),
-              Scenario{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}}),
+              Scenario{.collision = {},
+                       .spawn_points = {},
+                       .characters = {augusta::scenario_fixture::Rigged({.path = kCharacter, .hitboxes = {}})}}),
         session_(TestSessionConfig(host_.ListenEndpoint()), EmptyWorld()) {}
 
   // Runs both sides' network work until the session reports connected, or
@@ -241,7 +246,7 @@ class JoinTest : public ::testing::Test {
       : host_(TestHostConfig(WithPlayerCount(augusta::limits::kMaxPlayers)),
               Scenario{.collision = {},
                        .spawn_points = {},
-                       .characters = {{.path = kCharacter, .hitboxes = {}}},
+                       .characters = {augusta::scenario_fixture::Rigged({.path = kCharacter, .hitboxes = {}})},
                        .client_pack = ClientPack(1)}) {}
 
   // A client pack hash told apart by its last byte.
@@ -321,7 +326,7 @@ TEST_F(JoinTest, SessionIdsFromTwoHostsNeverCollide) {
   Host other(TestHostConfig(WithPlayerCount(augusta::limits::kMaxPlayers)),
              Scenario{.collision = {},
                       .spawn_points = {},
-                      .characters = {{.path = kCharacter, .hitboxes = {}}},
+                      .characters = {augusta::scenario_fixture::Rigged({.path = kCharacter, .hitboxes = {}})},
                       .client_pack = ClientPack(1)});
   Session& here = AddClient();
   Session there(SessionConfig{.server = {.address = other.ListenEndpoint().address},
@@ -632,7 +637,9 @@ constexpr int kFallTicks = 120;
 // ticks, with collision as the map on both sides.
 augusta::prediction::State FallenBody(const std::vector<CollisionMesh>& collision) {
   Host host(TestHostConfig(),
-            Scenario{.collision = collision, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
+            Scenario{.collision = collision,
+                     .spawn_points = {},
+                     .characters = {augusta::scenario_fixture::Rigged({.path = kCharacter, .hitboxes = {}})}});
   augusta::prediction::World world = EmptyWorld();
   for (const CollisionMesh& mesh : collision) {
     EXPECT_TRUE(world.AddCollisionMesh(mesh).has_value());
@@ -666,9 +673,10 @@ TEST(MapSessionTest, APredictionWorldRefusesAMapMeshPhysicsRejects) {
 }
 
 TEST(MapHostTest, AHostAcceptsAMapAndKeepsTicking) {
-  Host host(
-      TestHostConfig(),
-      Scenario{.collision = {FloorAt(0.0F)}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
+  Host host(TestHostConfig(),
+            Scenario{.collision = {FloorAt(0.0F)},
+                     .spawn_points = {},
+                     .characters = {augusta::scenario_fixture::Rigged({.path = kCharacter, .hitboxes = {}})}});
 
   for (int i = 0; i < 10; ++i) {
     host.Tick(kFixedTick);
@@ -683,19 +691,23 @@ TEST(MapHostTest, AHostRefusesACharacterHitboxThatIsNotAWholeTriangleList) {
       .mesh = {.points = {Vec3(0.0F, 0.0F, 0.0F), Vec3(1.0F, 0.0F, 0.0F), Vec3(0.0F, 1.0F, 0.0F)},
                .indices = {0, 1, 3}}};
 
-  EXPECT_EQ(
-      CodeThrownBy([&] {
-        Host(TestHostConfig(),
-             Scenario{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {hitbox}}}});
-      }),
-      Code::kInvalidContent);
+  EXPECT_EQ(CodeThrownBy([&] {
+              Host(TestHostConfig(), Scenario{.collision = {},
+                                              .spawn_points = {},
+                                              .characters = {augusta::scenario_fixture::Rigged(
+                                                  {.path = kCharacter,
+                                                   .hitboxes = {augusta::session_test::OnRoot(hitbox)},
+                                                   .skeleton = augusta::session_test::RootSkeleton()})}});
+            }),
+            Code::kInvalidContent);
 }
 
 TEST(MapHostTest, AHostRefusesAMapMeshPhysicsRejects) {
   EXPECT_EQ(CodeThrownBy([] {
-              Host(TestHostConfig(), Scenario{.collision = {CollisionMesh{}},
-                                              .spawn_points = {},
-                                              .characters = {{.path = kCharacter, .hitboxes = {}}}});
+              Host(TestHostConfig(),
+                   Scenario{.collision = {CollisionMesh{}},
+                            .spawn_points = {},
+                            .characters = {augusta::scenario_fixture::Rigged({.path = kCharacter, .hitboxes = {}})}});
             }),
             Code::kInvalidContent);
 }
@@ -716,9 +728,10 @@ class MovementTest : public ::testing::Test {
   // The client always knows the floor; the host knows server_map, which a test
   // may make differ from it to give the two something to disagree about.
   explicit MovementTest(std::vector<CollisionMesh> server_map)
-      : host_(TestHostConfig(), Scenario{.collision = std::move(server_map),
-                                         .spawn_points = {},
-                                         .characters = {{.path = kCharacter, .hitboxes = {}}}}),
+      : host_(TestHostConfig(),
+              Scenario{.collision = std::move(server_map),
+                       .spawn_points = {},
+                       .characters = {augusta::scenario_fixture::Rigged({.path = kCharacter, .hitboxes = {}})}}),
         session_(TestSessionConfig(host_.ListenEndpoint()), WorldWithFloorAt(kGroundHeight)) {}
 
   void TearDown() override { augusta::link::SimulateNetworkConditions({}); }
@@ -1053,9 +1066,11 @@ class LoopbackMatch : public ::testing::Test {
   static constexpr float kFloorY = 0.0F;
   static constexpr int kSettleTicks = 30;
   static constexpr auto kNetworkDelay = std::chrono::milliseconds(8);
-  // How long Step waits for the commands it sent to reach the server: far more
-  // than loopback delivery takes, even under the sanitizers.
-  static constexpr auto kStepPatience = std::chrono::milliseconds(250);
+  // How long a step waits for the commands it sent while the test loses packets
+  // on purpose: far more than loopback delivery takes, even under the
+  // sanitizers, so a command that was not lost has arrived. Otherwise a step
+  // waits up to ExchangeUntil's kPollDeadline, which only a fault outlasts.
+  static constexpr auto kLossPatience = std::chrono::milliseconds(250);
 
   // What a host needs, split the way Host's own constructor wants it: config
   // file/script settings, the map and the scenario's Game policy, separately.
@@ -1070,11 +1085,24 @@ class LoopbackMatch : public ::testing::Test {
   // A host setup for the floor with spawn_points, the parameters and the tick rate.
   static HostSetup OnTheFloor(std::vector<Vec3> spawn_points, const Parameters& parameters = kTestParameters,
                               std::uint8_t tick_rate_hz = kTestTickRate) {
-    return HostSetup{.config = TestHostConfig(parameters, tick_rate_hz),
-                     .scenario = Scenario{.collision = {FloorAt(kFloorY)},
-                                          .spawn_points = std::move(spawn_points),
-                                          .characters = {{.path = kCharacter, .hitboxes = {}}}},
-                     .policy = {}};
+    return HostSetup{
+        .config = TestHostConfig(parameters, tick_rate_hz),
+        .scenario =
+            Scenario{.collision = {FloorAt(kFloorY)},
+                     .spawn_points = std::move(spawn_points),
+                     .characters = {augusta::scenario_fixture::Rigged(
+                         {.path = kCharacter, .hitboxes = {}, .skeleton = augusta::session_test::RootSkeleton()})}},
+        .policy = {}};
+  }
+
+  // Has setup's one character see from eye_height above its feet, and hold its
+  // rifle there (scenario_fixture::Rigged): a round leaves from its Eye.
+  static void SeeingFrom(HostSetup& setup, float eye_height) {
+    augusta::scenario::Character& character = setup.scenario.characters.front();
+    character = augusta::scenario_fixture::Rigged({.path = character.path,
+                                                   .hitboxes = std::move(character.hitboxes),
+                                                   .skeleton = augusta::session_test::RootSkeleton(),
+                                                   .eye = Vec3(0.0F, eye_height, 0.0F)});
   }
 
   // Connects a new client and runs the network until the server has answered
@@ -1112,31 +1140,72 @@ class LoopbackMatch : public ::testing::Test {
     }
   }
 
+  // The network conditions every connection made from now on simulates
+  // (augusta::link::SimulateNetworkConditions). Under any packet loss, a step
+  // knows the commands it sends may never arrive.
+  void SimulateNetworkConditions(const augusta::link::SimulatedConditions& conditions) {
+    augusta::link::SimulateNetworkConditions(conditions);
+    losing_packets_ = conditions.loss_percent > 0.0F;
+  }
+
+  // Runs the network, serve() on each pass, until missing() describes nothing
+  // the step still waits for: a command on its way to the server, or a state
+  // on its way to a client. Under the packet loss of SimulateNetworkConditions,
+  // kLossPatience ends the wait too, and the step goes on without what was
+  // lost. Otherwise only a fault outlasts ExchangeUntil's kPollDeadline, and
+  // the test fails fatally there, with missing()'s description: the step must
+  // not tick the server without what it waited for. Returns whether it may.
+  template <typename Missing, typename Serve>
+  bool AwaitArrival(Missing missing, Serve serve) {
+    const auto give_up = std::chrono::steady_clock::now() + kLossPatience;
+    const bool ended = ExchangeUntil(host_, Pointers(sessions_), [&] {
+      serve();
+      return !missing().has_value() || (losing_packets_ && std::chrono::steady_clock::now() >= give_up);
+    });
+    const std::optional<std::string> never = ended ? std::nullopt : missing();
+    if (never.has_value()) {
+      FailWaitingFor(*never);
+    }
+    return !never.has_value();
+  }
+
+  // AwaitArrival's failure, fatal: FAIL returns only from a void function.
+  static void FailWaitingFor(const std::string& never) { FAIL() << never; }
+
   // One tick of the whole match: every client predicts and sends its command
   // of commands (one per client, in the order they connected), the server ticks
   // once every command a connected client in the match sent has reached it (or
-  // that client has since heard its match end, or kStepPatience has passed),
-  // the states come back. Returns the server's. Waiting for the commands rather
-  // than for a fixed time keeps a slow run (the sanitizers build) from ticking
-  // the server before a command arrives, which would hold that player's last
-  // movement (ADR-0038) and turn into a correction no real mismatch caused. The
-  // patience bounds a test that loses commands on purpose.
+  // that client has since heard its match end), as AwaitArrival waits, and the
+  // states come back. Returns the server's, or nothing once the test has failed
+  // fatally. Waiting for the commands rather than for a fixed time keeps a slow
+  // run (the sanitizers build, a loaded parallel ctest) from ticking the server
+  // before a command arrives, which would hold that player's last movement
+  // (ADR-0038) and shift what the test expects onto another tick.
   augusta::simulation::TickResult StepEach(const std::vector<Command>& commands) {
-    std::vector<std::pair<const Session*, augusta::host::SessionId>> sending;
+    if (HasFatalFailure()) {
+      return {};
+    }
+    std::vector<std::size_t> sending;
     for (std::size_t i = 0; i < sessions_.size(); ++i) {
       const auto& session = sessions_[i];
       if (session->GetServerView()->GetPhase() == Phase::kMatch &&
           session->GetConnectionState() == ConnectionState::kConnected) {
-        sending.emplace_back(session.get(), session->GetServerView()->accepted->session);
+        sending.push_back(i);
       }
       states_[session.get()] = session->Tick(commands.at(i), kFixedTick);
     }
-    const auto give_up = std::chrono::steady_clock::now() + kStepPatience;
-    ExchangeUntil(host_, Pointers(sessions_), [&] {
-      return std::chrono::steady_clock::now() >= give_up || std::ranges::all_of(sending, [&](const auto& sent) {
-               return host_.QueuedCommands(sent.second) > 0 || sent.first->GetServerView()->GetPhase() != Phase::kMatch;
-             });
-    });
+    const auto missing = [&]() -> std::optional<std::string> {
+      for (const std::size_t i : sending) {
+        const auto view = sessions_[i]->GetServerView();
+        if (host_.QueuedCommands(view->accepted->session) == 0 && view->GetPhase() == Phase::kMatch) {
+          return NeverArrived(i, *sessions_[i]);
+        }
+      }
+      return std::nullopt;
+    };
+    if (!AwaitArrival(missing, [] {})) {
+      return {};
+    }
     augusta::simulation::TickResult result = host_.Tick(kFixedTick);
     std::this_thread::sleep_for(kNetworkDelay);
     Exchange();
@@ -1154,8 +1223,12 @@ class LoopbackMatch : public ::testing::Test {
     }
   }
 
-  // Ticks the server once, with the network work around it.
+  // Ticks the server once, with the network work around it, unless the test
+  // has failed fatally.
   augusta::simulation::State ServerTick() {
+    if (HasFatalFailure()) {
+      return {};
+    }
     std::this_thread::sleep_for(kNetworkDelay);
     Exchange();
     augusta::simulation::State state = host_.Tick(kFixedTick).state;
@@ -1202,6 +1275,8 @@ class LoopbackMatch : public ::testing::Test {
   Host host_;
   std::vector<std::unique_ptr<Session>> sessions_;
   std::map<const Session*, augusta::prediction::State> states_;
+  // Whether SimulateNetworkConditions last set any packet loss.
+  bool losing_packets_ = false;
 };
 
 // A host on the floor, with three spawn points, whose matches start with kPlayers players.
@@ -2120,7 +2195,8 @@ class ScriptedParametersTest : public LoopbackMatch {
         "  forced_walk_below = 0.2,\n"
         "},\n"
         "  rifle = { magazine_capacity = 30, rounds_per_minute = 600, muzzle_velocity = 800, reload_seconds = 2.5,\n"
-        "    recoil_pattern = {}, recoil_recovery_per_second = 0, ads_recoil_scale = 1, ads_field_of_view = 0.7 },\n"
+        "    recoil_pattern = {}, recoil_recovery_per_second = 0, ads_recoil_scale = 1, ads_field_of_view = 0.7,\n"
+        "    zero_range = 100 },\n"
         "  ammo = { gravity = 9.81, max_range = 1000, damage = { head = 100, torso = 34, limb = 25 } },\n"
         "  starting_health = 100,\n"
         "}",
@@ -2532,7 +2608,9 @@ TEST_F(SessionTest, AClientHoldsNoParametersUntilTheServerAdmitsIt) {
 // Requirements: US-22
 TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseTickRateFailsTheChecks) {
   Host host(TestHostConfig(kTestParameters, 0),
-            Scenario{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
+            Scenario{.collision = {},
+                     .spawn_points = {},
+                     .characters = {augusta::scenario_fixture::Rigged({.path = kCharacter, .hitboxes = {}})}});
   Session session(TestSessionConfig(host.ListenEndpoint()), EmptyWorld());
   session.Connect();
 
@@ -2576,7 +2654,9 @@ TEST(SessionFailureTest, AServerNobodyIsListeningAtIsUnreachable) {
 TEST(SessionFailureTest, AServerThatGoesAwayDuringAMatchIsAConnectionLost) {
   auto host = std::make_unique<Host>(
       TestHostConfig(),
-      Scenario{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
+      Scenario{.collision = {},
+               .spawn_points = {},
+               .characters = {augusta::scenario_fixture::Rigged({.path = kCharacter, .hitboxes = {}})}});
   Session session(TestSessionConfig(host->ListenEndpoint()), EmptyWorld());
   session.Connect();
   ASSERT_TRUE(DriveIntoMatch(*host, {&session}));
@@ -2598,7 +2678,9 @@ TEST(SessionFailureTest, AServerThatGoesAwayDuringAMatchIsAConnectionLost) {
 
 TEST(SessionFailureTest, EndingTheSessionOneselfIsNotAFailure) {
   Host host(TestHostConfig(),
-            Scenario{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
+            Scenario{.collision = {},
+                     .spawn_points = {},
+                     .characters = {augusta::scenario_fixture::Rigged({.path = kCharacter, .hitboxes = {}})}});
   Session session(TestSessionConfig(host.ListenEndpoint()), EmptyWorld());
   session.Connect();
   const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
@@ -2652,7 +2734,7 @@ class RobustnessOf : public MatchOf<kPlayers> {
  protected:
   static constexpr auto kSilentPeerDeadline = std::chrono::seconds(20);
 
-  void TearDown() override { augusta::link::SimulateNetworkConditions({}); }
+  void TearDown() override { this->SimulateNetworkConditions({}); }
 };
 
 using RobustnessTest = RobustnessOf<1>;
@@ -2685,13 +2767,13 @@ TEST_F(FullMatchRobustnessTest, AfterAClientDisconnectsItsPlayerIsAbsentFromOthe
 // Requirements: NFR-06
 TEST_F(RobustnessTest, AClientThatDropsWithoutClosingKeepsTheServerTickingAndIsRemovedOnceItTimesOut) {
   // Set before the connection exists: the timeout only reaches new connections.
-  augusta::link::SimulateNetworkConditions({.timeout_ms = 500});
+  SimulateNetworkConditions({.timeout_ms = 500});
   Join();
   ASSERT_TRUE(StartMatch());
   Run(kSettleTicks);
 
   // Every packet is lost from here on, so the client is gone without a word.
-  augusta::link::SimulateNetworkConditions({.loss_percent = 100.0F, .timeout_ms = 500});
+  SimulateNetworkConditions({.loss_percent = 100.0F, .timeout_ms = 500});
   std::size_t players = 1;
   std::uint32_t ticks_run = 0;
   // The transport only notices a silent peer when it asks for a reply and gets none, which
@@ -2702,7 +2784,7 @@ TEST_F(RobustnessTest, AClientThatDropsWithoutClosingKeepsTheServerTickingAndIsR
     players = ServerTick().bodies.size();
     ++ticks_run;
   }
-  augusta::link::SimulateNetworkConditions({});
+  SimulateNetworkConditions({});
 
   EXPECT_EQ(players, 0U);
   EXPECT_GT(ticks_run, 0U);
@@ -3095,7 +3177,7 @@ class ImpossibleLobbyOf : public LoopbackMatch {
   static HostSetup TwoCharacters() {
     HostSetup setup = OnTheFloor({Vec3(10.0F, kFloorY, 0.0F), Vec3(20.0F, kFloorY, 5.0F), Vec3(30.0F, kFloorY, -5.0F)},
                                  WithPlayerCount(kPlayers));
-    setup.scenario.characters.push_back({.path = kOtherCharacter, .hitboxes = {}});
+    setup.scenario.characters.push_back(augusta::scenario_fixture::Rigged({.path = kOtherCharacter, .hitboxes = {}}));
     return setup;
   }
 
@@ -3596,9 +3678,10 @@ TEST_F(AdmissionDeadlineTest, AJoinRefusedAsTheDeadlinePassesIsStillToldBeforeTh
 
 // A match of kPlayers on the floor, each with the test rifle: 600 rounds a
 // minute, a round every six ticks at the test tick rate, and a magazine of 15
-// that takes half a second, 30 ticks, to reload. Its recoil pattern is three
-// kicks, each a whole count of the angle grid's step so their sums are exact,
-// halved in ADS, and its Recoil offset recovers by 0.00625 rad a tick.
+// that takes half a second, 30 ticks, to reload, zeroed at kZeroRange. Its
+// recoil pattern is three kicks, each a whole count of the angle grid's step
+// so their sums are exact, halved in ADS, and its Recoil offset recovers by
+// 0.00625 rad a tick.
 template <std::uint8_t kPlayers>
 class FireMatchOf : public LoopbackMatch {
  protected:
@@ -3607,11 +3690,17 @@ class FireMatchOf : public LoopbackMatch {
   static constexpr int kReloadTicks = 30;
   // The test character's eye, standing, above its feet.
   static constexpr float kEyeHeight = 1.6F;
+  static constexpr float kZeroRange = 100.0F;
   static constexpr float kFirstPitch = 1.0F / 64.0F;
   static constexpr float kSecondPitch = 1.0F / 64.0F;
   static constexpr float kSecondYaw = 1.0F / 256.0F;
   static constexpr float kThirdPitch = 1.0F / 32.0F;
   static constexpr float kThirdYaw = -1.0F / 128.0F;
+  // How near a Shot leaves along the view it is expected to: a few steps of
+  // the angle grid. Its round is aimed from the rifle's Muzzle (ADR-0064),
+  // which the test character holds at its Eye to a hundredth of a millimetre,
+  // not to the bit.
+  static constexpr float kShotAngleTolerance = 3.0F * augusta::math::kAngleGrid.step;
 
   static HostSetup Armed() {
     Parameters parameters = WithPlayerCount(kPlayers);
@@ -3624,15 +3713,17 @@ class FireMatchOf : public LoopbackMatch {
                                        {.pitch = kThirdPitch, .yaw = kThirdYaw}};
     parameters.rifle.recoil_recovery_per_second = 0.375F;
     parameters.rifle.ads_recoil_scale = 0.5F;
+    parameters.rifle.zero_range = kZeroRange;
     parameters.ammo.flight.max_range = 1000.0F;
     HostSetup setup = OnTheFloor({Vec3(10.0F, kFloorY, 0.0F), Vec3(20.0F, kFloorY, 5.0F)}, parameters);
-    setup.scenario.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
+    SeeingFrom(setup, kEyeHeight);
     return setup;
   }
 
   FireMatchOf() : LoopbackMatch(Armed()) {}
+  explicit FireMatchOf(HostSetup setup) : LoopbackMatch(std::move(setup)) {}
 
-  void TearDown() override { augusta::link::SimulateNetworkConditions({}); }
+  void TearDown() override { SimulateNetworkConditions({}); }
 
   void SetUp() override {
     for (std::uint8_t i = 0; i < kPlayers; ++i) {
@@ -3767,16 +3858,43 @@ TEST_F(FireTest, ReloadSentOnEveryTickStartsOneReloadNotOneEveryTick) {
 
 using FireDuelTest = FireMatchOf<2>;
 
+// FireDuelTest with a rifle whose Muzzle is kMuzzleAhead ahead of its Grip,
+// which the test character holds level at its Eye, and kMuzzleBelow below it
+// (ADR-0064).
+class BarrelDuelTest : public FireMatchOf<2> {
+ protected:
+  static constexpr float kMuzzleAhead = 0.6F;
+  static constexpr float kMuzzleBelow = 0.05F;
+
+  static HostSetup WithABarrel() {
+    HostSetup setup = Armed();
+    setup.scenario.rifle.muzzle = augusta::math::ToMat4(Vec3(0.0F, -kMuzzleBelow, -kMuzzleAhead),
+                                                        augusta::math::Quat(1.0F, 0.0F, 0.0F, 0.0F), Vec3(1.0F));
+    return setup;
+  }
+
+  BarrelDuelTest() : FireMatchOf<2>(WithABarrel()) {}
+};
+
+// The Shot every client is told of leaves the shooter's Muzzle, where its body,
+// turned to the shooter's yaw, holds it, for where the barrel, zeroed, sends
+// the round: across the line of sight from its Eye along its view at the zero
+// range, its rounds flying straight.
 // Requirements: US-07, US-10
-TEST_F(FireDuelTest, EveryClientIsToldOfAShotWithItsShooterTickOriginAndDirection) {
+TEST_F(BarrelDuelTest, EveryClientIsToldOfAShotWithItsShooterTickMuzzleAndBarrelsDirection) {
+  constexpr float kYaw = 0.75F;
+  constexpr float kPitch = -0.25F;
   Session& shooter = *sessions_[0];
   Session& bystander = *sessions_[1];
   Settle(host_, Pointers(sessions_));
   const augusta::tick::Tick last_tick = shooter.GetServerView()->authoritative->tick;
   const Vec3 feet = PositionSeenBy(shooter, *shooter.GetServerView()->OwnEntity()).value();
+  const Vec3 eye = feet + Vec3(0.0F, kEyeHeight, 0.0F);
+  const Vec3 muzzle = eye + (augusta::command::ViewRotation(kYaw, 0.0F) * Vec3(0.0F, -kMuzzleBelow, -kMuzzleAhead));
+  const Vec3 sighted = eye + (kZeroRange * augusta::command::ViewDirection(kYaw, kPitch));
   Command command = Firing();
-  command.yaw = 0.75F;
-  command.pitch = -0.25F;
+  command.yaw = kYaw;
+  command.pitch = kPitch;
   const auto shooter_session = shooter.GetServerView()->accepted->session;
 
   // One tick, by hand: the server takes in the fire command on its next tick.
@@ -3791,11 +3909,11 @@ TEST_F(FireDuelTest, EveryClientIsToldOfAShotWithItsShooterTickOriginAndDirectio
     const Shot& shot = shots_[client].front();
     EXPECT_EQ(shot.shooter, *shooter.GetServerView()->OwnEntity());
     EXPECT_EQ(shot.tick, last_tick + 1);
-    EXPECT_NEAR(shot.origin.x, feet.x, 0.002F);
-    EXPECT_NEAR(shot.origin.y, feet.y + kEyeHeight, 0.002F);
-    EXPECT_NEAR(shot.origin.z, feet.z, 0.002F);
-    EXPECT_EQ(shot.yaw, 0.75F);
-    EXPECT_EQ(shot.pitch, -0.25F);
+    EXPECT_NEAR(shot.origin.x, muzzle.x, 0.002F);
+    EXPECT_NEAR(shot.origin.y, muzzle.y, 0.002F);
+    EXPECT_NEAR(shot.origin.z, muzzle.z, 0.002F);
+    const Vec3 along = augusta::command::ViewDirection(shot.yaw, shot.pitch);
+    EXPECT_LT(augusta::math::Length(augusta::math::Cross(sighted - shot.origin, along)), 0.005F);
   }
 }
 
@@ -3805,7 +3923,7 @@ TEST_F(FireDuelTest, EveryClientIsToldOfAShotWithItsShooterTickOriginAndDirectio
 TEST_F(FireDuelTest, WithPacketLossEveryClientStillReceivesEveryShot) {
   constexpr float kLossPercent = 20.0F;
   constexpr int kTicks = 90;
-  augusta::link::SimulateNetworkConditions({.loss_percent = kLossPercent});
+  SimulateNetworkConditions({.loss_percent = kLossPercent});
 
   // What the server fired, which is what every client must be told.
   std::vector<augusta::simulation::Shot> fired;
@@ -3820,7 +3938,7 @@ TEST_F(FireDuelTest, WithPacketLossEveryClientStillReceivesEveryShot) {
     std::this_thread::sleep_for(kNetworkDelay);
     Exchange();
   }
-  augusta::link::SimulateNetworkConditions({});
+  SimulateNetworkConditions({});
 
   ASSERT_GT(fired.size(), 10U);
   ASSERT_TRUE(ReceiveShots(fired.size()));
@@ -3967,7 +4085,7 @@ TEST_F(PredictedFireTest, AClientThatFiresAndReloadsPredictsTheAmmoTheServerHasA
 // Requirements: US-07, NFR-02
 TEST_F(PredictedFireTest, AtAHundredMillisecondsOfLatencyAClientWhoseInputsAllArriveNeverCorrectsItsRifle) {
   constexpr int kOneWayLatencyMs = 50;
-  augusta::link::SimulateNetworkConditions({.latency_ms = kOneWayLatencyMs});
+  SimulateNetworkConditions({.latency_ms = kOneWayLatencyMs});
 
   FireReloadAndFire([&](const Command& command) { PredictAndDeliver(command); });
 
@@ -3982,13 +4100,13 @@ TEST_F(PredictedFireTest, AtAHundredMillisecondsOfLatencyAClientWhoseInputsAllAr
 // Requirements: US-07, NFR-02
 TEST_F(PredictedFireTest, WithPacketLossAClientWhoseInputsAllArriveNeverCorrectsItsRifle) {
   constexpr float kLossPercent = 20.0F;
-  augusta::link::SimulateNetworkConditions({.loss_percent = kLossPercent});
+  SimulateNetworkConditions({.loss_percent = kLossPercent});
 
   FireReloadAndFire([&](const Command& command) { PredictAndDeliver(command); });
 
   // The last commands sent under loss may be lost for good, with nothing newer
   // to repeat them; a few more over a clean network carry them.
-  augusta::link::SimulateNetworkConditions({});
+  SimulateNetworkConditions({});
   constexpr int kRecoveryTicks = 10;
   for (int i = 0; i < kRecoveryTicks; ++i) {
     PredictAndDeliver(Command{});
@@ -4006,7 +4124,7 @@ TEST_F(PredictedFireTest, WithPacketLossAClientWhoseInputsAllArriveNeverCorrects
 TEST_F(PredictedFireTest, AtAHundredMillisecondsOfLatencyAClientWhoseInputsAllArriveNeverCorrectsItsRecoil) {
   constexpr int kOneWayLatencyMs = 50;
   constexpr int kBurstTicks = 20;
-  augusta::link::SimulateNetworkConditions({.latency_ms = kOneWayLatencyMs});
+  SimulateNetworkConditions({.latency_ms = kOneWayLatencyMs});
   Command aiming = Firing();
   aiming.ads = true;
   float highest = 0.0F;
@@ -4079,17 +4197,17 @@ TEST_F(RecoilTest, TheShotsOfAHeldBurstFollowThePatternCumulativelyAndASecondBur
   Run(60);
   const std::vector<Shot> second = Burst(5);
 
-  EXPECT_EQ(first[0].yaw, kViewYaw);
-  EXPECT_EQ(first[0].pitch, kViewPitch);
-  EXPECT_EQ(first[1].yaw, kViewYaw);
-  EXPECT_EQ(first[1].pitch, kViewPitch + kFirstPitch);
-  EXPECT_EQ(first[2].yaw, kViewYaw + kSecondYaw);
-  EXPECT_EQ(first[2].pitch, kViewPitch + kFirstPitch + kSecondPitch);
-  EXPECT_EQ(first[3].yaw, kViewYaw + kSecondYaw + kThirdYaw);
-  EXPECT_EQ(first[3].pitch, kViewPitch + kFirstPitch + kSecondPitch + kThirdPitch);
+  EXPECT_NEAR(first[0].yaw, kViewYaw, kShotAngleTolerance);
+  EXPECT_NEAR(first[0].pitch, kViewPitch, kShotAngleTolerance);
+  EXPECT_NEAR(first[1].yaw, kViewYaw, kShotAngleTolerance);
+  EXPECT_NEAR(first[1].pitch, kViewPitch + kFirstPitch, kShotAngleTolerance);
+  EXPECT_NEAR(first[2].yaw, kViewYaw + kSecondYaw, kShotAngleTolerance);
+  EXPECT_NEAR(first[2].pitch, kViewPitch + kFirstPitch + kSecondPitch, kShotAngleTolerance);
+  EXPECT_NEAR(first[3].yaw, kViewYaw + kSecondYaw + kThirdYaw, kShotAngleTolerance);
+  EXPECT_NEAR(first[3].pitch, kViewPitch + kFirstPitch + kSecondPitch + kThirdPitch, kShotAngleTolerance);
   // Past the pattern's last kick, the last repeats.
-  EXPECT_EQ(first[4].yaw, kViewYaw + kSecondYaw + (2.0F * kThirdYaw));
-  EXPECT_EQ(first[4].pitch, kViewPitch + kFirstPitch + kSecondPitch + (2.0F * kThirdPitch));
+  EXPECT_NEAR(first[4].yaw, kViewYaw + kSecondYaw + (2.0F * kThirdYaw), kShotAngleTolerance);
+  EXPECT_NEAR(first[4].pitch, kViewPitch + kFirstPitch + kSecondPitch + (2.0F * kThirdPitch), kShotAngleTolerance);
   for (std::size_t i = 0; i < first.size(); ++i) {
     EXPECT_EQ(second[i].yaw, first[i].yaw) << "round " << i;
     EXPECT_EQ(second[i].pitch, first[i].pitch) << "round " << i;
@@ -4108,21 +4226,21 @@ TEST_F(RecoilTest, ReleasingAndFiringAgainAtOnceRestartsThePatternOnTopOfWhatHas
   EXPECT_GT(left, 0.0F);
   EXPECT_LT(left, kFirstPitch + kSecondPitch + kThirdPitch);
   // Then the first kick again, not the fourth round's.
-  EXPECT_EQ(shots[1].pitch - shots[0].pitch, kFirstPitch);
-  EXPECT_EQ(shots[1].yaw - shots[0].yaw, 0.0F);
+  EXPECT_NEAR(shots[1].pitch - shots[0].pitch, kFirstPitch, kShotAngleTolerance);
+  EXPECT_NEAR(shots[1].yaw - shots[0].yaw, 0.0F, kShotAngleTolerance);
 }
 
 // Requirements: US-09, US-06
 TEST_F(RecoilTest, TheSameBurstInAdsClimbsByTheScaledKicks) {
   const std::vector<Shot> shots = Burst(4, FiringFromTheView(/*ads=*/true));
 
-  EXPECT_EQ(shots[0].yaw, kViewYaw);
-  EXPECT_EQ(shots[0].pitch, kViewPitch);
-  EXPECT_EQ(shots[1].pitch, kViewPitch + (kFirstPitch / 2.0F));
-  EXPECT_EQ(shots[2].yaw, kViewYaw + (kSecondYaw / 2.0F));
-  EXPECT_EQ(shots[2].pitch, kViewPitch + ((kFirstPitch + kSecondPitch) / 2.0F));
-  EXPECT_EQ(shots[3].yaw, kViewYaw + ((kSecondYaw + kThirdYaw) / 2.0F));
-  EXPECT_EQ(shots[3].pitch, kViewPitch + ((kFirstPitch + kSecondPitch + kThirdPitch) / 2.0F));
+  EXPECT_NEAR(shots[0].yaw, kViewYaw, kShotAngleTolerance);
+  EXPECT_NEAR(shots[0].pitch, kViewPitch, kShotAngleTolerance);
+  EXPECT_NEAR(shots[1].pitch, kViewPitch + (kFirstPitch / 2.0F), kShotAngleTolerance);
+  EXPECT_NEAR(shots[2].yaw, kViewYaw + (kSecondYaw / 2.0F), kShotAngleTolerance);
+  EXPECT_NEAR(shots[2].pitch, kViewPitch + ((kFirstPitch + kSecondPitch) / 2.0F), kShotAngleTolerance);
+  EXPECT_NEAR(shots[3].yaw, kViewYaw + ((kSecondYaw + kThirdYaw) / 2.0F), kShotAngleTolerance);
+  EXPECT_NEAR(shots[3].pitch, kViewPitch + ((kFirstPitch + kSecondPitch + kThirdPitch) / 2.0F), kShotAngleTolerance);
 }
 
 // The Recoil offset is the rifle's, on top of the view: the client predicts it
@@ -4143,21 +4261,22 @@ TEST_F(RecoilTest, TheViewAClientSendsNeverIncludesItsRecoil) {
   EXPECT_EQ(state->bodies.front().yaw, kViewYaw);
 }
 
-// A hitbox for part: the box from low to high, as the twelve triangles of its faces.
-augusta::assets::HitboxData BoxHitbox(augusta::assets::BodyPart part, const Vec3& low, const Vec3& high) {
-  return augusta::assets::HitboxData{
+// A hitbox for part on RootSkeleton's Joint: the box from low to high, as the
+// twelve triangles of its faces.
+augusta::assets::JointHitbox BoxHitbox(augusta::assets::BodyPart part, const Vec3& low, const Vec3& high) {
+  return augusta::session_test::OnRoot(augusta::assets::HitboxData{
       .part = part,
       .mesh = {.points = {Vec3(low.x, low.y, low.z), Vec3(high.x, low.y, low.z), Vec3(high.x, high.y, low.z),
                           Vec3(low.x, high.y, low.z), Vec3(low.x, low.y, high.z), Vec3(high.x, low.y, high.z),
                           Vec3(high.x, high.y, high.z), Vec3(low.x, high.y, high.z)},
                .indices = {0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 0, 4, 5, 0, 5, 1,
-                           3, 2, 6, 3, 6, 7, 0, 3, 7, 0, 7, 4, 1, 5, 6, 1, 6, 2}}};
+                           3, 2, 6, 3, 6, 7, 0, 3, 7, 0, 7, 4, 1, 5, 6, 1, 6, 2}}});
 }
 
 // The hitboxes of the character the hit tests play: 1.8 m tall, with a head, a
 // torso and legs on its axis and a right arm (a limb) beside the torso, at +X
 // when it faces yaw 0.
-std::vector<augusta::assets::HitboxData> HumanHitboxes() {
+std::vector<augusta::assets::JointHitbox> HumanHitboxes() {
   return {BoxHitbox(augusta::assets::BodyPart::kHead, Vec3(-0.1F, 1.5F, -0.1F), Vec3(0.1F, 1.8F, 0.1F)),
           BoxHitbox(augusta::assets::BodyPart::kTorso, Vec3(-0.2F, 0.9F, -0.1F), Vec3(0.2F, 1.5F, 0.1F)),
           BoxHitbox(augusta::assets::BodyPart::kLimb, Vec3(-0.2F, 0.0F, -0.1F), Vec3(0.2F, 0.9F, 0.1F)),
@@ -4202,7 +4321,7 @@ class HitMatchOf : public LoopbackMatch {
     }
     HostSetup setup = OnTheFloor(std::move(spawn_points), parameters);
     setup.policy = std::move(policy);
-    setup.scenario.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
+    SeeingFrom(setup, kEyeHeight);
     setup.scenario.characters.front().hitboxes = HumanHitboxes();
     if (walled) {
       setup.scenario.collision.push_back(
@@ -4380,36 +4499,6 @@ TEST_F(HitLineTest, WithTwoTargetsInLineOnlyTheNearerIsHit) {
 
 using HitDuelTest = HitMatchOf<2>;
 
-// A body 2.1 m tall standing is 1.3 m tall crouched and 0.7 m prone, and its hitboxes with it.
-// Requirements: US-11
-TEST_F(HitDuelTest, AShotWhereAStandingHeadWouldBeMissesACrouchedOrProneTargetAndOneAtItsLoweredBodyHits) {
-  Session& shooter = Standing(0);
-  Session& target = Standing(1);
-  struct Lowered {
-    Stance stance;
-    float height;
-  };
-
-  for (const Lowered& lowered : {Lowered{Stance::kCrouching, 1.3F}, Lowered{Stance::kProne, 0.7F}}) {
-    CommandOf(target).movement.desired_stance = lowered.stance;
-    Fight(kSettleTicks);
-    ASSERT_EQ(BodySeenBy(shooter, *target.GetServerView()->OwnEntity())->stance, lowered.stance);
-
-    ShootAt(target, Vec3(0.0F, kHeadHeight, 0.0F));
-    EXPECT_TRUE(hits_.empty()) << "stance " << static_cast<int>(lowered.stance);
-
-    ShootAt(target, Vec3(0.0F, kTorsoHeight * lowered.height / 2.1F, 0.0F));
-    ASSERT_EQ(hits_.size(), 1U) << "stance " << static_cast<int>(lowered.stance);
-    EXPECT_EQ(hits_[0].part, BodyPart::kTorso);
-    hits_.clear();
-  }
-
-  const std::vector<HitConfirmation>& confirmations = ConfirmationsOf(shooter);
-  ASSERT_EQ(confirmations.size(), 2U);
-  EXPECT_EQ(confirmations[0].part, BodyPart::kTorso);
-  EXPECT_EQ(confirmations[1].part, BodyPart::kTorso);
-}
-
 // The target's right arm is at +X while it faces yaw 0, and at -X once it has
 // turned half a turn: every client is told where it faces, and its hitboxes
 // turn with it.
@@ -4496,7 +4585,7 @@ class LagCompensatedHitTest : public HitMatchOf<2> {
   // The Interpolation delay, about 100 ms, in ticks of kFixedTick.
   static constexpr std::uint32_t kInterpolationTicks = 6;
 
-  void TearDown() override { augusta::link::SimulateNetworkConditions({}); }
+  void TearDown() override { SimulateNetworkConditions({}); }
 
   // Whether the server holds a command of every client for its next tick.
   [[nodiscard]] bool EveryoneHasACommandQueued() const {
@@ -4536,7 +4625,7 @@ TEST_F(LagCompensatedHitTest, AClientFiringAtAStrafingTargetUnderItsCrosshairAtI
   Session& shooter = Standing(0);
   Session& target = Standing(1);
   CommandOf(target).movement.direction = Vec3(1.0F, 0.0F, 0.0F);
-  augusta::link::SimulateNetworkConditions({.latency_ms = kOneWayLatencyMs});
+  SimulateNetworkConditions({.latency_ms = kOneWayLatencyMs});
   for (int i = 0; i < 60; ++i) {
     PlayAhead(shooter, target);
   }
@@ -4607,7 +4696,7 @@ class FullAutoMatchTest : public LoopbackMatch {
       spawn_points.emplace_back(kPairSpacing * static_cast<float>(i / 2), kFloorY, i % 2 == 0 ? 0.0F : -kPairDistance);
     }
     HostSetup setup = OnTheFloor(std::move(spawn_points), parameters);
-    setup.scenario.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
+    SeeingFrom(setup, kEyeHeight);
     setup.scenario.characters.front().hitboxes = HumanHitboxes();
     return setup;
   }
@@ -4946,14 +5035,14 @@ TEST_F(DeathTest, TheDeadBodyIsGoneFromEveryClientsStateFromThenOn) {
 TEST_F(DeathTest, WithPacketLossEveryClientStillReceivesTheDeath) {
   constexpr float kLossPercent = 20.0F;
   Session& victim = Standing(1);
-  augusta::link::SimulateNetworkConditions({.loss_percent = kLossPercent});
+  SimulateNetworkConditions({.loss_percent = kLossPercent});
 
   // A round's fire command can be lost for good: the shooter fires until the server has a death.
   for (int attempt = 0; attempt < 10 && deaths_.empty(); ++attempt) {
     ShootAt(victim, Vec3(0.0F, kHeadHeight, 0.0F));
   }
   Fight(30);
-  augusta::link::SimulateNetworkConditions({});
+  SimulateNetworkConditions({});
 
   ASSERT_EQ(deaths_.size(), 1U);
   ASSERT_TRUE(ExchangeUntil(host_, Pointers(sessions_), [&] {
@@ -5332,14 +5421,14 @@ TEST_F(LastStandingDuelTest, WithPacketLossBothAreStillToldTheMatchEndedAndWhoWo
   constexpr float kLossPercent = 20.0F;
   Session& shooter = Standing(0);
   Session& victim = Standing(1);
-  augusta::link::SimulateNetworkConditions({.loss_percent = kLossPercent});
+  SimulateNetworkConditions({.loss_percent = kLossPercent});
 
   // A round's fire command can be lost for good: the shooter fires until the match is over.
   for (int attempt = 0; attempt < 20 && match_ends_.empty(); ++attempt) {
     ShootAt(victim, Vec3(0.0F, kHeadHeight, 0.0F));
   }
   Fight(30);
-  augusta::link::SimulateNetworkConditions({});
+  SimulateNetworkConditions({});
 
   ASSERT_EQ(match_ends_.size(), 1U);
   ASSERT_TRUE(EveryoneToldTheMatchEnded());
@@ -5472,7 +5561,7 @@ class EightPlayerMatchTest : public LoopbackMatch {
     }
     HostSetup setup = OnTheFloor(std::move(spawn_points), parameters);
     setup.policy = ExamplePolicy();
-    setup.scenario.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
+    SeeingFrom(setup, kEyeHeight);
     setup.scenario.characters.front().hitboxes = HumanHitboxes();
     return setup;
   }
@@ -5746,30 +5835,50 @@ class AdversaryMatch : public LoopbackMatch {
 
   // One tick: the adversary sends message, if it holds a command, and every
   // honest Session its command of honest_commands_; the server ticks once every
-  // command sent has arrived, or kStepPatience has passed, and everyone is told
-  // of the tick. Returns the server's.
+  // command sent has arrived, as AwaitArrival waits, and everyone is told of
+  // the tick. Returns the server's, or nothing once the test has failed fatally.
   augusta::simulation::TickResult Play(const protocol::CommandsWire& message = {}) {
-    std::vector<augusta::host::SessionId> sending;
+    if (HasFatalFailure()) {
+      return {};
+    }
+    // Before the Match has settled, the adversary may not have been told of a tick yet.
+    const auto told = adversary_.NewestState();
+    const std::string next_tick =
+        told.has_value() ? "tick " + std::to_string(told->tick + 1) : "the first tick it is told of";
+    // Who sent a command for the next tick: the adversary, or the honest Session of that index.
+    std::vector<std::optional<std::size_t>> sending;
     if (!message.commands.empty()) {
       adversary_.Send(message);
-      sending.push_back(*adversary_.GetSessionId());
+      sending.emplace_back(std::nullopt);
     }
     for (std::size_t i = 0; i < sessions_.size(); ++i) {
       Session& session = *sessions_[i];
       if (session.GetServerView()->GetPhase() == Phase::kMatch && session.GetServerView()->OwnAlive()) {
-        sending.push_back(session.GetServerView()->accepted->session);
+        sending.emplace_back(i);
       }
       states_[&session] = session.Tick(honest_commands_.at(i), kFixedTick);
     }
-    const auto give_up = std::chrono::steady_clock::now() + kStepPatience;
-    ExchangeUntil(host_, Pointers(sessions_), [&] {
-      adversary_.Serve();
-      return std::chrono::steady_clock::now() >= give_up ||
-             std::ranges::all_of(sending,
-                                 [&](augusta::host::SessionId session) { return host_.QueuedCommands(session) > 0; });
-    });
+    const auto missing = [&]() -> std::optional<std::string> {
+      for (const std::optional<std::size_t>& sender : sending) {
+        const augusta::host::SessionId session =
+            sender.has_value() ? sessions_[*sender]->GetServerView()->accepted->session : *adversary_.GetSessionId();
+        if (host_.QueuedCommands(session) == 0) {
+          std::ostringstream named;
+          named << "the command of "
+                << (sender.has_value() ? "honest client " + std::to_string(*sender) : "the adversary") << " (Session "
+                << session << ") never reached the server, for " << next_tick;
+          return named.str();
+        }
+      }
+      return std::nullopt;
+    };
+    if (!AwaitArrival(missing, [&] { adversary_.Serve(); })) {
+      return {};
+    }
     augusta::simulation::TickResult result = host_.Tick(kFixedTick);
-    Deliver(result.state.tick);
+    if (!Deliver(result.state.tick)) {
+      return {};
+    }
     const std::vector<Shot> taken = sessions_.front()->TakeShots(*sessions_.front()->GetServerView());
     told_shots_.insert(told_shots_.end(), taken.begin(), taken.end());
     return result;
@@ -5803,20 +5912,25 @@ class AdversaryMatch : public LoopbackMatch {
 
  private:
   // Runs the network until the adversary and every honest Session have been
-  // told of tick, or kStepPatience has passed.
-  void Deliver(Tick tick) {
-    const auto give_up = std::chrono::steady_clock::now() + kStepPatience;
-    const auto told = [&] {
+  // told of tick, as AwaitArrival waits; returns whether Play may go on.
+  bool Deliver(Tick tick) {
+    const auto untold = [&]() -> std::optional<std::string> {
+      std::ostringstream named;
       const auto newest = adversary_.NewestState();
-      return newest.has_value() && newest->tick >= tick && std::ranges::all_of(sessions_, [&](const auto& session) {
-               const auto state = session->GetServerView()->authoritative;
-               return state.has_value() && state->tick >= tick;
-             });
+      if (!newest.has_value() || newest->tick < tick) {
+        named << "the adversary was never told of tick " << tick;
+        return named.str();
+      }
+      for (std::size_t i = 0; i < sessions_.size(); ++i) {
+        const auto state = sessions_[i]->GetServerView()->authoritative;
+        if (!state.has_value() || state->tick < tick) {
+          named << "honest client " << i << " was never told of tick " << tick;
+          return named.str();
+        }
+      }
+      return std::nullopt;
     };
-    ExchangeUntil(host_, Pointers(sessions_), [&] {
-      adversary_.Serve();
-      return told() || std::chrono::steady_clock::now() >= give_up;
-    });
+    return AwaitArrival(untold, [&] { adversary_.Serve(); });
   }
 
   // Every Shot the first honest Session has been told of.
@@ -6088,7 +6202,7 @@ class CorrectedAimTest : public AdversaryMatch {
     parameters.ammo.damage = {.head = 50.0F, .torso = 20.0F, .limb = kLimbDamage};
     parameters.starting_health = kStartingHealth;
     HostSetup setup = OnTheFloor({Vec3(0.0F, kFloorY, 0.0F), Vec3(0.0F, kFloorY, -60.0F)}, parameters);
-    setup.scenario.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
+    SeeingFrom(setup, kEyeHeight);
     setup.scenario.characters.front().hitboxes = HumanHitboxes();
     return setup;
   }

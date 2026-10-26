@@ -1,0 +1,8 @@
+{
+  "name": "augusta-toolchain",
+  "private": true,
+  "description": "Prettier's pin (ADR-0077): `make toolchain` installs it into .toolchain/node_modules with npm ci.",
+  "devDependencies": {
+    "prettier": "3.9.9"
+  }
+}

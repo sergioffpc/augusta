@@ -181,7 +181,7 @@ void Replay::HandBefore(std::uint32_t offset) {
   }
 }
 
-std::vector<simulation::PlayerCommand> Replay::TakeCommands(std::vector<PlayerView>& views) {
+std::vector<simulation::PlayerCommand> Replay::TakeCommands() {
   std::vector<simulation::PlayerCommand> commands;
   for (Player& player : players_) {
     if (player.left) {
@@ -189,8 +189,6 @@ std::vector<simulation::PlayerCommand> Replay::TakeCommands(std::vector<PlayerVi
     }
     const TickCommand next = player.commands.Next();
     commands.push_back(simulation::PlayerCommand{.entity = BodyOf(player.number), .command = next.command});
-    views.push_back(PlayerView{
-        .entity = static_cast<EntityId>(player.number), .pitch = next.command.pitch, .ads = next.command.ads});
   }
   return commands;
 }
@@ -218,7 +216,7 @@ ReplayTick Replay::Step() {
   const std::uint32_t offset = offset_;
   HandBefore(offset);
   ReplayTick tick;
-  const std::vector<simulation::PlayerCommand> commands = TakeCommands(tick.views);
+  const std::vector<simulation::PlayerCommand> commands = TakeCommands();
   const float delta_time = 1.0F / static_cast<float>(capture_.header.tick_rate_hz);
   tick.result = world_.Tick(commands, delta_time);
 

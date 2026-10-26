@@ -1,8 +1,9 @@
 # augusta's overlay of vcpkg's physx port, at the baseline's version: the
 # upstream portfile with PX_BUILDPVDRUNTIME on, so the port also builds
 # OmniPVD's runtime (PVDRuntime_64) and installs the headers that write a
-# recording, for debug.physics_recording. Changes from upstream are marked
-# "augusta:". Dropped once upstream builds the runtime.
+# recording, for debug.physics_recording, and with macOS arm64, for the client's
+# development build there (ports/README.md). Changes from upstream are marked
+# "augusta:". Dropped once upstream builds the runtime and macOS.
 ###############################################################################################################
 # Port for Omniverse PhysX 5 - NVIDIA Corporation
 # Written by Marco Alesiani <malesiani@nvidia.com>
@@ -11,12 +12,22 @@
 # for many platforms so older versions are still needed to support all previous platforms.
 ###############################################################################################################
 
+# augusta: macos-arm64.patch makes the sources build for Apple's arm64, which
+# they take for x86 where they test PX_OSX: NEON and fenv instead of SSE, the
+# GPU-support code paths that its CPU-only build no longer compiles without
+# (no PhysXGpu loads there: its loader is empty), a binary platform tag, and
+# OmniPVD's runtime, loaded through dlopen as on Linux, by its .dylib name.
+set(physx_patches "")
+if(VCPKG_TARGET_IS_OSX)
+  set(physx_patches macos-arm64.patch)
+endif()
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO NVIDIA-Omniverse/PhysX
     REF 106.4-physx-5.5.0 # newest tag
     SHA512 93ad438db81e9dc095741c837c0e797b56b35d6b77c7d1b1367b11bcbcb4ee1b8ff2affc27624d06829ac5e979f08d506fe727851fc383724e6633b775752d82
     HEAD_REF main
+    PATCHES ${physx_patches}
 )
 
 if(VCPKG_LIBRARY_LINKAGE STREQUAL "static")
@@ -44,6 +55,16 @@ elseif(VCPKG_TARGET_IS_LINUX AND VCPKG_TARGET_ARCHITECTURE STREQUAL "arm64")
     -DPX_BUILDSNIPPETS=OFF
     -DPX_BUILDPVDRUNTIME=ON
     -DPX_GENERATE_STATIC_LIBRARIES=${VCPKG_BUILD_STATIC_LIBS}
+  )
+  # augusta: macOS arm64, as Linux's, without the PhysXGpu copy its Linux
+  # platform files make: NVIDIA ships no macOS library to copy.
+elseif(VCPKG_TARGET_IS_OSX AND VCPKG_TARGET_ARCHITECTURE STREQUAL "arm64")
+  set(
+    PLATFORM_OPTIONS
+    -DPX_BUILDSNIPPETS=OFF
+    -DPX_BUILDPVDRUNTIME=ON
+    -DPX_GENERATE_STATIC_LIBRARIES=${VCPKG_BUILD_STATIC_LIBS}
+    -DGPU_LIB_COPIED=1
   )
 elseif(VCPKG_TARGET_IS_WINDOWS AND VCPKG_TARGET_ARCHITECTURE STREQUAL "x64")
   set(
@@ -78,6 +99,10 @@ if(VCPKG_TARGET_IS_WINDOWS)
         WORKING_DIRECTORY "$ENV{PM_PhysXGpu_PATH}"
         LOGNAME "extract-PhysXGpu"
   )
+  # augusta: NVIDIA ships no PhysXGpu for macOS: the CPU simulation alone.
+elseif(VCPKG_TARGET_IS_OSX)
+  set(ENV{PM_PhysXGpu_PATH} "${CURRENT_BUILDTREES_DIR}/PhysXGpu_dep")
+  file(MAKE_DIRECTORY "$ENV{PM_PhysXGpu_PATH}")
 else()
   if(VCPKG_TARGET_ARCHITECTURE STREQUAL "arm64")
     vcpkg_download_distfile(ARCHIVE
@@ -160,6 +185,11 @@ if(VCPKG_TARGET_IS_LINUX AND VCPKG_TARGET_ARCHITECTURE STREQUAL "arm64")
 elseif(VCPKG_TARGET_IS_LINUX AND VCPKG_TARGET_ARCHITECTURE STREQUAL "x64")
   set(cmakeParams -DCMAKE_INSTALL_PREFIX=${PHYSX_ROOT_DIR}/install/linux/PhysX)
   set(platformCMakeParams -DTARGET_BUILD_PLATFORM=linux -DPX_OUTPUT_ARCH=x86)
+  # augusta: PhysX 5 has no macOS platform of its own, though its sources still
+  # build for __APPLE__ (PX_OSX): its Linux one, which is clang's and POSIX's.
+elseif(VCPKG_TARGET_IS_OSX AND VCPKG_TARGET_ARCHITECTURE STREQUAL "arm64")
+  set(cmakeParams -DCMAKE_INSTALL_PREFIX=${PHYSX_ROOT_DIR}/install/mac-arm64/PhysX)
+  set(platformCMakeParams -DTARGET_BUILD_PLATFORM=linux -DPX_OUTPUT_ARCH=arm)
 elseif(VCPKG_TARGET_IS_WINDOWS AND VCPKG_TARGET_ARCHITECTURE STREQUAL "x64") # Note: this will work for any Win64, default is vc17win64
   set(cmakeParams -DCMAKE_INSTALL_PREFIX=${PHYSX_ROOT_DIR}/install/vc17win64/PhysX)
   set(platformCMakeParams -DTARGET_BUILD_PLATFORM=windows -DPX_OUTPUT_ARCH=x86)

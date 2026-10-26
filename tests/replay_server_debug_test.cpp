@@ -14,8 +14,8 @@
 #include "augusta/misbehaviour.h"
 #include "augusta/policy.h"
 #include "augusta/protocol.h"
-#include "augusta/raw_link.h"
 #include "augusta/replay_server.h"
+#include "raw_link.h"
 
 // A replay server and a Development build's Debug subscribe (ADR-0051,
 // ADR-0074): it serves no stream of a Match's state, since it runs no Match,

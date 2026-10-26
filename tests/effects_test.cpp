@@ -14,7 +14,6 @@ using augusta::presentation::Age;
 using augusta::presentation::Effect;
 using augusta::presentation::FiredRounds;
 using augusta::presentation::kMuzzleFlashSeconds;
-using augusta::presentation::MuzzleOf;
 
 // Requirements: US-19
 TEST(AgeTest, AnEffectShowsUntilItsLifetimeIsUp) {
@@ -35,18 +34,6 @@ TEST(AgeTest, OnlyTheEffectsWhoseTimeIsUpGo) {
 
   ASSERT_EQ(effects.size(), 1U);
   EXPECT_FLOAT_EQ(effects.front().age, 0.3F);
-}
-
-// Requirements: US-19
-TEST(MuzzleOfTest, TheMuzzleIsAheadOfTheEyeWhereTheRoundLeavesFor) {
-  const Vec3 eye(1.0F, 1.7F, 2.0F);
-  const Vec3 direction(0.0F, 0.0F, -1.0F);
-
-  const Vec3 muzzle = MuzzleOf(eye, direction);
-
-  EXPECT_FLOAT_EQ(muzzle.x, eye.x);
-  EXPECT_FLOAT_EQ(muzzle.y, eye.y);
-  EXPECT_LT(muzzle.z, eye.z);
 }
 
 // Requirements: US-18, US-19

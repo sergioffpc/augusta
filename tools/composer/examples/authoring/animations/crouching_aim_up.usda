@@ -1,0 +1,16 @@
+#usda 1.0
+(
+    defaultPrim = "Clip"
+    doc = "The soldier crouching, aiming at its highest pitch."
+    upAxis = "Y"
+    metersPerUnit = 1
+    timeCodesPerSecond = 24
+)
+
+def SkelAnimation "Clip"
+{
+    uniform token[] joints = ["Root", "Root/Pelvis", "Root/Pelvis/Spine", "Root/Pelvis/Spine/Head", "Root/Pelvis/Spine/LeftShoulder", "Root/Pelvis/Spine/RightShoulder", "Root/Pelvis/LeftHip", "Root/Pelvis/RightHip", "Root/Pelvis/Spine/LeftShoulder/LeftElbow", "Root/Pelvis/Spine/RightShoulder/RightElbow", "Root/Pelvis/Spine/LeftShoulder/LeftElbow/LeftHand", "Root/Pelvis/Spine/RightShoulder/RightElbow/RightHand"]
+    float3[] translations = [(0, 0, 0), (0, 0.6, 0), (0, 0.35, 0), (0, 0.35, 0), (-0.3, 0.3, 0), (0.3, 0.3, 0), (-0.12, 0, 0), (0.12, 0, 0), (0, -0.3, 0), (0, -0.3, 0), (0, -0.3, 0), (-0.1, -0.150895, -0.402779)]
+    quatf[] rotations = [(1, 0, 0, 0), (1, 0, 0, 0), (0.999048, 0.043619, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0), (0.991445, 0.130526, 0, 0)]
+    half3[] scales = [(1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1)]
+}

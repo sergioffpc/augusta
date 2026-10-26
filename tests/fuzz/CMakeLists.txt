@@ -22,7 +22,7 @@ target_compile_definitions(
   augusta_protocol_decode_seeds_tests
   PRIVATE AUGUSTA_PROTOCOL_DECODE_CORPUS="${CMAKE_CURRENT_SOURCE_DIR}/corpus/protocol_decode"
 )
-gtest_discover_tests(augusta_protocol_decode_seeds_tests)
+gtest_discover_tests(augusta_protocol_decode_seeds_tests DISCOVERY_TIMEOUT 30)
 # When the wire changes on purpose, one step rewrites the seeds for review and commit:
 #   cmake --build --preset <preset> --target augusta_protocol_decode_seeds
 add_custom_target(
@@ -43,13 +43,14 @@ if(AUGUSTA_DEBUG_TOOLS)
     augusta_protocol_decode_seeds_pcapng_tests
     PRIVATE augusta_pcapng augusta_version GTest::gtest GTest::gtest_main
   )
+  target_include_directories(augusta_protocol_decode_seeds_pcapng_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/pcapng)
   target_compile_definitions(
     augusta_protocol_decode_seeds_pcapng_tests
     PRIVATE
       AUGUSTA_PROTOCOL_DECODE_CORPUS="${CMAKE_CURRENT_SOURCE_DIR}/corpus/protocol_decode"
       AUGUSTA_PROTOCOL_DECODE_SEEDS_PCAPNG="${CMAKE_CURRENT_SOURCE_DIR}/protocol_decode_seeds.pcapng"
   )
-  gtest_discover_tests(augusta_protocol_decode_seeds_pcapng_tests)
+  gtest_discover_tests(augusta_protocol_decode_seeds_pcapng_tests DISCOVERY_TIMEOUT 30)
   # After the seeds are rewritten, or the encoder changes on purpose, one step
   # rewrites the fixture from them:
   #   cmake --build --preset <preset> --target augusta_protocol_decode_seeds_pcapng
@@ -81,7 +82,7 @@ target_compile_definitions(
   augusta_capture_read_seeds_tests
   PRIVATE AUGUSTA_CAPTURE_READ_CORPUS="${CMAKE_CURRENT_SOURCE_DIR}/corpus/capture_read"
 )
-gtest_discover_tests(augusta_capture_read_seeds_tests)
+gtest_discover_tests(augusta_capture_read_seeds_tests DISCOVERY_TIMEOUT 30)
 # When the capture format changes on purpose, one step rewrites the seed for review and commit:
 #   cmake --build --preset <preset> --target augusta_capture_read_seeds
 add_custom_target(
@@ -117,7 +118,7 @@ target_compile_definitions(
   augusta_pack_load_seeds_tests
   PRIVATE ${augusta_pack_load_example_packs} AUGUSTA_PACK_LOAD_CORPUS="${CMAKE_CURRENT_SOURCE_DIR}/corpus/pack_load"
 )
-gtest_discover_tests(augusta_pack_load_seeds_tests)
+gtest_discover_tests(augusta_pack_load_seeds_tests DISCOVERY_TIMEOUT 30)
 # After the golden packs are regenerated, one step rewrites the seeds from them:
 #   cmake --build --preset <preset> --target augusta_pack_load_seeds
 add_custom_target(

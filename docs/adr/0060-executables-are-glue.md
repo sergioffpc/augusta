@@ -35,19 +35,28 @@ PredictionWorld are a module, tested by hand-driven ticks.
   (the Agent's, in `tools/agent/native` as the tools layout has it), each in the
   namespace of its name (`augusta::client`, `augusta::server`,
   `augusta::agent`); the Host is `augusta::host`'s. A Runtime is built as a
-  module is - internal targets named `augusta_<runtime>_*`, public headers under
-  `include/augusta/`, a README stating its responsibility - and its executable
-  is one more target beside them. A Runtime adds its executable's configuration,
-  its threads, its clock and the wiring of the services the Harness or the Host
-  lacks: the window, the GPU, audio, the metrics endpoint (ADR-0049). End-to-end
-  tests link a Runtime, never an executable.
+  module is - internal targets named `augusta_<runtime>_*`, a README stating its
+  responsibility - and its executable is one more target beside them, but with
+  every header beside its source file, included by its bare name: with no
+  consumer but its executable and its tests, a Runtime has no public interface
+  to set apart from its private one. A Runtime adds its executable's
+  configuration, its threads, its clock and the wiring of the services the
+  Harness or the Host lacks: the window, the GPU, audio, the metrics endpoint
+  (ADR-0049). End-to-end tests link a Runtime, never an executable.
 - **Conversions at a seam.** A conversion between two modules' types lives in
   the module whose seam it crosses. Every conversion between the game's state
   and messages is the Link's.
-- **Names.** A module's targets are `augusta_<module>`, its headers under
-  `include/augusta/`, its namespace `augusta::<module>` or one per concept, as
-  in the gameplay module. An executable's own target holds its entry point
-  alone.
+- **Names.** A module's targets are `augusta_<module>`, its namespace
+  `augusta::<module>` or one per concept, as in the gameplay module. An
+  executable's own target holds its entry point alone.
+- **Public and private headers.** A module's public headers are those another
+  module, an executable or a tool includes, and those a public header includes;
+  they sit under `include/augusta/`. Every other header sits beside its source
+  file, included by its bare name (ADR-0037), even when it is the interface of a
+  target of its own; a test reaches one through its module's directory as a
+  private include path. The one exception is a pair kept together:
+  `augusta/pack_decoder.h` is public as the read half of
+  `augusta/pack_encoder.h`.
 - **Checked at configure time.** `cmake/AugustaModule.cmake` refuses a target
   that links an executable, and an executable that links more than the
   application, its Runtime (any target defined in the executable's own

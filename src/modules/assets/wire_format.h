@@ -2,6 +2,7 @@
 #define AUGUSTA_ASSETS_WIRE_FORMAT_H_
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -15,8 +16,9 @@
 
 /// \file
 /// Private (not under include/augusta/, never installed) byte-level
-/// primitives shared by encoder.cpp, decoder.cpp, and assets.cpp's own
-/// pack-container (header/index/trailer) assembly and parsing - the same
+/// primitives shared by encoder.cpp, decoder.cpp, and the pack-container
+/// (header/index/trailer) assembly and parsing of pack_writer.cpp and
+/// pack_reader.cpp (its layout is pack_format.h's) - the same
 /// length-prefixed little-endian encoding (ADR-0007) underlies every blob
 /// type's wire format and the container around them, so this is the one
 /// place both sides of every read/write pair agree on it.
@@ -31,7 +33,7 @@ inline constexpr std::uint32_t kByteMask = 0xFFU;
 /// Every place that narrows a size_t count into a u32 wire field checks
 /// the relevant limit below first, which doubles as the narrowing guard:
 /// all limits are comfortably under UINT32_MAX. kMaxPathLength is also
-/// reused directly by assets.cpp's ValidateEntries (an AssetEntry's path
+/// reused directly by pack_writer.cpp's ValidateEntries (an AssetEntry's path
 /// is the same kind of string WriteString/ReadString cap here).
 inline constexpr std::uint32_t kMaxPathLength = 4096;
 inline constexpr std::uint32_t kMaxMeshPoints = 16'000'000;
@@ -49,6 +51,17 @@ inline constexpr std::uint32_t kMaxScriptBytes = 1U * 1024 * 1024;
 inline constexpr std::uint32_t kMaxAudioBytes = 64U * 1024 * 1024;
 /// A cue's variants are a handful of takes of one sound; 255 is far more.
 inline constexpr std::uint32_t kMaxCueVariants = 255;
+/// An ozz-animation archive of a Skeleton or a Clip (ADR-0066): a Clip of 128
+/// Joints sampled at 60 Hz for a minute is far below it.
+inline constexpr std::uint32_t kMaxArchiveBytes = 64U * 1024 * 1024;
+/// A locomotion Clip has two Foot contacts (ADR-0062); 255 is far more.
+inline constexpr std::uint32_t kMaxFootContacts = 255;
+/// What a Clip's stride length, a Foot contact's ratio and a stance
+/// transition's duration may be (ADR-0066), alike for the encoder, which
+/// refuses any other, and the decoder, which finds a blob holding one corrupt.
+inline bool IsValidStrideLength(float meters) { return std::isfinite(meters) && meters >= 0.0F; }
+inline bool IsValidFootContactRatio(float ratio) { return std::isfinite(ratio) && ratio >= 0.0F && ratio <= 1.0F; }
+inline bool IsValidTransitionDuration(float seconds) { return std::isfinite(seconds) && seconds > 0.0F; }
 /// The sample widths a PCM WAV file can hold, the only ones an audio blob has.
 inline constexpr std::array<std::uint8_t, 4> kPcmBitsPerSample = {8, 16, 24, 32};
 
@@ -131,7 +144,7 @@ class ByteWriter {
 
 /// Reads primitive values out of a byte span left-to-right, failing (via
 /// std::nullopt) the moment a read would run past the end - the one place
-/// every decode path (blob decoders, plus assets.cpp's own header/index
+/// every decode path (blob decoders, plus pack_reader.cpp's own header/index
 /// parsing) routes every bounds check through.
 class ByteReader {
  public:
@@ -186,6 +199,14 @@ class ByteReader {
     }
     const auto result = data_.subspan(pos_, count);
     pos_ += count;
+    return result;
+  }
+
+  /// Every byte not read yet, consumed: for a blob that ends in another blob,
+  /// as a hitbox's ends in a mesh blob.
+  std::span<const std::byte> ReadRest() {
+    const auto result = data_.subspan(pos_);
+    pos_ = data_.size();
     return result;
   }
 

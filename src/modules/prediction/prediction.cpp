@@ -1,27 +1,32 @@
 #include "augusta/prediction.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <expected>
 #include <memory>
 #include <optional>
-#if AUGUSTA_DEBUG_TOOLS
 #include <utility>
+#if AUGUSTA_DEBUG_TOOLS
 #include <vector>
 #endif
 
 #include <flecs.h>
 #include <nvtx3/nvtx3.hpp>
 
+#include "augusta/clips.h"
 #include "augusta/command.h"
+#include "augusta/grid.h"
+#include "augusta/locomotion.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
-#include "augusta/reconciliation.h"
 #include "augusta/tick.h"
 #include "augusta/weapon.h"
+#include "reconciliation.h"
 
 namespace augusta::prediction {
 
@@ -41,12 +46,28 @@ using PhaseEntities = std::array<flecs::entity, kPhaseCount>;
 constexpr float kPositionTolerance = 0.001F;  // 1 mm.
 constexpr float kStaminaTolerance = 0.001F;
 
+// A Stride a step apart is the rounding of a distance within kPositionTolerance.
+constexpr int kStrideTolerance = 1;
+
+// How far apart two Strides are, the short way round the cycle.
+int StrideDistance(std::uint8_t a, std::uint8_t b) {
+  const int ahead = (a - b + physics::kStrideSteps) % physics::kStrideSteps;
+  return std::min(ahead, physics::kStrideSteps - ahead);
+}
+
 // Position is what the player sees, but a stance, an exhaustion or a stamina
-// that differs changes what the next commands do, so those count as well.
+// that differs changes what the next commands do, so those count as well; and a
+// Stride, a grounded flag or a change of stance's progress, which pose the body
+// every side sees. The progress advances by whole steps of time alone, so any
+// difference is a misprediction, never rounding.
 bool BodyNeedsCorrection(const physics::BodyState& authoritative, const physics::BodyState& predicted) {
   return math::Length(authoritative.position - predicted.position) >= kPositionTolerance ||
          authoritative.stance != predicted.stance || authoritative.exhausted != predicted.exhausted ||
-         std::abs(authoritative.stamina - predicted.stamina) >= kStaminaTolerance;
+         authoritative.grounded != predicted.grounded ||
+         std::abs(authoritative.stamina - predicted.stamina) >= kStaminaTolerance ||
+         StrideDistance(authoritative.stride, predicted.stride) > kStrideTolerance ||
+         authoritative.previous_stance != predicted.previous_stance ||
+         authoritative.stance_progress != predicted.stance_progress;
 }
 
 enum PhaseIndex : std::size_t {
@@ -62,6 +83,8 @@ enum PhaseIndex : std::size_t {
 struct World::Impl {
   flecs::world ecs;
   physics::World physics;
+  // The local player's Character's Clips (World's constructor).
+  std::shared_ptr<const animation::CharacterClips> clips;
   // M1 spike (issue #32): the one entity this pipeline predicts, ahead of
   // real ECS component shapes (see prediction.h's header comment) -
   // spawned once here rather than discovered via a component query.
@@ -86,9 +109,11 @@ struct World::Impl {
   // compare the server's answer with and to replay from it.
   History history;
 
-  Impl()
+  explicit Impl(std::shared_ptr<const animation::CharacterClips> character_clips)
       // No stamina rules of its own: Start gives the world the server's.
-      : physics(physics::StaminaConfig{}), local_body(physics.CreateBody(math::Vec3(0.0F, 0.0F, 0.0F))) {
+      : physics(physics::StaminaConfig{}),
+        clips(std::move(character_clips)),
+        local_body(physics.CreateBody(math::Vec3(0.0F, 0.0F, 0.0F))) {
     // Chain the five phases in Phase's declared order (ADR-0024): each
     // depends_on the previous one, and the first depends on Flecs's
     // built-in OnUpdate phase, so a single ecs.progress() call runs them
@@ -152,7 +177,7 @@ struct World::Impl {
     physics::BodyState replayed = physics.Restore(local_body, authoritative, predicted->fall);
     rifle = tick_acknowledgement->rifle;
     history.Replay([&](const command::Command& command) {
-      replayed = physics.Step(local_body, command.movement, delta_time);
+      replayed = Move(replayed, command, delta_time);
       rifle = weapon::Step(rifle_rules, rifle, command, delta_time).state;
       return Predicted{.body = replayed, .fall = physics.Fall(local_body), .rifle = rifle};
     });
@@ -168,7 +193,16 @@ struct World::Impl {
 
   void OnMovement(float delta_time) {
     const nvtx3::scoped_range range{"Movement"};
-    tick_state.local_body = physics.Step(local_body, tick_command.movement, delta_time);
+    tick_state.local_body = Move(tick_state.local_body, tick_command, delta_time);
+  }
+
+  // Steps the local body, which body is the state of, by command, paced by its
+  // Clips (its Stride by the stride length at body's stance and velocity in the
+  // space of command's yaw on its grid, a change of stance by its transition
+  // duration): what SimulationWorld's Movement steps it by.
+  physics::BodyState Move(const physics::BodyState& body, const command::Command& command, float delta_time) {
+    return physics.Step(local_body, command.movement, delta_time,
+                        animation::PacingOf(*clips, body, math::SnapAngle(command.yaw)));
   }
 
   void OnWeaponHandling(float delta_time) {
@@ -199,7 +233,8 @@ struct World::Impl {
   }
 };
 
-World::World() : impl_(std::make_unique<Impl>()) {}
+World::World(std::shared_ptr<const animation::CharacterClips> clips)
+    : impl_(std::make_unique<Impl>(std::move(clips))) {}
 
 World::~World() = default;
 

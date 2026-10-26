@@ -9,7 +9,7 @@
 
 #include <gtest/gtest.h>
 
-#include "augusta/agent.h"
+#include "agent.h"
 #include "augusta/assets.h"
 #include "augusta/link.h"
 #include "match_loop.h"

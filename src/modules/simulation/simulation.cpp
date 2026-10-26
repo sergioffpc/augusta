@@ -15,19 +15,25 @@
 
 #include <flecs.h>
 
+#include "augusta/animation.h"
+#include "augusta/assets.h"
 #include "augusta/ballistics.h"
-#include "augusta/body_part.h"
+#include "augusta/clips.h"
 #include "augusta/command.h"
 #include "augusta/grid.h"
 #include "augusta/hitbox.h"
 #include "augusta/limits.h"
+#include "augusta/locomotion.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/policy.h"
 #include "augusta/policy_actions.h"
+#include "augusta/pose.h"
 #include "augusta/tick.h"
 #include "augusta/weapon.h"
+#include "combat.h"
+#include "components.h"
 #include "hitbox_history.h"
 #include "hitbox_posing.h"
 #include "policy_bridge.h"
@@ -40,13 +46,14 @@ namespace {
 // not by its enum value (Phase isn't contiguous-from-zero by design, see
 // simulation.h), so PhaseIndex below is the single place that mapping is
 // spelled out.
-constexpr std::size_t kPhaseCount = 8;
+constexpr std::size_t kPhaseCount = 9;
 using PhaseEntities = std::array<flecs::entity, kPhaseCount>;
 
 enum PhaseIndex : std::size_t {
   kCommandIngestion = 0,
   kMovement,
   kWeaponHandling,
+  kPosing,
   kBallistics,
   kHitDetection,
   kDamage,
@@ -54,119 +61,11 @@ enum PhaseIndex : std::size_t {
   kCommit,
 };
 
-// A player-controlled entity's components: the entity it is, which commands name.
-struct Player {
-  EntityId entity{};
+// A round's Shot whose barrel is in the Map, and where the barrel enters it.
+struct BarrelInTheMap {
+  Shot shot;
+  math::Vec3 entry{};
 };
-
-struct Body {
-  physics::BodyHandle handle{};
-  physics::BodyState state{};
-};
-
-// What CommandIngestion last decided the player is trying to do; Movement acts on it.
-struct Intent {
-  physics::MovementInput input{};
-};
-
-// Where a player's body faces: the yaw of its last command's view, on its grid.
-struct Facing {
-  float yaw = 0.0F;
-};
-
-// What is left of a player's health, 0 or more.
-struct Health {
-  float value = 0.0F;
-};
-
-// A player's character's hitboxes, as authored: standing, in its root space.
-struct Hitboxes {
-  std::vector<hitbox::CharacterHitbox> standing;
-  // How far from its root they reach, posed in any stance: a bullet that
-  // passes farther from where a pose puts its root crosses none of them.
-  float reach = 0.0F;
-};
-
-// A player's Hitbox history: where the State of each of its recent ticks put it.
-struct HitboxHistory {
-  PoseHistory poses;
-};
-
-// A player's rifle, as WeaponHandling left it.
-struct Rifle {
-  weapon::State state{};
-};
-
-// Where a player's character sees from standing, relative to its feet (ADR-0040).
-struct Eye {
-  math::Vec3 standing{};
-};
-
-// A bullet in flight: an entity of its own, from the tick it is fired on until
-// the tick ballistics::World resolves it.
-struct Bullet {
-  ballistics::BulletHandle handle{};
-  EntityId shooter{};
-  // Its Shooter's delay (ADR-0044), in ticks: how long before each tick of its
-  // flight the players it is judged against were where it judges them.
-  float shooters_delay = 0.0F;
-  // Where it was fired for, as its Shot's yaw and pitch: what a Death it deals tells.
-  float yaw = 0.0F;
-  float pitch = 0.0F;
-};
-
-#if AUGUSTA_DEBUG_TOOLS
-// What a bullet fired while Shot judgements are on records of its flight: its
-// Shot judgement, as far as the flight has gone.
-struct ShotRecord {
-  ShotJudgement judgement;
-};
-#endif
-
-// A bullet that struck a player this tick, for Damage to resolve.
-struct PlayerHit {
-  EntityId shooter{};
-  EntityId target{};
-  float yaw = 0.0F;
-  float pitch = 0.0F;
-  body_part::BodyPart part = body_part::BodyPart::kTorso;
-};
-
-// Where a player's body is and faces this tick, as the tick's State reports it.
-hitbox::Pose PoseOf(const Body& body, const Facing& facing) {
-  return hitbox::Pose{.position = body.state.position, .yaw = facing.yaw, .stance = body.state.stance};
-}
-
-// kMaxShootersDelay in ticks at tick_rate_hz: not a whole number at every rate.
-float MaxShootersDelayTicks(std::uint8_t tick_rate_hz) {
-  return std::chrono::duration<float>(kMaxShootersDelay).count() * static_cast<float>(tick_rate_hz);
-}
-
-// The Shooter's delay (ADR-0044), in ticks, of a round fired on tick by
-// command: from the Seen time command reports to tick, and no more than
-// max_delay. The Seen time is only what a client says, so its fraction is held within 0 to 1
-// and the whole of it to no newer than the last tick's State, the newest any
-// client has been sent.
-float ShootersDelay(tick::Tick tick, const command::Command& command, float max_delay) {
-  const auto now = static_cast<double>(tick);
-  const double reported =
-      static_cast<double>(command.seen_tick) + static_cast<double>(std::clamp(command.seen_fraction, 0.0F, 1.0F));
-  const double seen = std::min(reported, now - 1.0);
-  return std::min(static_cast<float>(now - seen), max_delay);
-}
-
-// What damage gives for a hit on part.
-float DamageFor(const body_part::Damage& damage, body_part::BodyPart part) {
-  switch (part) {
-    case body_part::BodyPart::kHead:
-      return damage.head;
-    case body_part::BodyPart::kTorso:
-      return damage.torso;
-    case body_part::BodyPart::kLimb:
-      return damage.limb;
-  }
-  std::unreachable();
-}
 
 // player as Game policy sees it (ADR-0022).
 policy::PlayerView ViewOf(EntityId entity, const PlayerIdentity& identity, bool alive, float health,
@@ -183,10 +82,6 @@ policy::PlayerView ViewOf(EntityId entity, const PlayerIdentity& identity, bool 
 
 }  // namespace
 
-std::size_t HitboxHistoryTicks(std::uint8_t tick_rate_hz) {
-  return static_cast<std::size_t>(std::chrono::ceil<std::chrono::seconds>(kMaxShootersDelay * tick_rate_hz).count());
-}
-
 struct World::Impl {
   // Where a player lives, for RemovePlayer, and who plays it, for Game policy;
   // a dead player's body has left physics.
@@ -197,6 +92,8 @@ struct World::Impl {
   };
 
   const parameters::Parameters parameters;
+  // The markers of the rifle every player holds.
+  const weapon::Markers rifle_markers;
   // The Shooter's delay's cap in ticks, and how many ticks of poses a player's
   // Hitbox history keeps for it; neither changes.
   const float max_shooters_delay;
@@ -216,10 +113,15 @@ struct World::Impl {
   std::vector<policy::PolicyAction> actions;
   std::vector<float> shooters_delays;
   // Every player a bullet may strike, for posing its hitboxes where the bullet
-  // judges it to be.
-  flecs::query<const Player, const Body, const Facing, const Hitboxes, const HitboxHistory> targets;
+  // judges it to be: a living one, with a Body.
+  flecs::query<const Player, const Body, const Hitboxes, const PosedJoints, const HitboxHistory> targets;
   // Their hitboxes, posed for the tick's bullets. Cleared each tick.
   HitboxPosing posing;
+  // Evaluates every player's Hitbox pose from its Clips, one after the other.
+  animation::Poser poser;
+  // A target's Joints as the Hitbox history has them where a bullet judges it.
+  // Kept between calls for its storage only.
+  std::vector<math::Mat4> judged_joints;
   // The players the tick's bullets struck, for Damage. Kept between ticks for
   // its storage only.
   std::vector<PlayerHit> player_hits;
@@ -230,18 +132,20 @@ struct World::Impl {
   std::vector<ShotJudgement> shot_judgements;
 #endif
 
-  Impl(const parameters::Parameters& params, std::uint8_t tick_rate_hz, policy::Policy game_policy)
+  Impl(const parameters::Parameters& params, std::uint8_t tick_rate_hz, policy::Policy game_policy,
+       const weapon::Markers& rifle)
       : parameters(params),
+        rifle_markers(rifle),
         max_shooters_delay(MaxShootersDelayTicks(tick_rate_hz)),
         history_ticks(HitboxHistoryTicks(tick_rate_hz)),
         physics(params.stamina),
         policy_bridge(std::move(game_policy)),
-        targets(ecs.query<const Player, const Body, const Facing, const Hitboxes, const HitboxHistory>()) {
+        targets(ecs.query<const Player, const Body, const Hitboxes, const PosedJoints, const HitboxHistory>()) {
     ChainPhases();
     RegisterSystems();
   }
 
-  // Chains the eight phases in Phase's declared order (ADR-0023): each
+  // Chains the nine phases in Phase's declared order (ADR-0023): each
   // depends_on the previous one, and the first depends on Flecs's
   // built-in OnUpdate phase, so a single ecs.progress() call runs them
   // in exactly this sequence - the built-in phases around OnUpdate
@@ -250,7 +154,8 @@ struct World::Impl {
     phases[kCommandIngestion] = ecs.entity("CommandIngestion").add(flecs::Phase).depends_on(flecs::OnUpdate);
     phases[kMovement] = ecs.entity("Movement").add(flecs::Phase).depends_on(phases[kCommandIngestion]);
     phases[kWeaponHandling] = ecs.entity("WeaponHandling").add(flecs::Phase).depends_on(phases[kMovement]);
-    phases[kBallistics] = ecs.entity("Ballistics").add(flecs::Phase).depends_on(phases[kWeaponHandling]);
+    phases[kPosing] = ecs.entity("Posing").add(flecs::Phase).depends_on(phases[kWeaponHandling]);
+    phases[kBallistics] = ecs.entity("Ballistics").add(flecs::Phase).depends_on(phases[kPosing]);
     phases[kHitDetection] = ecs.entity("HitDetection").add(flecs::Phase).depends_on(phases[kBallistics]);
     phases[kDamage] = ecs.entity("Damage").add(flecs::Phase).depends_on(phases[kHitDetection]);
     phases[kScriptsBehaviours] = ecs.entity("ScriptsBehaviours").add(flecs::Phase).depends_on(phases[kDamage]);
@@ -267,28 +172,35 @@ struct World::Impl {
         .each([this](const Player& player, Intent& intent, Facing& facing) {
           OnCommandIngestion(player, intent, facing);
         });
-    ecs.system<Body, const Intent>("MovementSystem")
+    ecs.system<Body, const Intent, const Facing, const Clips>("MovementSystem")
         .kind(phases[kMovement])
-        .each([this](flecs::iter& it, std::size_t /*row*/, Body& body, const Intent& intent) {
-          OnMovement(it.delta_time(), body, intent);
+        .each([this](flecs::iter& it, std::size_t /*row*/, Body& body, const Intent& intent, const Facing& facing,
+                     const Clips& clips) { OnMovement(it.delta_time(), body, intent, facing, clips); });
+    // A living player's: one with a Body.
+    ecs.system<const Player, Rifle>("WeaponHandlingSystem")
+        .kind(phases[kWeaponHandling])
+        .with<Body>()
+        .each([this](flecs::iter& it, std::size_t /*row*/, const Player& player, Rifle& rifle) {
+          OnWeaponHandling(it.delta_time(), player, rifle);
         });
     // Writes Bullet, so the bullets it fires exist by the time Ballistics runs
     // and fly their first tick on the tick they are fired.
-    ecs.system<const Player, const Body, const Eye, Rifle>("WeaponHandlingSystem")
-        .kind(phases[kWeaponHandling])
+    ecs.system<const Player, const Body, const Facing, const Eye, const Rifle, const CharacterSkeleton, const Clips,
+               PosedJoints, Held>("PosingSystem")
+        .kind(phases[kPosing])
         .write<Bullet>()
-        .each([this](flecs::iter& it, std::size_t /*row*/, const Player& player, const Body& body, const Eye& eye,
-                     Rifle& rifle) { OnWeaponHandling(it.delta_time(), player, body, eye, rifle); });
+        .each([this](flecs::iter& it, std::size_t /*row*/, const Player& player, const Body& body, const Facing& facing,
+                     const Eye& eye, const Rifle& rifle, const CharacterSkeleton& skeleton, const Clips& clips,
+                     PosedJoints& posed, Held& held) {
+          OnPosing(it.delta_time(), player, body, facing, eye, rifle, skeleton, clips, posed, held);
+        });
     ecs.system<const Bullet>("BallisticsSystem")
         .kind(phases[kBallistics])
         .each([this](flecs::iter& it, std::size_t row, const Bullet& bullet) {
           OnBallistics(it.delta_time(), it.entity(row), bullet);
         });
-    ecs.system<const Body, const Facing, HitboxHistory>("HitDetectionSystem")
-        .kind(phases[kHitDetection])
-        .each([this](const Body& body, const Facing& facing, HitboxHistory& history) {
-          OnHitDetection(body, facing, history);
-        });
+    // HitDetection registers no system: its test is folded into
+    // BallisticsSystem's Step call (Phase::kHitDetection).
     // Writes Body and Intent, so a player it kills is out of the State Commit
     // packages on the same tick.
     ecs.system<const Player, Health>("DamageSystem")
@@ -299,14 +211,18 @@ struct World::Impl {
     ecs.system("ScriptsBehavioursSystem").kind(phases[kScriptsBehaviours]).run([this](flecs::iter&) {
       OnScriptsBehaviours();
     });
-    ecs.system<const Player, const Body, const Facing, const Health, const Rifle>("CommitSystem")
+    ecs.system<const Player, const Body, const Facing, const Health, const Rifle, const PosedJoints, HitboxHistory>(
+           "CommitSystem")
         .kind(phases[kCommit])
         .each([this](const Player& player, const Body& body, const Facing& facing, const Health& health,
-                     const Rifle& rifle) { OnCommit(player, body, facing, health, rifle); });
+                     const Rifle& rifle, const PosedJoints& posed, HitboxHistory& history) {
+          PackageState(player, body, facing, health, rifle);
+          RecordHitboxHistory(posed, history);
+        });
   }
 
   // A player with no command this tick stops, and keeps the stance it asked
-  // for and where it faced.
+  // for, where it faced and looked, and whether it aimed down sights.
   void OnCommandIngestion(const Player& player, Intent& intent, Facing& facing) {
     const auto command = tick_commands.find(player.entity);
     if (command == tick_commands.end()) {
@@ -316,38 +232,148 @@ struct World::Impl {
     }
     intent.input = command->second.movement;
     facing.yaw = math::SnapAngle(command->second.yaw);
+    facing.pitch = math::SnapAngle(command->second.pitch);
+    facing.ads = command->second.ads;
   }
 
-  void OnMovement(float delta_time, Body& body, const Intent& intent) {
-    body.state = physics.Step(body.handle, intent.input, delta_time);
+  // The Stride advances by the stride length at the stance and velocity the
+  // last tick left, and a change of stance by its transition duration, as
+  // PredictionWorld's do from the same state.
+  void OnMovement(float delta_time, Body& body, const Intent& intent, const Facing& facing, const Clips& clips) {
+    body.state =
+        physics.Step(body.handle, intent.input, delta_time, animation::PacingOf(*clips.clips, body.state, facing.yaw));
   }
 
   // A player with no command this tick holds nothing: its rifle only waits.
-  // A round leaves from where Movement just put the shooter's eye, for where
-  // its rifle points.
-  void OnWeaponHandling(float delta_time, const Player& player, const Body& body, const Eye& eye, Rifle& rifle) {
+  // A round it fires is Posing's to fire, from the Muzzle it places this tick.
+  void OnWeaponHandling(float delta_time, const Player& player, Rifle& rifle) {
     const auto found = tick_commands.find(player.entity);
     const command::Command command = found == tick_commands.end() ? command::Command{} : found->second;
     const weapon::Result result = weapon::Step(parameters.rifle, rifle.state, command, delta_time);
+    rifle.fired = std::nullopt;
+    if (result.fired) {
+      rifle.fired = FiredRound{.aim = weapon::Heading{.yaw = result.yaw, .pitch = result.pitch},
+                               .recoil = rifle.state.recoil,
+                               .shooters_delay = ShootersDelay(tick, command, max_shooters_delay)};
+    }
     rifle.state = result.state;
-    if (!result.fired) {
+  }
+
+  // Poses one player: its body where Movement has just put it, then its rifle
+  // held in its hands, then the rifle's markers where its hand holds them,
+  // turned by the Recoil offset WeaponHandling has just left it with; then fires
+  // the round WeaponHandling fired, if it fired one, from the arm that holds it.
+  void OnPosing(float delta_time, const Player& player, const Body& body, const Facing& facing, const Eye& eye,
+                const Rifle& rifle, const CharacterSkeleton& skeleton, const Clips& clips, PosedJoints& posed,
+                Held& held) {
+    PoseBody(body, facing, skeleton.skeleton, *clips.clips, posed.posed);
+    const math::Mat4 hand =
+        animation::HoldRifle(skeleton.skeleton, clips.clips->weapon_socket, rifle_markers, posed.posed);
+    held.rifle = PlaceRifle(weapon::Recoiled(hand, facing.yaw, facing.pitch, rifle.state.recoil));
+    if (rifle.fired) {
+      FireFromTheMuzzle(
+          delta_time, player, *rifle.fired, weapon::Recoiled(hand, facing.yaw, facing.pitch, rifle.fired->recoil),
+          body.state.position + physics::LowerToStance(eye.standing, body.state.stance),
+          math::TranslationOf(
+              posed.posed.world.at(animation::ShoulderOf(skeleton.skeleton, clips.clips->weapon_socket))));
+    }
+  }
+
+  // Fires round, which player's rifle fired this tick, from the Muzzle of the
+  // rifle hand holds, turned by the Recoil offset from before the round's own
+  // kick, as the view the round is aimed along is: zeroed to cross the line of
+  // sight from eye along that view at the rifle's zero range (ADR-0064). It
+  // leaves from the Muzzle on the grid a Shot's origin travels on, a millimetre
+  // at most from where it was aimed from, so the round fired is the one its
+  // clients are told of. A barrel in the Map, from shoulder to the Muzzle, fires
+  // the round into the Map instead (ADR-0044).
+  void FireFromTheMuzzle(float delta_time, const Player& player, const FiredRound& round, const math::Mat4& hand,
+                         const math::Vec3& eye, const math::Vec3& shoulder) {
+    const math::Vec3 muzzle = math::TranslationOf(weapon::PlaceMuzzle(hand, rifle_markers));
+    if (const std::optional<BarrelInTheMap> blocked = InTheMap(player.entity, shoulder, muzzle)) {
+      FireIntoTheMap(*blocked, round.shooters_delay);
       return;
     }
+    const weapon::Heading heading =
+        weapon::Zeroed(parameters.rifle, parameters.ammo.flight, delta_time, muzzle, eye, round.aim);
     const Shot shot{
         .shooter = player.entity,
-        .origin = math::SnapPosition(body.state.position + physics::LowerToStance(eye.standing, body.state.stance)),
-        .yaw = math::SnapAngle(result.yaw),
-        .pitch = math::SnapAngle(result.pitch),
+        .origin = math::SnapPosition(muzzle),
+        .yaw = math::SnapAngle(heading.yaw),
+        .pitch = math::SnapAngle(heading.pitch),
     };
-    Fire(shot, ShootersDelay(tick, command, max_shooters_delay));
+    Fire(shot, round.shooters_delay);
+  }
+
+  // The Shot of shooter's round when the barrel, from shoulder to muzzle, is in
+  // the Map, with where it enters it; nullopt when the barrel is clear
+  // (ADR-0044). Props are no part of it. The Shot leaves the shoulder toward the
+  // Muzzle, and the barrel is tested along it, on the grids it travels on, so a
+  // client's own Map raycast along the Shot stops where the round is put.
+  [[nodiscard]] std::optional<BarrelInTheMap> InTheMap(EntityId shooter, const math::Vec3& shoulder,
+                                                       const math::Vec3& muzzle) const {
+    // A Muzzle on the shoulder leaves no barrel to test, and no way to aim along it.
+    if (muzzle == shoulder) {
+      return std::nullopt;
+    }
+    const weapon::Heading heading = weapon::HeadingOf(muzzle - shoulder);
+    const Shot shot{
+        .shooter = shooter,
+        .origin = math::SnapPosition(shoulder),
+        .yaw = math::SnapAngle(heading.yaw),
+        .pitch = math::SnapAngle(heading.pitch),
+    };
+    const physics::MapRaycastHit hit = physics.RaycastMap(shot.origin, command::ViewDirection(shot.yaw, shot.pitch),
+                                                          math::Length(muzzle - shot.origin));
+    if (!hit.has_hit) {
+      return std::nullopt;
+    }
+    return BarrelInTheMap{.shot = shot, .entry = hit.point};
+  }
+
+  // Announces blocked's Shot in the tick's state, and its round on the Map where
+  // its barrel enters it, with no bullet to fly.
+  void FireIntoTheMap(const BarrelInTheMap& blocked, float delay) {
+    Announce(blocked.shot, delay);
+    committed.map_impacts.push_back(blocked.entry);
+#if AUGUSTA_DEBUG_TOOLS
+    if (judge_shots) {
+      shot_judgements.push_back(ShotJudgement{.shooter = blocked.shot.shooter,
+                                              .shot_tick = tick,
+                                              .shooters_delay = delay,
+                                              .struck = Struck::kMap,
+                                              .point = blocked.entry,
+                                              .entries = {}});
+    }
+#endif
+  }
+
+  // Poses skeleton by clips, the body's Clips, at its body's state and where it
+  // faces.
+  void PoseBody(const Body& body, const Facing& facing, const assets::Skeleton& skeleton,
+                const animation::CharacterClips& clips, animation::SkeletonPose& posed) {
+    poser.Pose(clips, skeleton,
+               animation::PoseInput{.body = body.state, .yaw = facing.yaw, .pitch = facing.pitch, .ads = facing.ads},
+               posed);
+  }
+
+  // Where the rifle's Muzzle and Sight are, held at its Grip by hand.
+  [[nodiscard]] HeldRifle PlaceRifle(const math::Mat4& hand) const {
+    return HeldRifle{.muzzle = weapon::PlaceMuzzle(hand, rifle_markers),
+                     .sight = weapon::PlaceSight(hand, rifle_markers)};
+  }
+
+  // Announces shot in the tick's state, and its round's Shooter's delay of delay ticks.
+  void Announce(const Shot& shot, float delay) {
+    committed.shots.push_back(shot);
+    // As a fraction of the cap, so a delay held at it is the cap exactly.
+    shooters_delays.push_back(delay / max_shooters_delay * std::chrono::duration<float>(kMaxShootersDelay).count());
   }
 
   // Announces shot in the tick's state and puts its bullet in flight, to be
   // judged against the players as they were delay ticks before each tick of it.
   void Fire(const Shot& shot, float delay) {
-    committed.shots.push_back(shot);
-    // As a fraction of the cap, so a delay held at it is the cap exactly.
-    shooters_delays.push_back(delay / max_shooters_delay * std::chrono::duration<float>(kMaxShootersDelay).count());
+    Announce(shot, delay);
     const ballistics::BulletHandle bullet = ballistics.Fire(shot.origin, command::ViewDirection(shot.yaw, shot.pitch),
                                                             parameters.rifle.muzzle_velocity, parameters.ammo.flight);
     [[maybe_unused]] const flecs::entity entity = ecs.entity().set<Bullet>(
@@ -363,17 +389,23 @@ struct World::Impl {
   // The hitboxes of every player but bullet's shooter, which a bullet never
   // hits, each posed as it was bullet's Shooter's delay before this tick, of
   // those segment passes near enough to cross. A player with no tick behind it
-  // yet is judged where it is. Valid until the next call.
+  // yet is judged as Posing posed it this tick. Valid until the next call.
   std::span<const ballistics::Hitbox> HitboxesFor(const Bullet& bullet, const ballistics::Segment& segment) {
     const double time = static_cast<double>(tick) - static_cast<double>(bullet.shooters_delay);
     posing.BeginBullet(time, segment);
-    targets.each([&](const Player& player, const Body& body, const Facing& facing, const Hitboxes& hitboxes,
+    targets.each([&](const Player& player, const Body& /*alive*/, const Hitboxes& hitboxes, const PosedJoints& posed,
                      const HitboxHistory& history) {
       if (player.entity == bullet.shooter) {
         return;
       }
-      posing.Consider(player.entity, hitboxes.standing, hitboxes.reach,
-                      history.poses.At(time).value_or(PoseOf(body, facing)));
+      const std::optional<hitbox::Pose> seen = history.poses.At(time, judged_joints);
+      if (!seen) {
+        posing.Consider(player.entity, hitboxes.bound, hitboxes.reach.Of(posed.posed.root.position, posed.posed.world),
+                        posed.posed.root, posed.posed.world);
+        return;
+      }
+      posing.Consider(player.entity, hitboxes.bound, hitboxes.reach.Of(seen->position, judged_joints), *seen,
+                      judged_joints);
     });
     return posing.BulletHitboxes();
   }
@@ -466,14 +498,6 @@ struct World::Impl {
   }
 #endif
 
-  // Keeps one player's pose of this tick in its Hitbox history. The test
-  // itself is folded into OnBallistics's ballistics::World::Step call - see
-  // simulation.h's Phase::kHitDetection doc comment - which has run by now: a
-  // Shooter's delay is a tick or more, so no bullet of this tick needs it.
-  void OnHitDetection(const Body& body, const Facing& facing, HitboxHistory& history) const {
-    history.poses.Record(tick, PoseOf(body, facing));
-  }
-
   // Takes this tick's hits on one player off its health, in the order they struck.
   void OnDamage(const Player& player, Health& health) {
     for (const PlayerHit& hit : player_hits) {
@@ -547,16 +571,31 @@ struct World::Impl {
     return policy_bridge.AssignSpawns(view, spawn_points, tick);
   }
 
-  void OnCommit(const Player& player, const Body& body, const Facing& facing, const Health& health,
-                const Rifle& rifle) {
-    committed.bodies.push_back(EntityState{
-        .entity = player.entity, .body = body.state, .yaw = facing.yaw, .health = health.value, .rifle = rifle.state});
+  // Commit, first: packages one living player into the tick's State.
+  void PackageState(const Player& player, const Body& body, const Facing& facing, const Health& health,
+                    const Rifle& rifle) {
+    committed.bodies.push_back(EntityState{.entity = player.entity,
+                                           .body = body.state,
+                                           .yaw = facing.yaw,
+                                           .pitch = facing.pitch,
+                                           .ads = facing.ads,
+                                           .health = health.value,
+                                           .rifle = rifle.state});
     committed.alive.push_back(player.entity);
+  }
+
+  // Commit, then: keeps one living player's Joints as Posing posed them, where
+  // the State puts its body, in its Hitbox history. Every bullet of this tick
+  // has been judged by now, and a Shooter's delay is a tick or more, so none of
+  // them needs this tick's.
+  void RecordHitboxHistory(const PosedJoints& posed, HitboxHistory& history) const {
+    history.poses.Record(tick, posed.posed);
   }
 };
 
-World::World(const parameters::Parameters& parameters, std::uint8_t tick_rate_hz, policy::Policy policy)
-    : impl_(std::make_unique<Impl>(parameters, tick_rate_hz, std::move(policy))) {}
+World::World(const parameters::Parameters& parameters, std::uint8_t tick_rate_hz, policy::Policy policy,
+             const weapon::Markers& rifle)
+    : impl_(std::make_unique<Impl>(parameters, tick_rate_hz, std::move(policy), rifle)) {}
 
 World::~World() = default;
 
@@ -583,10 +622,14 @@ void World::AddPlayer(EntityId entity, const math::Vec3& spawn, const Character&
           .set<Intent>({})
           .set<Facing>({})
           .set<Health>({.value = impl.parameters.starting_health})
+          .set<Clips>({.clips = character.clips})
           .set<Eye>({.standing = character.eye})
-          .set<Hitboxes>({.standing = character.hitboxes, .reach = ReachOf(character.hitboxes)})
-          .set<HitboxHistory>({.poses = PoseHistory(impl.history_ticks)})
-          .set<Rifle>({.state = weapon::Loaded(impl.parameters.rifle)});
+          .set<Hitboxes>({.bound = character.hitboxes, .reach = Reach(character.hitboxes)})
+          .set<CharacterSkeleton>({.skeleton = character.skeleton})
+          .set<PosedJoints>({})
+          .set<HitboxHistory>({.poses = PoseHistory(impl.history_ticks, character.skeleton, character.hitboxes)})
+          .set<Rifle>({.state = weapon::Loaded(impl.parameters.rifle), .fired = std::nullopt})
+          .set<Held>({});
   impl.players.emplace(entity, Impl::Slot{.entity = ecs_entity, .body = body, .identity = identity});
 }
 
@@ -681,6 +724,14 @@ TickResult World::Tick(const std::vector<PlayerCommand>& commands, float delta_t
 #else
   return TickResult{.state = impl.committed, .actions = impl.actions, .shooters_delays = impl.shooters_delays};
 #endif
+}
+
+std::optional<HeldRifle> World::HeldRifleOf(EntityId entity) const {
+  const auto slot = impl_->players.find(entity);
+  if (slot == impl_->players.end() || !slot->second.body.has_value()) {
+    return std::nullopt;
+  }
+  return slot->second.entity.get<Held>().rifle;
 }
 
 #if AUGUSTA_DEBUG_TOOLS

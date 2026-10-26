@@ -94,6 +94,13 @@ tools/agent/src/augusta_agent/*.ilk
 config/augustac.yaml
 config/augustad.yaml
 
+# Cooked, signed packs (tools/README.md) when the checkout is the assets root -
+# cook output, not source.
+/packs/
+# And the signing keys they're cooked with (tools/pack/scripts/bootstrap.sh) -
+# develop's private key above all, which never belongs in git.
+/keys/
+
 # Claude Code per-user state (project .claude/settings.json stays tracked)
 .claude/settings.local.json
 .claude/worktrees/
@@ -111,3 +118,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# The checkout's toolchain, links into the shared store (ADR-0077).
+.toolchain/

@@ -1,6 +1,8 @@
 #ifndef AUGUSTA_SIMULATION_HITBOX_POSING_H_
 #define AUGUSTA_SIMULATION_HITBOX_POSING_H_
 
+#include <array>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -9,9 +11,11 @@
 #include <utility>
 #include <vector>
 
+#include "augusta/assets.h"
 #include "augusta/ballistics.h"
 #include "augusta/body_part.h"
 #include "augusta/hitbox.h"
+#include "augusta/math.h"
 #include "augusta/physics.h"
 #include "augusta/simulation.h"
 
@@ -29,10 +33,34 @@ namespace augusta::simulation {
 /// Surface, reserved for it, so a strike on it is never read as anything else.
 inline constexpr physics::SurfaceId kMapSurface{0};
 
-/// How far from its root a character's hitboxes reach, posed in any stance: a
-/// bullet that passes farther from where a pose puts its root crosses none of
-/// them.
-[[nodiscard]] float ReachOf(std::span<const hitbox::CharacterHitbox> hitboxes);
+/// How far from its root a character's hitboxes reach in a pose (ADR-0061): a
+/// bullet that passes farther from where the pose puts its root crosses none of
+/// them. Each Hitbox's farthest point from its Joint is measured once, when the
+/// character is added; a pose adds how far it holds each Joint from the root,
+/// so the reach holds whatever a Clip does with the Joints.
+class Reach {
+ public:
+  /// Measures hitboxes, each in the space of its Joint.
+  explicit Reach(std::span<const hitbox::CharacterHitbox> hitboxes);
+  /// Reaching nowhere: what a character with no hitboxes, which cannot be hit,
+  /// would reach, but for the margin.
+  Reach() = default;
+
+  /// How far the hitboxes reach from root, where a pose puts the character's
+  /// root, when joints are each Joint's world transform in it, plus a margin.
+  /// Each Hitbox's Joint must be one joints has, as hitbox::Place requires.
+  [[nodiscard]] float Of(const math::Vec3& root, std::span<const math::Mat4> joints) const;
+
+ private:
+  // One Hitbox's Joint, and how far from the Joint's origin it reaches in the
+  // Joint's own space.
+  struct Extent {
+    std::uint32_t joint = 0;
+    float radius = 0.0F;
+  };
+
+  std::vector<Extent> extents_;
+};
 
 /// A player a bullet is tested against, and the pose its hitboxes are placed by.
 struct PosedTarget {
@@ -60,11 +88,11 @@ class HitboxPosing {
   /// moment counted in ticks, along segment, its path this tick.
   void BeginBullet(double time, const ballistics::Segment& segment);
 
-  /// Adds target's hitboxes, as authored standing in its root space and
-  /// reaching reach from it, posed by pose, to the bullet's, if its segment
-  /// passes near enough to cross them.
-  void Consider(EntityId target, std::span<const hitbox::CharacterHitbox> standing, float reach,
-                const hitbox::Pose& pose);
+  /// Adds target's hitboxes, each in the space of its Joint and reaching reach
+  /// from its root at pose, placed by joints, each Joint's world transform at
+  /// pose, to the bullet's, if its segment passes near enough to cross them.
+  void Consider(EntityId target, std::span<const hitbox::CharacterHitbox> hitboxes, float reach,
+                const hitbox::Pose& pose, std::span<const math::Mat4> joints);
 
   /// The bullet's hitboxes, each with its Surface id. Valid until the next
   /// BeginBullet or Clear.

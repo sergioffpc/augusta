@@ -43,9 +43,11 @@
 #include "augusta/policy.h"
 #include "augusta/prediction.h"
 #include "augusta/protocol.h"
-#include "augusta/raw_link.h"
 #include "augusta/replay_catalog.h"
 #include "augusta/version.h"
+#include "clips_fixture.h"
+#include "raw_link.h"
+#include "scenario_fixture.h"
 
 // A replay server (ADR-0051) over loopback, driven by hand: what a Replay
 // viewer, a Replay list request and a Join request get from it, and the whole
@@ -103,15 +105,23 @@ class NetworkEnvironment : public ::testing::Environment {
 [[maybe_unused]] ::testing::Environment* const kNetworkEnvironment =
     ::testing::AddGlobalTestEnvironment(new NetworkEnvironment);
 
-// A hitbox for part: the box from low to high, as the twelve triangles of its faces.
-augusta::assets::HitboxData BoxHitbox(augusta::assets::BodyPart part, const Vec3& low, const Vec3& high) {
-  return augusta::assets::HitboxData{
-      .part = part,
-      .mesh = {.points = {Vec3(low.x, low.y, low.z), Vec3(high.x, low.y, low.z), Vec3(high.x, high.y, low.z),
-                          Vec3(low.x, high.y, low.z), Vec3(low.x, low.y, high.z), Vec3(high.x, low.y, high.z),
-                          Vec3(high.x, high.y, high.z), Vec3(low.x, high.y, high.z)},
-               .indices = {0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 0, 4, 5, 0, 5, 1,
-                           3, 2, 6, 3, 6, 7, 0, 3, 7, 0, 7, 4, 1, 5, 6, 1, 6, 2}}};
+// A Skeleton of one Joint, at the character's feet.
+augusta::assets::Skeleton RootOnly() {
+  return {.joints = {{.name = "Root"}}, .rest_transforms = {augusta::math::Mat4(1.0F)}};
+}
+
+// A hitbox for part on RootOnly's Joint: the box from low to high, as the twelve
+// triangles of its faces.
+augusta::assets::JointHitbox BoxHitbox(augusta::assets::BodyPart part, const Vec3& low, const Vec3& high) {
+  return {.joint = 0,
+          .hitbox = {
+              .part = part,
+              .joint = "Root",
+              .mesh = {.points = {Vec3(low.x, low.y, low.z), Vec3(high.x, low.y, low.z), Vec3(high.x, high.y, low.z),
+                                  Vec3(low.x, high.y, low.z), Vec3(low.x, low.y, high.z), Vec3(high.x, low.y, high.z),
+                                  Vec3(high.x, high.y, high.z), Vec3(low.x, high.y, high.z)},
+                       .indices = {0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 0, 4, 5, 0, 5, 1,
+                                   3, 2, 6, 3, 6, 7, 0, 3, 7, 0, 7, 4, 1, 5, 6, 1, 6, 2}}}};
 }
 
 CollisionMesh Floor() {
@@ -127,12 +137,13 @@ Scenario TwoInALine() {
   return Scenario{
       .collision = {Floor()},
       .spawn_points = {Vec3(0.0F, 0.0F, 0.0F), Vec3(0.0F, 0.0F, -kSpacing)},
-      .characters =
-          {{.path = kCharacter,
-            .hitboxes = {BoxHitbox(augusta::assets::BodyPart::kHead, Vec3(-0.1F, 1.5F, -0.1F), Vec3(0.1F, 1.8F, 0.1F)),
-                         BoxHitbox(augusta::assets::BodyPart::kTorso, Vec3(-0.2F, 0.9F, -0.1F), Vec3(0.2F, 1.5F, 0.1F)),
-                         BoxHitbox(augusta::assets::BodyPart::kLimb, Vec3(-0.2F, 0.0F, -0.1F), Vec3(0.2F, 0.9F, 0.1F))},
-            .eye = Vec3(0.0F, kEyeHeight, 0.0F)}},
+      .characters = {augusta::scenario_fixture::Rigged(
+          {.path = kCharacter,
+           .hitboxes = {BoxHitbox(augusta::assets::BodyPart::kHead, Vec3(-0.1F, 1.5F, -0.1F), Vec3(0.1F, 1.8F, 0.1F)),
+                        BoxHitbox(augusta::assets::BodyPart::kTorso, Vec3(-0.2F, 0.9F, -0.1F), Vec3(0.2F, 1.5F, 0.1F)),
+                        BoxHitbox(augusta::assets::BodyPart::kLimb, Vec3(-0.2F, 0.0F, -0.1F), Vec3(0.2F, 0.9F, 0.1F))},
+           .skeleton = RootOnly(),
+           .eye = Vec3(0.0F, kEyeHeight, 0.0F)})},
       .client_pack = {}};
 }
 
@@ -248,7 +259,7 @@ std::string CaptureAKill(const std::filesystem::path& directory) {
   Host host(config, TwoInALine(), Policy());
   std::vector<std::unique_ptr<augusta::harness::Session>> sessions;
   for (int i = 0; i < 2; ++i) {
-    augusta::prediction::World world;
+    augusta::prediction::World world(augusta::clips_fixture::TestClips());
     EXPECT_TRUE(world.AddCollisionMesh(Floor()).has_value());
     sessions.push_back(std::make_unique<augusta::harness::Session>(
         augusta::harness::SessionConfig{.server = {.address = host.ListenEndpoint().address}, .character = kCharacter},
@@ -510,7 +521,7 @@ TEST_F(ReplayServerTest, AReplayRequestFromAnotherVersionOrPackIsRefusedForItBef
 }
 
 // Requirements: US-21
-TEST_F(ReplayServerTest, AViewerIsSentAMatchsStartStatesViewsAndEndThenClosed) {
+TEST_F(ReplayServerTest, AViewerIsSentAMatchsStartStatesAndEndThenClosed) {
   const std::string name = CaptureAKill(directory_.Path());
   if (name.empty()) {
     return;  // CaptureAKill reported the missing capture.
@@ -540,19 +551,18 @@ TEST_F(ReplayServerTest, AViewerIsSentAMatchsStartStatesViewsAndEndThenClosed) {
     EXPECT_EQ(starts[0].players[i].entity, static_cast<protocol::EntityIdWire>(i + 1));
     EXPECT_EQ(starts[0].players[i].spawn, join.spawn);
   }
-  EXPECT_FALSE(Of<protocol::AuthoritativeStateWire>(received).empty());
-  for (const protocol::AuthoritativeStateWire& state : Of<protocol::AuthoritativeStateWire>(received)) {
+  const std::vector<protocol::AuthoritativeStateWire> states = Of<protocol::AuthoritativeStateWire>(received);
+  ASSERT_FALSE(states.empty());
+  for (const protocol::AuthoritativeStateWire& state : states) {
     EXPECT_EQ(state.health, 0.0F);
     EXPECT_EQ(state.acknowledged_sequence, 0U);
   }
-  // The shooter's pitch and ADS, which no Authoritative State carries.
-  const std::vector<protocol::ReplayViewWire> views = Of<protocol::ReplayViewWire>(received);
-  ASSERT_FALSE(views.empty());
-  const auto shooter =
-      std::ranges::find(views.back().players, protocol::EntityIdWire{1}, &protocol::PlayerViewWire::entity);
-  ASSERT_NE(shooter, views.back().players.end());
+  // The shooter's pitch and ADS, as the replayed state carries them.
+  const std::vector<protocol::EntityStateWire>& last = states.back().bodies;
+  const auto shooter = std::ranges::find(last, protocol::EntityIdWire{1}, &protocol::EntityStateWire::entity);
+  ASSERT_NE(shooter, last.end());
   EXPECT_GT(shooter->pitch, 0.0F);
-  EXPECT_EQ(shooter->flags, protocol::PlayerViewWire::kAds);
+  EXPECT_NE(shooter->body.flags & protocol::BodyStateWire::kAds, 0);
   EXPECT_FALSE(Of<protocol::ShotWire>(received).empty());
   EXPECT_TRUE(Of<protocol::HitConfirmationWire>(received).empty());
   const std::vector<protocol::DeathWire> deaths = Of<protocol::DeathWire>(received);
@@ -652,9 +662,9 @@ TEST_F(ReplayServerTest, TwoViewersEachWatchFromTheStartAndOnePastTheMostIsRefus
 
   // Each saw the Match from its first tick to its end.
   for (const RawClient* viewer : {&first, &second}) {
-    const auto views = viewer->ReceivedOf<protocol::ReplayViewWire>();
-    ASSERT_FALSE(views.empty());
-    const auto first_tick = std::ranges::min(views, {}, &protocol::ReplayViewWire::tick).tick;
+    const auto states = viewer->ReceivedOf<protocol::AuthoritativeStateWire>();
+    ASSERT_FALSE(states.empty());
+    const auto first_tick = std::ranges::min(states, {}, &protocol::AuthoritativeStateWire::tick).tick;
     EXPECT_LE(first_tick, 2U);
     EXPECT_EQ(viewer->ReceivedOf<protocol::DeathWire>().size(), 1U);
     EXPECT_EQ(viewer->ReceivedOf<protocol::MatchEndWire>().size(), 1U);
@@ -670,7 +680,7 @@ class ReplayViewerTest : public ReplayServerTest {
     auto viewer = std::make_unique<augusta::harness::Session>(
         augusta::harness::SessionConfig{
             .server = {.address = server.ListenEndpoint().address}, .character = {}, .replay = capture, .run = run},
-        augusta::prediction::World());
+        augusta::prediction::World(augusta::clips_fixture::TestClips()));
     viewer->Connect();
     return viewer;
   }
@@ -732,8 +742,8 @@ TEST_F(ReplayViewerTest, AViewerWatchesACaptureFromItsFirstTickToItsEndWithEvery
   ASSERT_TRUE(RunUntil(
       *server, *viewer,
       [&] {
-        const auto& view = viewer->GetServerView()->replay_view;
-        return view.has_value() && !view->players.empty() && view->players[0].ads;
+        const auto& state = viewer->GetServerView()->authoritative;
+        return state.has_value() && !state->bodies.empty() && state->bodies[0].ads;
       },
       true));
   const std::shared_ptr<const augusta::harness::ServerView> watching = viewer->GetServerView();
@@ -741,11 +751,11 @@ TEST_F(ReplayViewerTest, AViewerWatchesACaptureFromItsFirstTickToItsEndWithEvery
   EXPECT_FALSE(watching->OwnEntity().has_value());
   EXPECT_EQ(watching->match_start->players.size(), 2U);
   EXPECT_EQ(watching->match_start->first_tick, 1U);
-  ASSERT_EQ(watching->replay_view->players.size(), 2U);
-  EXPECT_EQ(watching->replay_view->players[0].entity, augusta::harness::EntityId{1});
-  EXPECT_GT(watching->replay_view->players[0].pitch, 0.0F);
-  EXPECT_TRUE(watching->replay_view->players[0].ads);
-  EXPECT_FALSE(watching->replay_view->players[1].ads);
+  ASSERT_EQ(watching->authoritative->bodies.size(), 2U);
+  EXPECT_EQ(watching->authoritative->bodies[0].entity, augusta::harness::EntityId{1});
+  EXPECT_GT(watching->authoritative->bodies[0].pitch, 0.0F);
+  EXPECT_TRUE(watching->authoritative->bodies[0].ads);
+  EXPECT_FALSE(watching->authoritative->bodies[1].ads);
   // It predicts nothing and sends nothing, however it is ticked.
   EXPECT_EQ(viewer->Tick(Command{}, kFixedTick).local_body.position, Vec3{});
 
@@ -784,7 +794,7 @@ TEST_F(ReplayViewerTest, APlayersClientIsRefusedAsAReplayServerRefusesAnyRequest
   const std::unique_ptr<ReplayServer> server = Serve();
   augusta::harness::Session player(
       augusta::harness::SessionConfig{.server = {.address = server->ListenEndpoint().address}, .character = kCharacter},
-      augusta::prediction::World());
+      augusta::prediction::World(augusta::clips_fixture::TestClips()));
   player.Connect();
 
   ASSERT_TRUE(RunUntil(*server, player, [&] { return player.GetFailure().has_value(); }));
@@ -800,7 +810,7 @@ TEST_F(ReplayViewerTest, ACapturedPlayersClientIsRefusedAsAReplayServerRefusesAn
       augusta::harness::SessionConfig{.server = {.address = server->ListenEndpoint().address},
                                       .character = kCharacter,
                                       .spawn = augusta::math::Vec3(1.0F, 0.0F, 2.0F)},
-      augusta::prediction::World());
+      augusta::prediction::World(augusta::clips_fixture::TestClips()));
   player.Connect();
 
   ASSERT_TRUE(RunUntil(*server, player, [&] { return player.GetFailure().has_value(); }));

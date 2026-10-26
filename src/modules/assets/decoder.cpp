@@ -305,18 +305,47 @@ std::optional<SpawnPointData> DecodeSpawnPointBlob(std::span<const std::byte> bl
 
 // Hitbox blob wire format: see EncodeHitboxBlob.
 std::optional<HitboxData> DecodeHitboxBlob(std::span<const std::byte> blob) {
-  if (blob.empty()) {
+  ByteReader reader(blob);
+  const auto part = reader.ReadU8();
+  if (!part || *part > static_cast<std::uint8_t>(BodyPart::kLimb)) {
     return std::nullopt;
   }
-  const auto part = static_cast<std::uint8_t>(blob.front());
-  if (part > static_cast<std::uint8_t>(BodyPart::kLimb)) {
+  auto joint = reader.ReadString();
+  if (!joint) {
     return std::nullopt;
   }
-  auto mesh = DecodeMeshBlob(blob.subspan(1));
+  auto mesh = DecodeMeshBlob(reader.ReadRest());
   if (!mesh) {
     return std::nullopt;
   }
-  return HitboxData{.part = static_cast<BodyPart>(part), .mesh = *std::move(mesh)};
+  return HitboxData{.part = static_cast<BodyPart>(*part), .joint = *std::move(joint), .mesh = *std::move(mesh)};
+}
+
+// Skeleton blob wire format: see EncodeSkeletonBlob. Only joints listed parents
+// before children are a skeleton, so a parent's index is below its child's.
+std::optional<SkeletonData> DecodeSkeletonBlob(std::span<const std::byte> blob) {
+  ByteReader reader(blob);
+  const auto count = reader.ReadU32();
+  if (!count || *count > kMaxJoints) {
+    return std::nullopt;
+  }
+  SkeletonData skeleton;
+  // Capped at kMaxJoints, so reserving on its word can't over-allocate.
+  skeleton.joints.reserve(*count);
+  for (std::uint32_t index = 0; index < *count; ++index) {
+    auto name = reader.ReadString();
+    const auto parent = reader.ReadU32();
+    const auto transform = ReadTransform(reader);
+    if (!name || !parent || !transform || (*parent != kJointNoParent && *parent >= index)) {
+      return std::nullopt;
+    }
+    skeleton.joints.push_back(JointData{.name = *std::move(name),
+                                        .parent = *parent,
+                                        .translation = transform->translation,
+                                        .rotation = transform->rotation,
+                                        .scale = transform->scale});
+  }
+  return skeleton;
 }
 
 // Eye blob wire format: see EncodeEyeBlob.
@@ -327,6 +356,37 @@ std::optional<EyeData> DecodeEyeBlob(std::span<const std::byte> blob) {
     return std::nullopt;
   }
   return EyeData{.position = *position};
+}
+
+// Rifle blob wire format: see EncodeRifleBlob.
+std::optional<RifleData> DecodeRifleBlob(std::span<const std::byte> blob) {
+  ByteReader reader(blob);
+  RifleData rifle;
+  for (RifleMarker* marker : {&rifle.grip, &rifle.muzzle, &rifle.sight, &rifle.fore_end}) {
+    const auto translation = ReadVec3(reader);
+    const auto rotation = ReadQuat(reader);
+    if (!translation || !rotation) {
+      return std::nullopt;
+    }
+    *marker = {.translation = *translation, .rotation = *rotation};
+  }
+  return rifle;
+}
+
+// Weapon socket blob wire format: see EncodeWeaponSocketBlob.
+std::optional<WeaponSocketData> DecodeWeaponSocketBlob(std::span<const std::byte> blob) {
+  ByteReader reader(blob);
+  auto right_hand = reader.ReadString();
+  const auto translation = ReadVec3(reader);
+  const auto rotation = ReadQuat(reader);
+  auto left_hand = reader.ReadString();
+  if (!right_hand || !translation || !rotation || !left_hand) {
+    return std::nullopt;
+  }
+  return WeaponSocketData{.right_hand = *std::move(right_hand),
+                          .translation = *translation,
+                          .rotation = *rotation,
+                          .left_hand = *std::move(left_hand)};
 }
 
 // Script blob: the script's text as it is, with no framing and no terminator.
@@ -403,6 +463,59 @@ std::optional<CueSoundData> DecodeCueSoundBlob(std::span<const std::byte> blob) 
     sound.variants.push_back(std::move(*variant));
   }
   return sound;
+}
+
+// Animation-skeleton blob wire format: see EncodeAnimationSkeletonBlob. The
+// archive is ozz-animation's to read.
+std::optional<std::vector<std::byte>> DecodeAnimationSkeletonBlob(std::span<const std::byte> blob) {
+  if (blob.size() > kMaxArchiveBytes) {
+    return std::nullopt;
+  }
+  return std::vector<std::byte>(blob.begin(), blob.end());
+}
+
+// Clip blob wire format: see EncodeClipBlob.
+std::optional<ClipData> DecodeClipBlob(std::span<const std::byte> blob) {
+  ByteReader reader(blob);
+  const auto stride_length = reader.ReadF32();
+  const auto count = reader.ReadU8();
+  if (!stride_length || !IsValidStrideLength(*stride_length) || !count) {
+    return std::nullopt;
+  }
+  ClipData clip{.stride_length = *stride_length};
+  clip.foot_contacts.reserve(*count);
+  for (std::uint8_t i = 0; i < *count; ++i) {
+    const auto foot = reader.ReadU8();
+    const auto ratio = reader.ReadF32();
+    if (!foot || *foot > static_cast<std::uint8_t>(Foot::kRight) || !ratio || !IsValidFootContactRatio(*ratio)) {
+      return std::nullopt;
+    }
+    clip.foot_contacts.push_back({.foot = static_cast<Foot>(*foot), .ratio = *ratio});
+  }
+  const auto archive = reader.ReadRest();
+  if (archive.size() > kMaxArchiveBytes) {
+    return std::nullopt;
+  }
+  clip.archive.assign(archive.begin(), archive.end());
+  return clip;
+}
+
+// Stance-transitions blob wire format: see EncodeStanceTransitionsBlob.
+std::optional<StanceTransitionsData> DecodeStanceTransitionsBlob(std::span<const std::byte> blob) {
+  ByteReader reader(blob);
+  const auto standing_crouching = reader.ReadF32();
+  const auto standing_prone = reader.ReadF32();
+  const auto crouching_prone = reader.ReadF32();
+  if (!standing_crouching || !standing_prone || !crouching_prone || !reader.ReadRest().empty() ||
+      !IsValidTransitionDuration(*standing_crouching) || !IsValidTransitionDuration(*standing_prone) ||
+      !IsValidTransitionDuration(*crouching_prone)) {
+    return std::nullopt;
+  }
+  return StanceTransitionsData{
+      .standing_crouching = *standing_crouching,
+      .standing_prone = *standing_prone,
+      .crouching_prone = *crouching_prone,
+  };
 }
 
 }  // namespace augusta::assets

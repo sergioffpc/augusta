@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <cstddef>
 #include <span>
 #include <utility>
+#include <vector>
 
 #include "augusta/ballistics.h"
 #include "augusta/hitbox.h"
@@ -16,7 +18,7 @@ namespace augusta::simulation {
 
 namespace {
 
-// What ReachOf adds to the farthest point of a character's hitboxes: far above
+// What Reach::Of adds to how far a pose holds a character's hitboxes: far above
 // the rounding of posing them, or of Reaches, anywhere on the position grid, so
 // culling by it never drops a hitbox a bullet crosses.
 constexpr float kReachMargin = 0.1F;
@@ -46,16 +48,32 @@ std::size_t PosedHitboxOf(physics::SurfaceId surface) {
 
 }  // namespace
 
-// Measured standing: any other stance only lowers a point
-// (physics::LowerToStance), which brings it no farther from the root.
-float ReachOf(std::span<const hitbox::CharacterHitbox> hitboxes) {
-  float reach = 0.0F;
+Reach::Reach(std::span<const hitbox::CharacterHitbox> hitboxes) {
+  extents_.reserve(hitboxes.size());
   for (const hitbox::CharacterHitbox& hitbox : hitboxes) {
+    float radius = 0.0F;
     for (const ballistics::Triangle& triangle : hitbox.triangles) {
       for (const math::Vec3& point : {triangle.a, triangle.b, triangle.c}) {
-        reach = std::max(reach, math::Length(point));
+        radius = std::max(radius, math::Length(point));
       }
     }
+    extents_.push_back(Extent{.joint = hitbox.joint, .radius = radius});
+  }
+}
+
+// A point radius from a Joint's origin is no farther from it in the world than
+// radius times the Joint's largest stretch, which its linear part's Frobenius
+// norm bounds whatever scale a Skeleton composes into it.
+float Reach::Of(const math::Vec3& root, std::span<const math::Mat4> joints) const {
+  float reach = 0.0F;
+  for (const Extent& extent : extents_) {
+    assert(extent.joint < joints.size());
+    const math::Mat4& joint = joints[extent.joint];
+    const math::Vec3 origin(joint[3]);
+    const float stretch = std::sqrt(math::Dot(math::Vec3(joint[0]), math::Vec3(joint[0])) +
+                                    math::Dot(math::Vec3(joint[1]), math::Vec3(joint[1])) +
+                                    math::Dot(math::Vec3(joint[2]), math::Vec3(joint[2])));
+    reach = std::max(reach, math::Length(origin - root) + (extent.radius * stretch));
   }
   return reach + kReachMargin;
 }
@@ -73,16 +91,16 @@ void HitboxPosing::BeginBullet(double time, const ballistics::Segment& segment) 
   bullet_targets_.clear();
 }
 
-void HitboxPosing::Consider(EntityId target, std::span<const hitbox::CharacterHitbox> standing, float reach,
-                            const hitbox::Pose& pose) {
+void HitboxPosing::Consider(EntityId target, std::span<const hitbox::CharacterHitbox> hitboxes, float reach,
+                            const hitbox::Pose& pose, std::span<const math::Mat4> joints) {
   if (!Reaches(bullet_segment_, pose.position, reach)) {
     return;
   }
   // Posed now if no bullet of this tick has asked for them at this moment yet.
   const auto [posing, added] = posings_.try_emplace(PosingKey{.target = target, .time = bullet_time_},
-                                                    Posing{.first = posed_hitboxes_.size(), .count = standing.size()});
+                                                    Posing{.first = posed_hitboxes_.size(), .count = hitboxes.size()});
   if (added) {
-    for (const hitbox::PlacedHitbox& placed : hitbox::Place(standing, pose)) {
+    for (const hitbox::PlacedHitbox& placed : hitbox::Place(hitboxes, joints)) {
       posed_hitboxes_.push_back(PosedHitbox{.struck = {.target = target, .part = placed.part},
                                             .first = posed_triangles_.size(),
                                             .count = placed.triangles.size()});

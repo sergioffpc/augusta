@@ -102,7 +102,8 @@ class Agent:
         """Aims as intent says, every tick; returns how it ends.
 
         Look holds a view and ends only REPLACED; AimAt follows its target's
-        body and ends TARGET_GONE once it is dead or out of the Match.
+        body down sights and ends TARGET_GONE once it is dead or out of the
+        Match.
         """
         return self._set(lambda: self._native.set_aim(intent))
 

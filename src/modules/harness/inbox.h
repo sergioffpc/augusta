@@ -71,7 +71,6 @@ class Inbox {
   void OnHitConfirmation(const HitConfirmation& hit);
   void OnDeath(const Death& death);
   void OnAuthoritativeState(AuthoritativeState state);
-  void OnReplayView(ReplayView view);
 #if AUGUSTA_DEBUG_TOOLS
   void OnShotJudgement(const ShotJudgement& judgement);
 #endif

@@ -40,6 +40,10 @@ struct EntityBody {
   physics::BodyState body{};
   /// Where the body faces, as a yaw in radians.
   float yaw = 0.0F;
+  /// Where its player's view looks up or down, in radians.
+  float pitch = 0.0F;
+  /// Whether its player aims down sights.
+  bool ads = false;
 };
 
 /// What one recipient alone is sent for a tick, beside the bodies every recipient is sent.

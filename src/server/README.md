@@ -1,26 +1,26 @@
 # server
 
 `augusta_server`, `augusta_server_application`, `augusta_server_metrics`,
-`augusta_server_liveness`, `augusta_server_connection_health`, all in
-`augusta::server`, and augustad, the executable that runs them. Server-only: the
-client never links it.
+`augusta_server_metrics_liveness`, `augusta_server_metrics_connection_health`,
+all in `augusta::server`, and augustad, the executable that runs them.
+Server-only: the client never links it.
 
 ## Responsibility
 
 The server Runtime, augustad's: it runs a Host, or in replay mode a Replay
 server, on the Network I/O and Simulation threads at the fixed tick rate, with
 its config and its clock, and runs it behind the application boundary in
-augustad's Lifecycle, each phase classifying its own failure. Beside it, it
-serves `/metrics` and `/livez` from a metrics endpoint, answering the latter by
-whether the tick loop is still running, and reports each client's Connection
-health as metrics. In a Development build, when `debug.network.pcapng` names a
-directory, it builds the pcapng writer the Host's listening socket or the replay
-server's endpoint is tapped with, one file per run (ADR-0076).
+augustad's Program, each phase classifying its own failure. Beside it, it serves
+`/metrics` and `/livez` from a metrics endpoint, answering the latter by whether
+the tick loop is still running, and reports each client's Connection health as
+metrics. In a Development build, when `debug.network.pcapng` names a directory,
+it builds the pcapng writer the Host's listening socket or the replay server's
+endpoint is tapped with, one file per run (ADR-0076).
 
 ## Not its responsibility
 
 - What augustad's entry point (`main.cpp`) does: install the crash handler, read
-  the command line, install the signal handlers, then run the Lifecycle and
+  the command line, install the signal handlers, then run the Program and
   conclude its outcome - Glue, tested only end to end (ADR-0060).
 - Admitting clients, screening their commands, ticking and replicating a Match:
   host, which the Runtime only runs.

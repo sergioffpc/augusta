@@ -36,6 +36,10 @@
 /// flecs::system that runs once per Tick regardless of matched entities
 /// - see prediction.cpp; what each does is documented on its Phase
 /// enumerator below.
+namespace augusta::animation {
+struct CharacterClips;
+}  // namespace augusta::animation
+
 namespace augusta::prediction {
 
 /// PredictionWorld's five phases (ADR-0024), executed in this exact
@@ -58,7 +62,10 @@ enum class Phase {
   kReconciliation,
   /// Mechanism. Predicted PhysX movement, stamina -
   /// augusta::physics::World::Step, same interface SimulationWorld's
-  /// Movement phase uses on the authoritative body.
+  /// Movement phase uses on the authoritative body - and the Stride, advanced
+  /// as SimulationWorld advances it (animation::StrideLength), by the local
+  /// player's Character's Clips and the yaw of its Command on the grid it
+  /// travels on.
   kMovement,
   /// Mechanism. Predicts the local player's own fire, reload and recoil
   /// (US-07 to US-09) - augusta::weapon::Step, the same function
@@ -139,8 +146,12 @@ class World {
   /// plus the Flecs world with Phase's five phases and their systems
   /// registered (see header comment). It holds no rules of the server's until
   /// Start gives it them, so nothing is predicted with rules of its own: until
-  /// then its rifle holds no round and fires nothing.
-  World();
+  /// then its rifle holds no round and fires nothing. clips are the Clips of
+  /// the Character the local player plays, which its Stride and its changes of
+  /// stance advance by as the server's do (ADR-0066). Every Character has them;
+  /// they are null only for a name no pack has, which the server refuses to
+  /// join, so no tick is ever predicted without them.
+  explicit World(std::shared_ptr<const animation::CharacterClips> clips);
   ~World();
 
   /// Adds immovable level geometry to this world's physics, the same way SimulationWorld does.

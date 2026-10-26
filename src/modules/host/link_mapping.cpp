@@ -1,4 +1,4 @@
-#include "augusta/link_mapping.h"
+#include "link_mapping.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -15,11 +15,10 @@
 #include "augusta/match.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
-#include "augusta/replay.h"
 #include "augusta/replication.h"
 #include "augusta/simulation.h"
-#include "augusta/simulation_mapping.h"
 #include "augusta/tick.h"
+#include "simulation_mapping.h"
 
 namespace augusta::host {
 
@@ -86,8 +85,11 @@ link::AuthoritativeState ToLink(const replication::Updates& updates) {
   link::AuthoritativeState state{.tick = updates.tick, .bodies = {}};
   state.bodies.reserve(updates.bodies.size());
   for (const replication::EntityBody& body : updates.bodies) {
-    state.bodies.push_back(
-        link::EntityBody{.entity = ToLink(FromSimulation(body.entity)), .body = body.body, .yaw = body.yaw});
+    state.bodies.push_back(link::EntityBody{.entity = ToLink(FromSimulation(body.entity)),
+                                            .body = body.body,
+                                            .yaw = body.yaw,
+                                            .pitch = body.pitch,
+                                            .ads = body.ads});
   }
   return state;
 }
@@ -117,15 +119,6 @@ link::Death ToLink(const replication::Death& death) {
                      .yaw = death.yaw,
                      .pitch = death.pitch,
                      .part = death.part};
-}
-
-link::ReplayView ToLink(const std::vector<PlayerView>& views, tick::Tick tick) {
-  link::ReplayView view{.tick = tick, .players = {}};
-  view.players.reserve(views.size());
-  for (const PlayerView& player : views) {
-    view.players.push_back(link::PlayerView{.entity = ToLink(player.entity), .pitch = player.pitch, .ads = player.ads});
-  }
-  return view;
 }
 
 #if AUGUSTA_DEBUG_TOOLS

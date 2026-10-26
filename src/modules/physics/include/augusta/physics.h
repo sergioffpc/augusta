@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_PHYSICS_H_
 #define AUGUSTA_PHYSICS_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -10,6 +11,7 @@
 #include <string_view>
 #include <vector>
 
+#include "augusta/assets.h"
 #include "augusta/math.h"
 
 /// \file
@@ -37,9 +39,13 @@ enum class Stance {
   kStanding,
   /// Crouching: reduced collision height, reduced movement speed.
   kCrouching,
-  /// Prone: minimal collision height, slowest movement speed.
+  /// Prone: minimal collision height, slowest movement speed. Keep last:
+  /// kStanceCount counts from it.
   kProne,
 };
+
+/// How many stances Stance names, numbered from 0.
+inline constexpr std::size_t kStanceCount = static_cast<std::size_t>(Stance::kProne) + 1;
 
 /// How tall a body is in stance, feet to the top of its collision capsule, in
 /// meters - lower crouching than standing, and lower prone than crouching.
@@ -98,13 +104,16 @@ struct MovementInput {
   bool operator==(const MovementInput&) const = default;
 };
 
-/// What World::Step carries from one tick to the next besides BodyState: the fall
-/// and ground tracking. Putting a body back at an earlier state (World::Restore)
-/// puts this back too, or the fall would carry on from the wrong speed.
+/// What World::Step carries from one tick to the next besides BodyState: the
+/// fall's speed. Putting a body back at an earlier state (World::Restore) puts
+/// this back too, or the fall would carry on from the wrong speed.
 struct FallState {
   float vertical_speed = 0.0F;
-  bool grounded = false;
 };
+
+/// How many steps a change of stance's progress has (BodyState::stance_progress):
+/// at this many the change is over, one byte on the wire (ADR-0038).
+inline constexpr int kStanceProgressSteps = 255;
 
 /// A body's full movement-relevant state at a point in time: what
 /// World::Step returns, what World::SetState and World::Restore consume,
@@ -112,9 +121,9 @@ struct FallState {
 /// each tick.
 struct BodyState {
   /// World-space position, in engine units (1 unit = 1 meter).
-  math::Vec3 position;
+  math::Vec3 position{};
   /// World-space linear velocity, in engine units per second.
-  math::Vec3 velocity;
+  math::Vec3 velocity{};
   /// The body's current stance, after any transition resolved this tick.
   Stance stance = Stance::kStanding;
   /// Remaining stamina, normalized to [0, 1]. 0 means fully depleted; 1 means
@@ -124,9 +133,44 @@ struct BodyState {
   /// StaminaConfig::forced_walk_below: while set, sprint is ignored. It changes
   /// what the next commands do, so it travels and is restored with the rest.
   bool exhausted = false;
+  /// The body's Stride (GLOSSARY.md, ADR-0066): where it is in its cycle of
+  /// two steps, in kStrideSteps steps of a cycle. Step advances it by the
+  /// distance the body moves, never by time, so it travels and is restored with
+  /// the rest.
+  std::uint8_t stride = 0;
+  /// The stance the body changed from on its last change of stance, and how far
+  /// that change has gone, in kStanceProgressSteps steps (ADR-0066): its pose
+  /// blends previous_stance's into stance's by it. Step advances it by the time
+  /// stepped over the change's transition duration (Pacing), never by a clock of
+  /// its own, so it travels and is restored with the rest. A body that never
+  /// changed stance is all in its stance.
+  Stance previous_stance = Stance::kStanding;
+  std::uint8_t stance_progress = kStanceProgressSteps;
+  /// Whether the body stood on something as of its last Step (kGrounded,
+  /// ADR-0062): off the ground, it falls, and its Hitbox pose is its Character's
+  /// air Clip (ADR-0066). The next Step's fall starts over from it.
+  bool grounded = false;
 
   bool operator==(const BodyState&) const = default;
 };
+
+/// What a body's Clips (ADR-0066) pace its Movement by, which World::Step takes
+/// from its caller (animation::PacingOf): how far one Stride, a cycle of two
+/// steps, takes the body at its gait, in meters, and how long each change
+/// between two stances takes. The default holds the Stride and ends a change of
+/// stance on the tick it starts.
+struct Pacing {
+  float stride_length = 0.0F;
+  assets::StanceTransitionsData transitions{};
+};
+
+/// How long a change between stances from and to takes in transitions, in
+/// seconds, either way; 0 from a stance to itself.
+[[nodiscard]] float TransitionDuration(const assets::StanceTransitionsData& transitions, Stance from, Stance to);
+
+/// How many steps a Stride's cycle of two steps has: BodyState::stride's 256
+/// values, one byte on the wire (ADR-0038).
+inline constexpr int kStrideSteps = 256;
 
 /// The collision capsule of a body in state: standing on its position in its
 /// stance, as World holds the body's controller. What a client draws a body
@@ -305,10 +349,19 @@ class World {
   /// Advances handle's body by one fixed tick of duration delta_time
   /// seconds: resolves collision and movement via PhysX according to
   /// input, applies stance transitions, and applies stamina depletion/
-  /// recovery (StaminaConfig). Returns the resulting state, which is also
-  /// the new internally-held state for handle (visible to a subsequent
-  /// Step, SetState, or Restore call).
-  BodyState Step(BodyHandle handle, const MovementInput& input, float delta_time);
+  /// recovery (StaminaConfig). Advances its Stride by the distance it moved
+  /// along the ground this tick over pacing's stride length, each tick's
+  /// advance rounded to a whole step; a stride length of 0 or less holds it, as
+  /// does a body that does not move. A change of stance starts its progress
+  /// from the stance it leaves, or, back to the stance a change still under way
+  /// left, from where that change has got to; the progress advances by
+  /// delta_time over pacing's transition duration for the two stances, each
+  /// tick's advance rounded to a whole step, and a duration of 0 ends the change
+  /// at once. The collider takes the new stance's height on the tick it
+  /// changes. Returns the resulting state, which is also the new
+  /// internally-held state for handle (visible to a subsequent Step, SetState,
+  /// or Restore call).
+  BodyState Step(BodyHandle handle, const MovementInput& input, float delta_time, const Pacing& pacing = {});
 
   /// Overwrites handle's state immediately - e.g. for spawning or
   /// respawning a player at a fixed point (US-03). Unlike Restore, the
@@ -316,8 +369,8 @@ class World {
   /// body back where it was.
   void SetState(BodyHandle handle, const BodyState& state);
 
-  /// handle's fall and ground tracking as of now: what Restore takes to put the
-  /// body back at the state it has now.
+  /// handle's fall tracking as of now: what Restore takes, with the body's
+  /// state, to put the body back where it is now.
   [[nodiscard]] FallState Fall(BodyHandle handle) const;
 
   /// Puts handle's body back at state (position, stance and the rest) with fall

@@ -76,6 +76,34 @@
       }
     },
     {
+      "name": "macos",
+      "displayName": "macOS arm64 (Ninja + LLVM, development only)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/arm64-macos",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "${sourceDir}/cmake/LlvmMacosToolchain.cmake",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "VCPKG_TARGET_TRIPLET": "arm64-osx",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "VCPKG_INSTALL_OPTIONS": "--x-packages-root=$env{HOME}/.cache/augusta-vcpkg-macos/packages;--x-buildtrees-root=$env{HOME}/.cache/augusta-vcpkg-macos/buildtrees;--downloads-root=$env{HOME}/.cache/augusta-vcpkg-macos/downloads"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "macos-debug",
+      "displayName": "macOS arm64 Debug (Ninja + LLVM, development only)",
+      "inherits": "macos",
+      "binaryDir": "${sourceDir}/build/arm64-macos-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
       "name": "linux-san",
       "displayName": "Linux (clang, ASan + UBSan)",
       "inherits": "linux",
@@ -129,6 +157,8 @@
     { "name": "linux", "configurePreset": "linux" },
     { "name": "linux-debug", "configurePreset": "linux-debug" },
     { "name": "linux-shipping", "configurePreset": "linux-shipping" },
+    { "name": "macos", "configurePreset": "macos" },
+    { "name": "macos-debug", "configurePreset": "macos-debug" },
     { "name": "linux-san", "configurePreset": "linux-san" },
     {
       "name": "linux-fuzz",
@@ -180,6 +210,18 @@
       "configurePreset": "linux",
       "output": { "outputOnFailure": true },
       "filter": { "include": { "label": "^netcode$" } }
+    },
+    {
+      "name": "macos",
+      "configurePreset": "macos",
+      "output": { "outputOnFailure": true },
+      "filter": { "exclude": { "label": "^netcode$" } }
+    },
+    {
+      "name": "macos-debug",
+      "configurePreset": "macos-debug",
+      "output": { "outputOnFailure": true },
+      "filter": { "exclude": { "label": "^netcode$" } }
     },
     {
       "name": "linux-san",

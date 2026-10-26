@@ -39,11 +39,11 @@ start as an error. So:
   discards it and everything older.
 - **An acknowledgement that agrees with the prediction changes nothing.** If the
   server's body is within 1 mm of the one predicted after the same command, with
-  the same stance, the same exhausted flag and a stamina within 0.001, no
-  restore or replay happens: an error that small is not worth a jump. It cannot
-  pile up, since the next acknowledgement is compared with the server's state
-  again, not with this one, and the first to be off by more than the tolerance
-  is corrected in full.
+  the same stance, the same exhausted and grounded flags, a stamina within 0.001
+  and a Stride within one step, no restore or replay happens: an error that
+  small is not worth a jump. It cannot pile up, since the next acknowledgement
+  is compared with the server's state again, not with this one, and the first to
+  be off by more than the tolerance is corrected in full.
 - **The rifle is compared exactly.** Its rounds and its times travel as the
   server has them, off any grid (ADR-0038), and `weapon::Step` is plain
   arithmetic, the same on both sides, which PhysX is not. So a rifle that
@@ -58,10 +58,10 @@ start as an error. So:
 ## The replay
 
 - The body is put at the server's state with `physics::World::Restore`. The
-  server's state does not carry what `Step` also needs, the fall and ground
-  tracking (`physics::FallState`), so the history keeps the fall the client
-  predicted after each command and restores that one. The rifle is put at the
-  server's, which is all `weapon::Step` needs.
+  server's state carries whether the body is on the ground (`kGrounded`), but
+  not the fall's speed `Step` also needs (`physics::FallState`), so the history
+  keeps the fall the client predicted after each command and restores that one.
+  The rifle is put at the server's, which is all `weapon::Step` needs.
 - Each command still held is stepped again, oldest first, by the same fixed
   tick, through Movement and WeaponHandling alike; the result replaces the state
   predicted after it in the history, so the next acknowledgement is compared

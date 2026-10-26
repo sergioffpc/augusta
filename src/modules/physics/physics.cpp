@@ -5,7 +5,6 @@
 #include <cstdint>
 #include <expected>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string_view>
@@ -26,35 +25,24 @@
 #include <PxSceneDesc.h>
 #include <characterkinematic/PxCapsuleController.h>
 #include <characterkinematic/PxControllerManager.h>
-#include <common/PxTolerancesScale.h>
 #include <cooking/PxCooking.h>
-#include <extensions/PxDefaultAllocator.h>
 #include <extensions/PxDefaultCpuDispatcher.h>
 #include <extensions/PxDefaultSimulationFilterShader.h>
 #include <extensions/PxRigidActorExt.h>
-#include <foundation/PxErrorCallback.h>
-#include <foundation/PxFoundation.h>
-#include <foundation/PxPhysicsVersion.h>
 #include <geometry/PxCapsuleGeometry.h>
 #include <geometry/PxTriangleMesh.h>
 #include <geometry/PxTriangleMeshGeometry.h>
 #if AUGUSTA_DEBUG_TOOLS
-#include <chrono>
-#include <filesystem>
-#include <format>
-#include <string>
-
 #include <PxVisualizationParameter.h>
 #include <common/PxRenderBuffer.h>
 #include <foundation/PxBounds3.h>
-#include <omnipvd/PxOmniPvd.h>
-#include <pvdruntime/OmniPvdFileWriteStream.h>
-#include <pvdruntime/OmniPvdWriter.h>
 #endif
 
 #include "augusta/grid.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
+#include "movement_rules.h"
+#include "physx_state.h"
 
 // M1 spike (ADR-0002): the first real (non-stub) body for this module,
 // backed by PhysX's character controller (CCT) rather than a raw rigid
@@ -88,18 +76,13 @@ using physx::PxControllerCollisionFlags;
 using physx::PxControllerFilters;
 using physx::PxControllerManager;
 using physx::PxCookingParams;
-using physx::PxDefaultAllocator;
 using physx::PxDefaultCpuDispatcher;
 using physx::PxDefaultCpuDispatcherCreate;
 using physx::PxDefaultSimulationFilterShader;
-using physx::PxErrorCallback;
-using physx::PxErrorCode;
 using physx::PxExtendedVec3;
-using physx::PxFoundation;
 using physx::PxHitFlag;
 using physx::PxIdentity;
 using physx::PxMaterial;
-using physx::PxOmniPvd;
 using physx::PxOverlapBuffer;
 using physx::PxPhysics;
 using physx::PxQuat;
@@ -111,7 +94,6 @@ using physx::PxRigidActorExt;
 using physx::PxRigidStatic;
 using physx::PxScene;
 using physx::PxSceneDesc;
-using physx::PxTolerancesScale;
 using physx::PxTransform;
 using physx::PxTriangleMesh;
 using physx::PxTriangleMeshDesc;
@@ -120,22 +102,9 @@ using physx::PxU32;
 using physx::PxVec3;
 
 // ---- Tuning constants ----
-// Spike placeholders (ADR-0002 doesn't pin these down, and unlike
-// StaminaConfig these aren't yet threaded through as data): move to
-// external configuration once gameplay tuning needs it, same posture as
-// StaminaConfig's own header comment.
+// Spike placeholders, for the reason movement_rules.h gives for its own.
 constexpr float kGravity = -9.81F;  // m/s^2, along -Y.
-constexpr float kCapsuleRadius = 0.3F;
-constexpr float kStandingHeight = 1.5F;  // Capsule cylinder height, excludes hemispherical caps.
-constexpr float kCrouchingHeight = 0.7F;
-constexpr float kProneHeight = 0.1F;
-// The capsule's two hemispherical caps together add its diameter to its height.
-constexpr float kCapsuleDiameter = 2.0F * kCapsuleRadius;
 constexpr float kStepOffset = 0.3F;
-constexpr float kWalkSpeed = 3.0F;  // m/s, standing baseline.
-constexpr float kSprintMultiplier = 1.6F;
-constexpr float kCrouchSpeedMultiplier = 0.6F;
-constexpr float kProneSpeedMultiplier = 0.3F;
 constexpr float kStaticFriction = 0.5F;
 constexpr float kDynamicFriction = 0.5F;
 constexpr float kRestitution = 0.1F;
@@ -148,75 +117,6 @@ constexpr int kWorkerThreadCount = 0;
 // A stance change that grows the capsule is tested for headroom with a capsule
 // shrunk by this much, so touching the floor or a wall is not "overlapping".
 constexpr float kStanceCheckSkin = 0.02F;
-
-float HeightForStance(Stance stance) {
-  switch (stance) {
-    case Stance::kStanding:
-      return kStandingHeight;
-    case Stance::kCrouching:
-      return kCrouchingHeight;
-    case Stance::kProne:
-      return kProneHeight;
-  }
-  return kStandingHeight;
-}
-
-float SpeedMultiplierForStance(Stance stance) {
-  switch (stance) {
-    case Stance::kStanding:
-      return 1.0F;
-    case Stance::kCrouching:
-      return kCrouchSpeedMultiplier;
-    case Stance::kProne:
-      return kProneSpeedMultiplier;
-  }
-  return 1.0F;
-}
-
-// Decision half of Step's stamina rule (US-05): given this tick's sprint
-// request, whether the body is standing and moving, and its stamina and
-// exhaustion, resolves whether sprint is actually honored and the resulting
-// stamina and exhaustion. Pure - no PxController calls - so it stays
-// unit-testable independent of PhysX; Step (mechanism half) just applies the
-// result.
-struct StaminaResult {
-  bool sprinting = false;
-  float stamina = 1.0F;
-  bool exhausted = false;
-};
-
-// Sprint is honored only standing, moving and not exhausted, and only then
-// drains; otherwise stamina regenerates. Running stamina out exhausts the
-// body, and it stays exhausted, walking, until stamina is back above
-// forced_walk_below, so a body held at the threshold does not flicker between
-// sprinting and walking.
-StaminaResult ResolveStamina(bool sprint_requested, bool standing_and_moving, float current_stamina,
-                             bool currently_exhausted, const StaminaConfig& config, float delta_time) {
-  StaminaResult result;
-  result.sprinting = sprint_requested && standing_and_moving && !currently_exhausted;
-  if (result.sprinting) {
-    result.stamina = std::max(0.0F, current_stamina - (config.deplete_per_second * delta_time));
-  } else {
-    result.stamina = std::min(1.0F, current_stamina + (config.regen_per_second * delta_time));
-  }
-  if (currently_exhausted) {
-    result.exhausted = result.stamina <= config.forced_walk_below;
-  } else {
-    result.exhausted = result.stamina <= 0.0F;
-  }
-  return result;
-}
-
-// Decision half of Step's move speed: this tick's horizontal speed given
-// stance and the effective (post-ResolveStamina) sprint state. Pure, same
-// testability rationale as ResolveStamina above.
-float ResolveSpeed(Stance stance, bool sprinting) {
-  float speed = kWalkSpeed * SpeedMultiplierForStance(stance);
-  if (sprinting && stance == Stance::kStanding) {
-    speed *= kSprintMultiplier;
-  }
-  return speed;
-}
 
 // Every triangle twice, once per winding: a cooked map's triangles can face
 // either way, and the character controller only collides with the side a
@@ -238,122 +138,6 @@ math::Vec3 FromPx(const PxExtendedVec3& vec) {
   return {static_cast<float>(vec.x), static_cast<float>(vec.y), static_cast<float>(vec.z)};
 }
 
-// Routes PhysX's own diagnostics through this engine's logging (ADR-0029)
-// instead of PhysX's default stderr output.
-class LogErrorCallback : public PxErrorCallback {
- public:
-  // NOLINTNEXTLINE(readability-identifier-naming) - name mandated by PxErrorCallback's own virtual signature.
-  void reportError(PxErrorCode::Enum code, const char* message, const char* file, int line) override {
-    LOG_ERROR("subsystem=physics event=physx_error code={} message=\"{}\" file={} line={}", static_cast<int>(code),
-              message, file, line);
-  }
-};
-
-// PhysX allows one PxFoundation per process, and creating PxPhysics on it is
-// costly, so every World shares one of each, created by the first World and
-// released with the last - a server and several clients in one test process
-// each own a World.
-struct PhysxProcessState {
-  std::mutex mutex;
-  int users = 0;
-  // Must outlive the foundation, so they live here rather than in each World.
-  LogErrorCallback error_callback;
-  PxDefaultAllocator allocator;
-  PxFoundation* foundation = nullptr;
-#if AUGUSTA_DEBUG_TOOLS
-  // What samples physics into a recording (StartRecording); null when none does.
-  PxOmniPvd* omni_pvd = nullptr;
-#endif
-  PxPhysics* physics = nullptr;
-};
-
-PhysxProcessState& GlobalState() {
-  static PhysxProcessState state;
-  return state;
-}
-
-struct PhysxHandles {
-  PxFoundation* foundation;
-  PxPhysics* physics;
-};
-
-void CreateFoundation(PhysxProcessState& state) {
-  state.foundation = PxCreateFoundation(PX_PHYSICS_VERSION, state.allocator, state.error_callback);
-  if (state.foundation == nullptr) {
-    throw std::runtime_error("physics::World: PxCreateFoundation failed");
-  }
-}
-
-// Releases what the state holds, in the reverse of the order it was made in:
-// physics before what samples it, and the foundation last.
-void ReleaseProcessState(PhysxProcessState& state) {
-  if (state.physics != nullptr) {
-    state.physics->release();
-    state.physics = nullptr;
-  }
-#if AUGUSTA_DEBUG_TOOLS
-  if (state.omni_pvd != nullptr) {
-    state.omni_pvd->release();
-    state.omni_pvd = nullptr;
-  }
-#endif
-  if (state.foundation != nullptr) {
-    state.foundation->release();
-    state.foundation = nullptr;
-  }
-}
-
-// Creates physics on the state's foundation, sampled by its omni_pvd if it has one.
-void CreatePhysics(PhysxProcessState& state) {
-  const PxTolerancesScale scale;
-#if AUGUSTA_DEBUG_TOOLS
-  state.physics = PxCreatePhysics(PX_PHYSICS_VERSION, *state.foundation, scale, true, nullptr, state.omni_pvd);
-#else
-  state.physics = PxCreatePhysics(PX_PHYSICS_VERSION, *state.foundation, scale, true, nullptr);
-#endif
-  if (state.physics == nullptr) {
-    ReleaseProcessState(state);
-    throw std::runtime_error("physics::World: PxCreatePhysics failed");
-  }
-}
-
-PhysxHandles AcquirePhysx() {
-  PhysxProcessState& state = GlobalState();
-  const std::lock_guard<std::mutex> lock(state.mutex);
-  if (state.users == 0) {
-    CreateFoundation(state);
-    CreatePhysics(state);
-  }
-  ++state.users;
-  return {.foundation = state.foundation, .physics = state.physics};
-}
-
-void ReleasePhysx() {
-  PhysxProcessState& state = GlobalState();
-  const std::lock_guard<std::mutex> lock(state.mutex);
-  if (--state.users == 0) {
-    ReleaseProcessState(state);
-  }
-}
-
-// Holds one use of the shared PhysX state for as long as it lives. Being a
-// member, it is released even if the owning World's constructor throws after
-// it was acquired, when the World's destructor would not run.
-class PhysxLease {
- public:
-  PhysxLease() : handles_(AcquirePhysx()) {}
-  // Takes over a use already counted (StartRecording's).
-  explicit PhysxLease(PhysxHandles counted) : handles_(counted) {}
-  ~PhysxLease() { ReleasePhysx(); }
-  PhysxLease(const PhysxLease&) = delete;
-  PhysxLease& operator=(const PhysxLease&) = delete;
-
-  [[nodiscard]] PxPhysics* Physics() const { return handles_.physics; }
-
- private:
-  PhysxHandles handles_;
-};
-
 // state on the grids the Networking Protocol sends a body on (augusta/grid.h, ADR-0038).
 BodyState OnWireGrid(BodyState state) {
   state.position = math::SnapPosition(state.position);
@@ -366,20 +150,6 @@ PxExtendedVec3 ToFootPosition(const math::Vec3& position) { return {position.x, 
 
 }  // namespace
 
-float StanceHeight(Stance stance) { return HeightForStance(stance) + kCapsuleDiameter; }
-
-math::Vec3 LowerToStance(const math::Vec3& standing_point, Stance stance) {
-  const float scale = StanceHeight(stance) / StanceHeight(Stance::kStanding);
-  return {standing_point.x, standing_point.y * scale, standing_point.z};
-}
-
-Capsule CapsuleOf(const BodyState& state) {
-  const math::Vec3 bottom = state.position + math::Vec3(0.0F, kCapsuleRadius, 0.0F);
-  return {.bottom = bottom,
-          .top = bottom + math::Vec3(0.0F, HeightForStance(state.stance), 0.0F),
-          .radius = kCapsuleRadius};
-}
-
 // Per-body bookkeeping PhysX's controller doesn't itself track: a CCT has
 // no notion of "velocity" the way a rigid dynamic does, so World derives
 // and caches it each Step from positional delta / delta_time; stance and
@@ -389,9 +159,8 @@ struct BodyRecord {
   BodyState state;
   // Accumulated vertical speed for the simple constant-acceleration
   // gravity integration in Step - reset to 0 whenever the controller was
-  // grounded as of the previous Step.
+  // grounded as of the previous Step (state.grounded).
   float vertical_speed = 0.0F;
-  bool grounded = false;
 };
 
 struct World::Impl {
@@ -572,7 +341,7 @@ void World::DestroyBody(BodyHandle handle) {
   LOG_DEBUG("subsystem=physics event=body_destroyed handle={}", static_cast<std::uint32_t>(handle));
 }
 
-BodyState World::Step(BodyHandle handle, const MovementInput& input, float delta_time) {
+BodyState World::Step(BodyHandle handle, const MovementInput& input, float delta_time, const Pacing& pacing) {
   const auto body_it = impl_->bodies.find(handle);
   if (body_it == impl_->bodies.end()) {
     return {};
@@ -582,8 +351,16 @@ BodyState World::Step(BodyHandle handle, const MovementInput& input, float delta
 
   if (input.desired_stance != state.stance && impl_->CanChangeStance(record, state.stance, input.desired_stance)) {
     record.controller->resize(HeightForStance(input.desired_stance));
+    // Back to the stance a change under way left, the change turns round
+    // where it has got to; to any other, a new change starts.
+    state.stance_progress = input.desired_stance == state.previous_stance
+                                ? static_cast<std::uint8_t>(kStanceProgressSteps - state.stance_progress)
+                                : std::uint8_t{0};
+    state.previous_stance = state.stance;
     state.stance = input.desired_stance;
   }
+  state.stance_progress = AdvanceStanceProgress(
+      state.stance_progress, delta_time, TransitionDuration(pacing.transitions, state.previous_stance, state.stance));
 
   const math::Vec3 direction = math::Normalize(input.direction);
   const bool standing_and_moving = state.stance == Stance::kStanding && math::Length(direction) > 0.0F;
@@ -597,7 +374,7 @@ BodyState World::Step(BodyHandle handle, const MovementInput& input, float delta
   // Simple constant-acceleration gravity: reset the accumulated vertical
   // speed whenever the controller was grounded as of the previous Step,
   // otherwise keep accelerating downward.
-  if (record.grounded) {
+  if (state.grounded) {
     record.vertical_speed = 0.0F;
   }
   record.vertical_speed += kGravity * delta_time;
@@ -607,13 +384,14 @@ BodyState World::Step(BodyHandle handle, const MovementInput& input, float delta
 
   const PxControllerFilters filters;
   const PxControllerCollisionFlags flags = record.controller->move(displacement, kMinMoveDistance, delta_time, filters);
-  record.grounded = flags.isSet(PxControllerCollisionFlag::eCOLLISION_DOWN);
+  state.grounded = flags.isSet(PxControllerCollisionFlag::eCOLLISION_DOWN);
 
   // The controller is put back on the grid too, so the next Step starts from
   // exactly the position this one reports.
   const math::Vec3 new_position = math::SnapPosition(FromPx(record.controller->getFootPosition()));
   record.controller->setFootPosition(ToFootPosition(new_position));
   state.velocity = delta_time > 0.0F ? (new_position - state.position) / delta_time : math::Vec3{};
+  state.stride = AdvanceStride(state.stride, new_position - state.position, pacing.stride_length);
   state.position = new_position;
   state = OnWireGrid(state);
 
@@ -633,7 +411,6 @@ void World::SetState(BodyHandle handle, const BodyState& state) {
   record.controller->setFootPosition(ToFootPosition(on_grid.position));
   record.state = on_grid;
   record.vertical_speed = 0.0F;
-  record.grounded = false;
 }
 
 FallState World::Fall(BodyHandle handle) const {
@@ -641,7 +418,7 @@ FallState World::Fall(BodyHandle handle) const {
   if (body_it == impl_->bodies.end()) {
     return {};
   }
-  return FallState{.vertical_speed = body_it->second.vertical_speed, .grounded = body_it->second.grounded};
+  return FallState{.vertical_speed = body_it->second.vertical_speed};
 }
 
 BodyState World::Restore(BodyHandle handle, const BodyState& state, const FallState& fall) {
@@ -661,7 +438,6 @@ BodyState World::Restore(BodyHandle handle, const BodyState& state, const FallSt
   record.controller->setFootPosition(ToFootPosition(on_grid.position));
   record.state = on_grid;
   record.vertical_speed = fall.vertical_speed;
-  record.grounded = fall.grounded;
   return on_grid;
 }
 
@@ -720,104 +496,6 @@ MapRaycastHit World::RaycastMap(const math::Vec3& origin, const math::Vec3& dire
 }
 
 #if AUGUSTA_DEBUG_TOOLS
-namespace {
-
-// Why PxCreateOmniPvd made nothing. Only a Debug PhysX has OmniPVD, every other
-// build compiling it out, and the PhysX package hands a Debug build _DEBUG.
-#ifdef _DEBUG
-constexpr std::string_view kNoOmniPvd = "OmniPVD's runtime (PVDRuntime_64) did not load from beside the executable";
-#else
-constexpr std::string_view kNoOmniPvd = "this build's PhysX has no OmniPVD: only a Debug build records";
-#endif
-
-// Points the state's new omni_pvd at a file stream writing file, or says why it cannot.
-std::expected<void, RecordingError> OpenRecording(PhysxProcessState& state, const std::filesystem::path& file) {
-  state.omni_pvd = PxCreateOmniPvd(*state.foundation);
-  if (state.omni_pvd == nullptr) {
-    return std::unexpected(RecordingError::kUnavailable);
-  }
-  OmniPvdWriter* writer = state.omni_pvd->getWriter();
-  OmniPvdFileWriteStream* stream = state.omni_pvd->getFileWriteStream();
-  if (writer == nullptr || stream == nullptr) {
-    return std::unexpected(RecordingError::kRefused);
-  }
-  stream->setFileName(file.string().c_str());
-  writer->setWriteStream(*stream);
-  return {};
-}
-
-// Makes the shared PhysX state recorded into file and counts the recording's
-// use of it, or says why it cannot, leaving the state as it was.
-std::expected<PhysxHandles, RecordingError> AcquireRecordedPhysx(const std::filesystem::path& file) {
-  PhysxProcessState& state = GlobalState();
-  const std::lock_guard<std::mutex> lock(state.mutex);
-  if (state.users != 0) {
-    return std::unexpected(RecordingError::kWorldExists);
-  }
-  CreateFoundation(state);
-  if (auto opened = OpenRecording(state, file); !opened) {
-    ReleaseProcessState(state);
-    return std::unexpected(opened.error());
-  }
-  CreatePhysics(state);
-  if (!state.omni_pvd->startSampling()) {
-    ReleaseProcessState(state);
-    return std::unexpected(RecordingError::kRefused);
-  }
-  ++state.users;
-  return PhysxHandles{.foundation = state.foundation, .physics = state.physics};
-}
-
-}  // namespace
-
-std::string_view DescribeRecordingError(RecordingError error) {
-  switch (error) {
-    case RecordingError::kWorldExists:
-      return "a World already exists, and PhysX was made without the recording";
-    case RecordingError::kUnavailable:
-      return kNoOmniPvd;
-    case RecordingError::kRefused:
-      return "OmniPVD gave no writer or file stream, or would not start sampling";
-  }
-  return "unknown recording error";
-}
-
-struct Recording::Impl {
-  Impl(PhysxHandles counted, std::filesystem::path recorded) : lease(counted), file(std::move(recorded)) {}
-
-  PhysxLease lease;
-  std::filesystem::path file;
-};
-
-Recording::Recording(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
-Recording::~Recording() = default;
-Recording::Recording(Recording&&) noexcept = default;
-Recording& Recording::operator=(Recording&&) noexcept = default;
-
-const std::filesystem::path& Recording::File() const { return impl_->file; }
-
-std::expected<Recording, RecordingError> StartRecording(std::string_view executable) {
-  const auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
-  std::filesystem::path file =
-      std::filesystem::temp_directory_path() / std::format("{}-{:%Y%m%dT%H%M%SZ}.ovd", executable, now);
-  const auto handles = AcquireRecordedPhysx(file);
-  if (!handles) {
-    return std::unexpected(handles.error());
-  }
-  LOG_INFO("subsystem=physics event=recording_started path=\"{}\"", file.string());
-  return Recording(std::make_unique<Recording::Impl>(*handles, std::move(file)));
-}
-
-std::optional<Recording> StartRecordingOrWarn(std::string_view executable, std::string_view key) {
-  std::expected<Recording, RecordingError> started = StartRecording(executable);
-  if (!started) {
-    LOG_WARN("subsystem=physics event=recording_unavailable key={} reason=\"{}\"", key,
-             DescribeRecordingError(started.error()));
-    return std::nullopt;
-  }
-  return *std::move(started);
-}
-
 namespace {
 
 // A visualization parameter's value for on: PhysX scales what it draws by it,

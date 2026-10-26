@@ -16,6 +16,9 @@
 #include "augusta/physics.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
+#include "augusta/weapon.h"
+#include "character_fixture.h"
+#include "clips_fixture.h"
 
 // SimulationWorld's Shot judgements (ADR-0038, ADR-0074): how it judged each
 // round, told once the round's flight ends, in a Development build alone.
@@ -95,10 +98,11 @@ CharacterHitbox Box(BodyPart part, const Vec3& low, const Vec3& high) {
 // A character 1.8 m tall that sees from inside its head, its torso 20 cm deep:
 // a round aimed at it down -Z strikes the torso's face 10 cm before its feet.
 Character Target() {
-  return Character{.eye = Vec3(0.0F, 1.6F, 0.0F),
-                   .hitboxes = {Box(BodyPart::kHead, Vec3(-0.1F, 1.5F, -0.1F), Vec3(0.1F, 1.8F, 0.1F)),
-                                Box(BodyPart::kTorso, Vec3(-0.2F, 0.9F, -0.1F), Vec3(0.2F, 1.5F, 0.1F)),
-                                Box(BodyPart::kLimb, Vec3(-0.2F, 0.0F, -0.1F), Vec3(0.2F, 0.9F, 0.1F))}};
+  return augusta::character_fixture::Rigged(
+      Character{.eye = Vec3(0.0F, 1.6F, 0.0F),
+                .hitboxes = {Box(BodyPart::kHead, Vec3(-0.1F, 1.5F, -0.1F), Vec3(0.1F, 1.8F, 0.1F)),
+                             Box(BodyPart::kTorso, Vec3(-0.2F, 0.9F, -0.1F), Vec3(0.2F, 1.5F, 0.1F)),
+                             Box(BodyPart::kLimb, Vec3(-0.2F, 0.0F, -0.1F), Vec3(0.2F, 0.9F, 0.1F))}});
 }
 
 // A rifle of 600 rounds a minute whose rounds fly straight, 10 m a tick.
@@ -117,7 +121,9 @@ Parameters WithTheTestRifle() {
 // of each tick puts Bob and aims at where a Seen time of them shows him.
 class ShotJudgementTest : public ::testing::Test {
  protected:
-  explicit ShotJudgementTest(const Parameters& parameters = WithTheTestRifle()) : world_(parameters, kTickRate) {
+  explicit ShotJudgementTest(const Parameters& parameters = WithTheTestRifle(),
+                             const augusta::weapon::Markers& rifle = {})
+      : world_(parameters, kTickRate, {}, rifle) {
     EXPECT_TRUE(world_.AddCollisionMesh(Floor()).has_value());
     world_.JudgeShots(true);
   }
@@ -286,6 +292,36 @@ TEST_F(ShotJudgementTest, ARoundReportsThePoseOfAPlayerAtItsShootersDelayNotItsP
   EXPECT_EQ(judged.entity, kBob);
   EXPECT_NEAR(judged.position.x, then.x, 1e-4F);
   EXPECT_NEAR(judged.position.z, then.z, 1e-4F);
+}
+
+// A rifle whose Muzzle is kHolderMuzzle ahead of the Grip Alice holds at her
+// Eye (clips_fixture::HolderRifle), and a wall half a metre ahead of her, which
+// her barrel pokes through (ADR-0044).
+class MuzzleInAWallShotJudgementTest : public ShotJudgementTest {
+ protected:
+  static constexpr float kWallZ = -0.5F;
+
+  MuzzleInAWallShotJudgementTest() : ShotJudgementTest(WithTheTestRifle(), augusta::clips_fixture::HolderRifle()) {}
+};
+
+// Bob stands 10 m away, behind the wall: the round strikes the wall where the
+// barrel enters it, on the tick it is fired, and passes no player.
+// Requirements: US-10
+TEST_F(MuzzleInAWallShotJudgementTest, ARoundFromAMuzzleThroughAWallReportsTheWallWhereTheBarrelEntersIt) {
+  ASSERT_TRUE(world_.AddCollisionMesh(WallAt(kWallZ)).has_value());
+  Place(Vec3(0.0F, 0.0F, -10.0F));
+  const augusta::tick::Tick seen = Next() - 1;
+
+  const std::vector<ShotJudgement> judgements = Shoot(FiringAt(BobAt(seen) + Vec3(0.0F, kTorsoHeight, 0.0F), seen));
+
+  ASSERT_EQ(judgements.size(), 1U);
+  EXPECT_EQ(judgements[0].shooter, kAlice);
+  EXPECT_EQ(judgements[0].shot_tick, seen + 1);
+  EXPECT_FLOAT_EQ(judgements[0].shooters_delay, 1.0F);
+  EXPECT_EQ(judgements[0].struck, Struck::kMap);
+  EXPECT_EQ(judgements[0].target, std::nullopt);
+  EXPECT_NEAR(judgements[0].point.z, kWallZ, kTolerance);
+  EXPECT_TRUE(judgements[0].entries.empty());
 }
 
 // Rounds that crawl a metre a second and fly half a metre: Alice fires one

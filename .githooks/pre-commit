@@ -3,13 +3,16 @@
 # formatters `make format` runs, and stages what they changed. CI's format
 # checks remain the actual gate if the hook is bypassed with --no-verify.
 
-# macOS has none of the formatters: they run in the dev container.
-if [[ "$(uname -s)" = Darwin ]]; then
-  exec scripts/dev-container.sh .githooks/pre-commit
-fi
-
 staged=$(git diff --cached --name-only --diff-filter=ACMR)
 [[ -n "${staged}" ]] || exit 0
+
+# The formatters are the toolchain's, at this branch's pins (ADR-0077): a pull
+# or a checkout that moved a pin stops here, not at CI.
+if ! make -s --no-print-directory toolchain-check; then
+  echo "pre-commit: the toolchain is not the one this branch pins:" \
+    "run \`make toolchain\`." >&2
+  exit 1
+fi
 
 # The staged files' contents as hashes, one a line, to tell what the
 # formatters changed.

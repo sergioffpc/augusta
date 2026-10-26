@@ -1,4 +1,4 @@
-#include "augusta/tick_messages.h"
+#include "tick_messages.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -170,21 +170,6 @@ TEST(TickMessagesTest, EachRecipientIsSentEveryBodyAndItsOwnFieldsInRecipientOrd
   EXPECT_EQ(sent[2].payload, Encoded(to_dead_third));
   for (const Sent& message : sent) {
     EXPECT_EQ(message.type, MessageType::kAuthoritativeState);
-  }
-}
-
-// A Replay view is a Replay viewer's alone (ADR-0051): a live tick sends its
-// players none, and their updates keep the bytes they had - the protocol's
-// authoritative_state seed (tests/fuzz) holds them to that, byte for byte.
-TEST(TickMessagesTest, ALiveTickSendsItsPlayersNoReplayView) {
-  State state = TwoBodies();
-  state.shots = {{.shooter = EntityId{1}, .origin = augusta::math::Vec3(1.0F, 1.5F, -2.0F), .yaw = 0.5F}};
-
-  const std::vector<Sent> sent = SendAll(state, 42, ThreePlayers());
-
-  ASSERT_FALSE(sent.empty());
-  for (const Sent& message : sent) {
-    EXPECT_NE(message.type, MessageType::kReplayView);
   }
 }
 

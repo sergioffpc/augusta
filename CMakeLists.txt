@@ -71,6 +71,17 @@ endif()
 project(augusta LANGUAGES CXX)
 augusta_require_server_platform()
 
+# clang is the one compiler the project builds with (ADR-0008): clang-cl on
+# Windows, LLVM's clang on Linux and macOS. Another - GCC, MSVC's cl, Apple's
+# clang - is refused here rather than built with by accident.
+if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  message(
+    FATAL_ERROR
+    "augusta builds with clang alone (ADR-0008), not ${CMAKE_CXX_COMPILER_ID}: "
+    "configure through a preset (cmake --preset ..., make), which names it."
+  )
+endif()
+
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -154,6 +165,10 @@ find_package(utf8_range CONFIG REQUIRED)
 # Boost.Uuid: the Run ID, the Session ID and the Match ID (ADR-0035), whose
 # type the protocol's headers and every layer above name.
 find_package(boost_uuid CONFIG REQUIRED)
+# ozz-animation (ADR-0066): its runtime, with which the Animation module loads
+# and samples a Character's Clips, and its offline libraries, with which the
+# cooker builds them and the tests author their own.
+find_package(ozz-animation CONFIG REQUIRED)
 
 # NVTX (github.com/NVIDIA/NVTX) is header-only and not on vcpkg, so it's
 # vendored as a pinned git submodule (third_party/nvtx) instead. Not
@@ -187,6 +202,7 @@ add_subdirectory(src/modules/application)
 add_subdirectory(src/modules/assets)
 add_subdirectory(src/modules/physics)
 add_subdirectory(src/modules/gameplay)
+add_subdirectory(src/modules/animation)
 add_subdirectory(src/modules/protocol)
 add_subdirectory(src/modules/link)
 add_subdirectory(src/modules/capture)

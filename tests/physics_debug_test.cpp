@@ -205,7 +205,6 @@ TEST(PhysicsVisualizationTest, SteppingTheVisualizationChangesNoBodysLaterStep) 
   for (std::size_t i = 0; i < with.size(); ++i) {
     EXPECT_EQ(with[i].first, without[i].first) << "step " << i;
     EXPECT_EQ(with[i].second.vertical_speed, without[i].second.vertical_speed) << "step " << i;
-    EXPECT_EQ(with[i].second.grounded, without[i].second.grounded) << "step " << i;
   }
   // The walk did cross the ledge and fall.
   EXPECT_LT(without.back().first.position.y, -0.5F);

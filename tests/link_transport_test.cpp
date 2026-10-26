@@ -15,10 +15,10 @@
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/protocol.h"
-#include "augusta/raw_link.h"
 #include "augusta/tick.h"
 #include "connection_stats.h"
 #include "peer_message.h"
+#include "raw_link.h"
 #include "reliability.h"
 
 // What the Link decides about the transport beneath it, apart from a live
@@ -44,9 +44,9 @@ using augusta::link::ReliabilityOf;
 using augusta::networking::Reliability;
 
 // A newer one supersedes each of these, so none is retransmitted: a tick's
-// Commands, an Authoritative State and a Replay view (ADR-0051).
+// Commands and an Authoritative State.
 TEST(ReliabilityOfTest, PerTickMessagesTravelUnreliably) {
-  for (const MessageType type : {MessageType::kCommands, MessageType::kAuthoritativeState, MessageType::kReplayView}) {
+  for (const MessageType type : {MessageType::kCommands, MessageType::kAuthoritativeState}) {
     EXPECT_EQ(ReliabilityOf(type), Reliability::kUnreliable) << static_cast<int>(type);
   }
 }

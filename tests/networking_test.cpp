@@ -16,6 +16,7 @@
 #include <ws2tcpip.h>
 #else
 #include <netinet/in.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #endif
@@ -115,6 +116,20 @@ bool ReceiveAtLeastOne(PollBoth poll_both, ReceiveFn receive, std::vector<Messag
   });
 }
 
+#ifndef _WIN32
+// Raises this process's open-file limit to at least descriptors, as far as its
+// hard limit lets it: macOS's default soft limit is 256, below what a test
+// holding hundreds of sockets needs (Linux's is 1024).
+void RaiseOpenFileLimit(rlim_t descriptors) {
+  rlimit limit{};
+  if (getrlimit(RLIMIT_NOFILE, &limit) != 0 || limit.rlim_cur >= descriptors) {
+    return;
+  }
+  limit.rlim_cur = std::min(descriptors, limit.rlim_max);
+  setrlimit(RLIMIT_NOFILE, &limit);
+}
+#endif
+
 // IPv4 UDP sockets, as many as asked for, bound to the wildcard address each on
 // a port the OS picks, as a client's is; held until destroyed.
 class WildcardUdpSockets {
@@ -123,6 +138,10 @@ class WildcardUdpSockets {
 #ifdef _WIN32
     WSADATA wsa_data;
     started_ = WSAStartup(MAKEWORD(2, 2), &wsa_data) == 0;
+#else
+    // Room for the test's own descriptors and the servers it opens beside them.
+    constexpr rlim_t kSpareDescriptors = 512;
+    RaiseOpenFileLimit(static_cast<rlim_t>(count) + kSpareDescriptors);
 #endif
     for (std::size_t index = 0; index < count; ++index) {
       const NativeSocket socket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -130,6 +149,9 @@ class WildcardUdpSockets {
         return;
       }
       sockets_.push_back(socket);
+      // htonl, ntohs and socklen_t are the socket headers' above, which on
+      // macOS declare them in internal headers include-cleaner reads instead.
+      // NOLINTBEGIN(misc-include-cleaner)
       sockaddr_in addr{};
       addr.sin_family = AF_INET;
       addr.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -139,6 +161,7 @@ class WildcardUdpSockets {
         return;
       }
       ports_.insert(ntohs(addr.sin_port));
+      // NOLINTEND(misc-include-cleaner)
     }
   }
 

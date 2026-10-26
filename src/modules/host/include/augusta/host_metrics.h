@@ -51,7 +51,7 @@ using JoinRefusalCounters =
     metrics::EnumCounters<JoinRefusal, JoinRefusal::kVersionMismatch, JoinRefusal::kReenactmentsNotAccepted>;
 using LeavingCounters = metrics::EnumCounters<Leaving, Leaving::kLeft, Leaving::kMisbehaving>;
 /// The misbehaviours only: the first of PeerRejection's values (augusta/misbehaviour.h),
-/// which host_metrics.cpp checks.
+/// which host_metrics_collect.cpp checks.
 using MisbehaviourCounters =
     metrics::EnumCounters<PeerRejection, PeerRejection::kUndecodable, PeerRejection::kCommandsBeforeJoining>;
 using MessageCounters = metrics::EnumCounters<MessageType, MessageType::kJoinRequest, link::kLastMessageType>;

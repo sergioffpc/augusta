@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -76,6 +77,8 @@ std::string_view DescribeEncodeError(EncodeError error) {
       return "is not a whole number of samples";
     case EncodeError::kInvalidCueSound:
       return "has no variant, or a gain that is not a finite number";
+    case EncodeError::kInvalidAnimation:
+      return "has a stride length, Foot contact or transition duration out of its range";
   }
   return "could not be encoded";
 }
@@ -138,23 +141,130 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeSpawnPointBlob(const Sp
   return blob;
 }
 
-// Eye blob wire format: position (3x f32), nothing else.
+// Hitbox blob wire format: the body part (u8), the Joint's name (u32 length,
+// then its bytes), then the geometry as a mesh blob.
 std::expected<std::vector<std::byte>, EncodeError> EncodeHitboxBlob(const HitboxData& hitbox) {
   auto mesh = EncodeMeshBlob(hitbox.mesh);
   if (!mesh) {
     return std::unexpected(mesh.error());
   }
   std::vector<std::byte> blob;
-  blob.reserve(1 + mesh->size());
-  blob.push_back(static_cast<std::byte>(hitbox.part));
-  blob.insert(blob.end(), mesh->begin(), mesh->end());
+  ByteWriter writer(blob);
+  writer.WriteU8(static_cast<std::uint8_t>(hitbox.part));
+  if (!writer.WriteString(hitbox.joint)) {
+    return std::unexpected(EncodeError::kTooLarge);
+  }
+  writer.WriteBytes(*mesh);
   return blob;
 }
 
+// Skeleton blob wire format: a u32 Joint count, then each Joint's name (u32
+// length, then its bytes), its parent's index (u32, kJointNoParent for a root)
+// and its transform as a scene node's is: translation (3x f32), rotation as
+// x/y/z/w (4x f32), scale (3x f32).
+std::expected<std::vector<std::byte>, EncodeError> EncodeSkeletonBlob(const SkeletonData& skeleton) {
+  if (skeleton.joints.size() > kMaxJoints) {
+    return std::unexpected(EncodeError::kTooLarge);
+  }
+  std::vector<std::byte> blob;
+  ByteWriter writer(blob);
+  writer.WriteU32(static_cast<std::uint32_t>(skeleton.joints.size()));
+  for (const auto& joint : skeleton.joints) {
+    if (!writer.WriteString(joint.name)) {
+      return std::unexpected(EncodeError::kTooLarge);
+    }
+    writer.WriteU32(joint.parent);
+    writer.WriteVec3(joint.translation);
+    writer.WriteQuat(joint.rotation);
+    writer.WriteVec3(joint.scale);
+  }
+  return blob;
+}
+
+// Animation-skeleton blob wire format: the ozz-animation archive itself.
+std::expected<std::vector<std::byte>, EncodeError> EncodeAnimationSkeletonBlob(std::span<const std::byte> archive) {
+  if (archive.size() > kMaxArchiveBytes) {
+    return std::unexpected(EncodeError::kTooLarge);
+  }
+  return std::vector<std::byte>(archive.begin(), archive.end());
+}
+
+// Clip blob wire format: the stride length (f32), a u8 Foot contact count and
+// each contact's foot (u8) and ratio (f32), then the ozz-animation archive as
+// the rest of the blob.
+std::expected<std::vector<std::byte>, EncodeError> EncodeClipBlob(const ClipData& clip) {
+  if (clip.archive.size() > kMaxArchiveBytes || clip.foot_contacts.size() > kMaxFootContacts) {
+    return std::unexpected(EncodeError::kTooLarge);
+  }
+  if (!IsValidStrideLength(clip.stride_length) ||
+      !std::ranges::all_of(clip.foot_contacts,
+                           [](const FootContact& contact) { return IsValidFootContactRatio(contact.ratio); })) {
+    return std::unexpected(EncodeError::kInvalidAnimation);
+  }
+  std::vector<std::byte> blob;
+  ByteWriter writer(blob);
+  writer.WriteF32(clip.stride_length);
+  writer.WriteU8(static_cast<std::uint8_t>(clip.foot_contacts.size()));
+  for (const auto& contact : clip.foot_contacts) {
+    writer.WriteU8(static_cast<std::uint8_t>(contact.foot));
+    writer.WriteF32(contact.ratio);
+  }
+  writer.WriteBytes(clip.archive);
+  return blob;
+}
+
+// Stance-transitions blob wire format: standing-crouching, standing-prone and
+// crouching-prone durations (3x f32), in seconds.
+std::expected<std::vector<std::byte>, EncodeError> EncodeStanceTransitionsBlob(
+    const StanceTransitionsData& transitions) {
+  const std::array durations = {transitions.standing_crouching, transitions.standing_prone,
+                                transitions.crouching_prone};
+  if (!std::ranges::all_of(durations, IsValidTransitionDuration)) {
+    return std::unexpected(EncodeError::kInvalidAnimation);
+  }
+  std::vector<std::byte> blob;
+  ByteWriter writer(blob);
+  for (const float duration : durations) {
+    writer.WriteF32(duration);
+  }
+  return blob;
+}
+
+// Eye blob wire format: position (3x f32), nothing else.
 std::expected<std::vector<std::byte>, EncodeError> EncodeEyeBlob(const EyeData& eye) {
   std::vector<std::byte> blob;
   ByteWriter writer(blob);
   writer.WriteVec3(eye.position);
+  return blob;
+}
+
+// Rifle blob wire format: the Grip, the Muzzle, the Sight and the Fore-end, in
+// that order, each its translation (3x f32) then its rotation as x/y/z/w (4x
+// f32), as a spawn point's transform is.
+std::expected<std::vector<std::byte>, EncodeError> EncodeRifleBlob(const RifleData& rifle) {
+  std::vector<std::byte> blob;
+  ByteWriter writer(blob);
+  for (const RifleMarker* marker : {&rifle.grip, &rifle.muzzle, &rifle.sight, &rifle.fore_end}) {
+    writer.WriteVec3(marker->translation);
+    writer.WriteQuat(marker->rotation);
+  }
+  return blob;
+}
+
+// Weapon socket blob wire format: its right hand's Joint's name (a string), its translation
+// (3x f32) and rotation as x/y/z/w (4x f32) in that Joint's space, then the
+// left hand's Joint's name (a string).
+std::expected<std::vector<std::byte>, EncodeError> EncodeWeaponSocketBlob(const WeaponSocketData& socket) {
+  std::vector<std::byte> blob;
+  ByteWriter writer(blob);
+  if (!writer.WriteString(socket.right_hand)) {
+    return std::unexpected(EncodeError::kTooLarge);
+  }
+  writer.WriteVec3(socket.translation);
+  writer.WriteQuat(socket.rotation);
+  if (!writer.WriteString(socket.left_hand)) {
+    return std::unexpected(EncodeError::kTooLarge);
+  }
   return blob;
 }
 

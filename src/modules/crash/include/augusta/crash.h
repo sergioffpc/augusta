@@ -73,10 +73,15 @@ std::string_view FormatModuleFrameLine(Line& line, std::string_view subsystem, s
 std::string_view FormatExceptionLine(Line& line, std::string_view subsystem, std::chrono::sys_seconds time,
                                      std::uint32_t code, std::string_view context = {});
 
+/// The four characters kRunIdStreamType spells, first one in its high byte.
+inline constexpr std::array<char, 4> kRunIdStreamTag = {'A', 'U', 'G', 'R'};
+
 /// The type of the minidump's user stream that holds the Run ID, in its
-/// canonical form with no terminator: above the stream types dbghelp reserves
-/// (up to LastReservedStream, 0xffff), and `AUGR` in ASCII.
-inline constexpr std::uint32_t kRunIdStreamType = 0x41554752;
+/// canonical form with no terminator: kRunIdStreamTag (0x41554752), above the
+/// stream types dbghelp reserves (up to LastReservedStream, 0xffff).
+inline constexpr std::uint32_t kRunIdStreamType =
+    (std::uint32_t{kRunIdStreamTag[0]} << 24U) | (std::uint32_t{kRunIdStreamTag[1]} << 16U) |
+    (std::uint32_t{kRunIdStreamTag[2]} << 8U) | std::uint32_t{kRunIdStreamTag[3]};
 
 /// What an executable gives the handler where it has them; the server gives
 /// none, and a crash then leaves only its lines on stdout and the core.
