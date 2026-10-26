@@ -38,8 +38,8 @@ spec:
     # other than the engine's (scripts/check-pack-formats.py).
     servers:
       firebase:
-        packVersion: "d9fb82ad9207"
-        packFormat: 6
+        packVersion: "a7b2faca718e"
+        packFormat: 7
         # Pinned (rather than left to Kubernetes to assign) so this server
         # has a stable address for LAN clients to connect to.
         nodePort: 30700
