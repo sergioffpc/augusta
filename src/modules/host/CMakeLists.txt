@@ -51,6 +51,7 @@ add_library(
   STATIC
   capture_metrics.cpp
   capture_retention.cpp
+  capture_writer.cpp
   capturer.cpp
   host.cpp
   host_log.cpp
