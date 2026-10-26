@@ -1161,7 +1161,7 @@ TEST_F(PackTest, WritePackReturnsTheHashLoadVerifies) {
   EXPECT_EQ(*written, pack->Hash());
 }
 
-// A pack's own bytes, as the layout read must find them: assets.cpp's
+// A pack's own bytes, as the layout read must find them: pack_format.h's
 // kHeaderSize, and the 64-byte Ed25519 signature that ends the file.
 constexpr std::uint64_t kWrittenHeaderSize = 4 + 4 + 8 + 8 + 4 + 1 + 32;
 constexpr std::size_t kWrittenSignatureSize = 64;
@@ -1264,7 +1264,7 @@ TEST_F(PackTest, APackKnowsItsFormatVersionAndSize) {
 // these need a re-signed file to behave deterministically.
 class PackLoadNegativeTest : public PackTest {
  protected:
-  // assets.cpp's kHeaderSize and kTrailerSize: magic, version, data offset,
+  // pack_format.h's kHeaderSize and kTrailerSize: magic, version, data offset,
   // index offset, index count, flags and client pack hash; hash and signature.
   static constexpr std::size_t kHeaderSize = 4 + 4 + 8 + 8 + 4 + 1 + 32;
   static constexpr std::size_t kTrailerSize = 32 + 64;
