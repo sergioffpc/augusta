@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
@@ -51,6 +52,7 @@ using augusta::session_test::FloorAt;
 using augusta::session_test::kCharacter;
 using augusta::session_test::kFixedTick;
 using augusta::session_test::kScriptedEntity;
+using augusta::session_test::NeverArrived;
 using augusta::session_test::Pointers;
 using augusta::session_test::ScriptedServer;
 using augusta::session_test::Settle;
@@ -83,7 +85,6 @@ class ShotJudgementMatchTest : public ::testing::Test {
   static constexpr float kTorsoHeight = 1.2F;
   static constexpr int kSettleTicks = 30;
   static constexpr auto kNetworkDelay = std::chrono::milliseconds(8);
-  static constexpr auto kStepPatience = std::chrono::milliseconds(250);
 
   explicit ShotJudgementMatchTest(bool shot_judgements = true) : host_(Config(shot_judgements), InALine()) {}
 
@@ -150,25 +151,27 @@ class ShotJudgementMatchTest : public ::testing::Test {
   }
 
   // Runs the match for ticks ticks, each client on its command: every client
-  // predicts and sends it, the server ticks once they have all reached it (or
-  // kStepPatience has passed), and the states come back.
+  // predicts and sends it, the server ticks once they have all reached it, and
+  // the states come back. No test here loses a command, so only a fault holds
+  // one back past ExchangeUntil's kPollDeadline: the test fails fatally there,
+  // naming it, rather than tick the server without it.
   void Fight(int ticks) {
-    for (int tick = 0; tick < ticks; ++tick) {
+    for (int tick = 0; tick < ticks && !HasFatalFailure(); ++tick) {
       for (std::size_t i = 0; i < sessions_.size(); ++i) {
         sessions_[i]->Tick(commands_[i], kFixedTick);
       }
-      const auto give_up = std::chrono::steady_clock::now() + kStepPatience;
-      ExchangeUntil(host_, Pointers(sessions_), [&] {
-        if (std::chrono::steady_clock::now() >= give_up) {
-          return true;
+      // The first client whose command the server does not hold yet.
+      const auto waiting = [&] {
+        return std::ranges::find_if(sessions_, [&](const auto& session) {
+          return host_.QueuedCommands(session->GetServerView()->accepted->session) == 0;
+        });
+      };
+      if (!ExchangeUntil(host_, Pointers(sessions_), [&] { return waiting() == sessions_.end(); })) {
+        const auto never = waiting();
+        if (never != sessions_.end()) {
+          FAIL() << NeverArrived(static_cast<std::size_t>(never - sessions_.begin()), **never);
         }
-        for (const auto& session : sessions_) {
-          if (host_.QueuedCommands(session->GetServerView()->accepted->session) == 0) {
-            return false;
-          }
-        }
-        return true;
-      });
+      }
       host_.Tick(kFixedTick);
       std::this_thread::sleep_for(kNetworkDelay);
       Exchange();

@@ -147,11 +147,17 @@ It listens on UDP `0.0.0.0:27015` and serves its metrics on TCP `9464`.
 ### Development Environment
 
 One command per platform sets up a machine and a checkout ready to build, test
-and commit: it installs the toolchain, clones the repository into `./augusta`
-(or `$AUGUSTA_DIR`) and readies the checkout (submodules, vcpkg, the git hooks).
-In an existing checkout, run `scripts/bootstrap.sh` instead. The reference
-editor is [VS Code](https://code.visualstudio.com): open the checkout's folder
-in it and install the extensions it recommends.
+and commit: it installs the system's packages and the pinned tools (the
+`platform` step, once per machine), clones the repository into `./augusta` (or
+`$AUGUSTA_DIR`) and readies the checkout (the `checkout` step: submodules,
+vcpkg, the git hooks, and `make toolchain`, which links the checkout's
+`.toolchain/` to the pinned tools). In an existing checkout, run
+`scripts/bootstrap.sh` instead, or `scripts/bootstrap.sh checkout` on a machine
+already bootstrapped. Run `make toolchain` after a pull that bumps a tool's
+version; `make toolchain-check` says which tools are stale, and
+`source .toolchain/activate` puts them on a shell's PATH. The reference editor
+is [VS Code](https://code.visualstudio.com): open the checkout's folder in it,
+trust it, and install the extensions it recommends.
 
 #### Windows (client)
 
@@ -172,7 +178,8 @@ Tools' environment for each command.
 curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap.sh | bash
 ```
 
-It installs the dev container's toolchain on the host, through sudo.
+It installs the dev container's packages and pinned tools on the host, the
+packages through sudo.
 
 #### macOS (client, server and shared core, Apple silicon)
 
@@ -184,12 +191,11 @@ curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffp
 ```
 
 Everything builds natively, as on Linux: it installs LLVM 21 (CI's), CMake,
-Ninja, Mesa's Vulkan and the hooks' formatters and linters through Homebrew, and
-the tools Homebrew doesn't keep at CI's versions into `~/.local/bin`, without
-sudo; it puts that and GNU make on PATH in `~/.zprofile` (open a new terminal
-after it). `make` builds the `macos` preset, `make test PRESET=macos-debug` a
-Debug build; configure one once so the `pre-push` hook can run clang-tidy. Xcode
-is not needed.
+Ninja and Mesa's Vulkan through Homebrew, and the pinned tools from their
+releases, without sudo; it puts GNU make on PATH in `~/.zprofile` (open a new
+terminal after it). `make` builds the `macos` preset,
+`make test PRESET=macos-debug` a Debug build; configure one once so the
+`pre-push` hook can run clang-tidy. Xcode is not needed.
 
 #### Dev container or Codespaces (server and shared core)
 
@@ -206,12 +212,12 @@ scripts/bootstrap.sh uninstall
 ```
 
 In Git Bash as Administrator on Windows. It removes what the bootstrap installed
-that was not there before, newest first (`uninstall toolchain` alone), and the
-checkout's readying (`uninstall checkout` alone): vcpkg's tool and binary cache,
-the git hooks and the submodules, and on macOS an earlier bootstrap's dev
-containers. The repository's files and your work stay. A machine bootstrapped
-before the bootstrap kept a record of what it installed keeps what it installed
-then.
+that was not there before, the pinned tools' store among it, newest first
+(`uninstall platform` alone), and the checkout's readying (`uninstall checkout`
+alone): `.toolchain/`, vcpkg's tool and binary cache, the git hooks and the
+submodules, and on macOS an earlier bootstrap's dev containers. The repository's
+files and your work stay. A machine bootstrapped before the bootstrap kept a
+record of what it installed keeps what it installed then.
 
 ### Build and Run
 

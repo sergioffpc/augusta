@@ -34,11 +34,15 @@ contains its tag. A stacked PR takes its parent's fixes by merging the parent
 branch. Build, test and lint with `make` (`make help`; `PRESET=windows-debug` on
 Windows, `PRESET=macos-debug` on macOS): `test` is the one target that builds
 the tests, and `prepush` runs a push's checks, uncommitted changes included,
-before committing. Only CI's `client-x64-windows` job reproduces Windows-only
-failures. After a push to a branch with an open PR, `gh pr checks <pr> --watch`:
-a red check blocks the next merge onto that branch. A worktree for parallel work
-comes and goes through `scripts/worktree.sh add|remove`, which links the
-submodules a build needs.
+before committing. The tools it runs are the checkout's `.toolchain/bin`, at the
+versions `scripts/bootstrap/versions.env` pins: `make toolchain` installs and
+links them (after a pull that bumps one), `make toolchain-check` names the stale
+ones, and `source .toolchain/activate` puts them on a shell's PATH. Only CI's
+`client-x64-windows` job reproduces Windows-only failures. After a push to a
+branch with an open PR, `gh pr checks <pr> --watch`: a red check blocks the next
+merge onto that branch. A worktree for parallel work comes and goes through
+`scripts/worktree.sh add|remove`, which links the submodules a build needs and
+makes its `.toolchain/`.
 
 ### Issue tracker
 

@@ -3,58 +3,28 @@
 # Environment): the Linux/server one on Ubuntu 26.04, the Windows client one in
 # Git Bash, and the macOS one on Apple silicon, native as Linux's. The one
 # recipe for each: what differs lives in scripts/bootstrap/<platform>.sh, what
-# they share here. .devcontainer's Dockerfile runs the Linux toolchain step and
+# they share here. .devcontainer's Dockerfile runs the Linux platform step and
 # its post-create.sh the checkout step; a host runs both.
 #
-# Usage: scripts/bootstrap.sh [toolchain|checkout]
-#        scripts/bootstrap.sh uninstall [toolchain|checkout]
+# Usage: scripts/bootstrap.sh [platform|checkout]
+#        scripts/bootstrap.sh uninstall [platform|checkout]
+#
+# platform, once per machine, installs the system's packages and fills the
+# toolchain's shared store (scripts/bootstrap/toolchain.sh). checkout readies
+# the checkout, then runs `make toolchain`, which links its .toolchain/ into the
+# store.
 #
 # Piped from curl outside a checkout (README.md, Bootstrap), it first clones
 # the repository into ${AUGUSTA_DIR:-./augusta} and runs that clone's copy.
 #
-# uninstall undoes them: the checkout step's readying (vcpkg's tool and binary
-# cache, the hooks, the submodules; never the repository's files), and what
-# the toolchain step installed that was not there before, as its manifest
-# records it, newest first. A machine bootstrapped before the manifest has
-# none: what it installed then stays.
+# uninstall undoes them: the checkout step's readying (.toolchain/, vcpkg's tool
+# and binary cache, the hooks, the submodules; never the repository's files),
+# and what the platform step installed that was not there before, the store
+# among it, as its manifest records it, newest first. A machine bootstrapped
+# before the manifest has none: what it installed then stays.
 set -euo pipefail
 
 readonly REPOSITORY=https://github.com/sergioffpc/augusta.git
-
-# CI's format job pins the same versions; bump them together, with the
-# platform files' checksums.
-# shellcheck disable=SC2034 # used by the sourced scripts/bootstrap/*.sh
-readonly YAMLFMT_VERSION=0.21.0 STYLUA_VERSION=2.5.2 TAPLO_VERSION=0.10.0 \
-  LUACHECK_VERSION=1.2.0
-# The flux CLI at the cluster's Flux, the Flux Version in
-# clusters/onprem/flux-system/gotk-components.yaml's header; bump them
-# together, with the platform files' checksums.
-# shellcheck disable=SC2034 # used by the sourced scripts/bootstrap/*.sh
-readonly FLUX_VERSION=2.9.5
-# cosign at the release .github/actions/sign-artifact's cosign-installer
-# installs, so that a local cosign verify (docs/runbooks/cut-release.md) reads
-# the signatures CI writes; bump them together, with the platform files'
-# checksums.
-# shellcheck disable=SC2034 # used by the sourced scripts/bootstrap/*.sh
-readonly COSIGN_VERSION=3.0.6
-# The tools CI's own jobs run, at the versions they install, so each job can
-# be run locally: trivy (.github/actions/build-server-image), kubeconform, the
-# Kyverno CLI, promtool, amtool and hadolint (ci.yml), oras (setup-oras's
-# default), syft (sbom-action's) and grype (scan-action's). yq is
-# mikefarah's, which the runner image has unpinned and Ubuntu doesn't package
-# (its yq is another tool). Bump each with its CI pin, and with the platform
-# files' checksums.
-# shellcheck disable=SC2034 # used by the sourced scripts/bootstrap/*.sh
-readonly TRIVY_VERSION=0.75.0 KUBECONFORM_VERSION=0.8.0 KYVERNO_VERSION=1.19.1 \
-  PROMETHEUS_VERSION=3.15.0 ALERTMANAGER_VERSION=0.34.1 HADOLINT_VERSION=2.15.1 \
-  ORAS_VERSION=1.3.1 SYFT_VERSION=1.54.0 GRYPE_VERSION=0.118.0 YQ_VERSION=4.53.6
-# ctcache, which the Makefile's tidy target runs clang-tidy through, at the
-# commit .github/actions/restore-ctcache-cache installs; bump them together. A
-# commit, as ctcache isn't on PyPI.
-readonly CTCACHE_REPOSITORY=https://github.com/matus-chochlik/ctcache
-readonly CTCACHE_COMMIT=857b14271d3ded5511c2e6a60f2dc20c1e4b5680
-# shellcheck disable=SC2034 # used by the sourced scripts/bootstrap/*.sh
-readonly CTCACHE_PACKAGE="ctcache @ git+${CTCACHE_REPOSITORY}@${CTCACHE_COMMIT}"
 
 # Prints the platform: linux, windows (Git Bash) or macos.
 platform() {
@@ -67,28 +37,6 @@ platform() {
       exit 1
       ;;
   esac
-}
-
-# Checks the files a checksum list on stdin names, quietly: GNU's sha256sum,
-# or on macOS, whose own reads no list from stdin, shasum.
-sha256_check() {
-  if [[ "$(uname -s)" = Darwin ]]; then
-    shasum -a 256 --check --status
-  else
-    sha256sum --check --status
-  fi
-}
-
-# Downloads a URL to a file and checks its SHA-256.
-# Arguments:
-#   The URL, the expected SHA-256, the file.
-download_verified() {
-  curl --proto '=https' --tlsv1.2 -fsSLo "$3" "$1"
-  printf '%s  %s\n' "$2" "$3" | sha256_check \
-    || {
-      echo "bootstrap: SHA-256 mismatch for $1" >&2
-      exit 1
-    }
 }
 
 # Fails with the list of commands missing from PATH.
@@ -134,9 +82,20 @@ manifest_add() {
   ) | manifest_append
 }
 
+# Installs the system's packages, then fills the toolchain's shared store,
+# which the manifest records when it is new, for uninstall to remove.
+ready_platform() {
+  local toolchain store
+  toolchain="$(dirname "${BASH_SOURCE[0]}")/bootstrap/toolchain.sh"
+  install_platform
+  store="$(bash "${toolchain}" store-dir)"
+  [[ -e "${store}" ]] || manifest_add dir "${store}"
+  bash "${toolchain}" store
+}
+
 # Undoes the manifest's entries, newest first, then removes it. The kinds
 # every platform shares are undone here, the rest by its undo_entry.
-uninstall_toolchain() {
+uninstall_platform() {
   local file
   file="$(manifest_file)"
   if [[ ! -f "${file}" ]]; then
@@ -173,16 +132,19 @@ ready_checkout() {
   update_submodules
   bootstrap_vcpkg
   git config core.hooksPath .githooks
+  make toolchain
 }
 
-# Undoes ready_checkout but for LFS's filters, the toolchain's: the
-# repository's files and any work in them stay.
+# Undoes ready_checkout but for LFS's filters, the platform's: the
+# repository's files and any work in them stay. .toolchain/ goes, which holds
+# links into the store and what make toolchain installed from it.
 unready_checkout() {
   cd "$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
   if [[ "$(git config --get core.hooksPath || true)" = .githooks ]]; then
     git config --unset core.hooksPath
   fi
   unbootstrap_vcpkg
+  rm -rf .toolchain
   # Without --force: a submodule with changes of its own stays, and says so.
   if ! git submodule deinit third_party/vcpkg third_party/nvtx; then
     echo "bootstrap: a submodule has changes of its own and was kept; to" \
@@ -221,23 +183,26 @@ main() {
   # only the command substitution.
   local platform
   platform="$(platform)"
+  # The pins, which the platform's packages take LLVM's from.
+  # shellcheck source=/dev/null
+  . "$(dirname "${BASH_SOURCE[0]}")/bootstrap/versions.env"
   # shellcheck source=/dev/null
   . "$(dirname "${BASH_SOURCE[0]}")/bootstrap/${platform}.sh"
   case "${1:-}" in
-    toolchain) install_toolchain ;;
+    platform) ready_platform ;;
     checkout) ready_checkout ;;
     "")
-      install_toolchain
+      ready_platform
       ready_checkout
       bootstrap_done
       ;;
     uninstall)
       case "${2:-}" in
-        toolchain) uninstall_toolchain ;;
+        platform) uninstall_platform ;;
         checkout) unready_checkout ;;
         "")
           unready_checkout
-          uninstall_toolchain
+          uninstall_platform
           ;;
         *) usage ;;
       esac
@@ -247,8 +212,8 @@ main() {
 }
 
 usage() {
-  echo "usage: $0 [toolchain|checkout]" >&2
-  echo "       $0 uninstall [toolchain|checkout]" >&2
+  echo "usage: $0 [platform|checkout]" >&2
+  echo "       $0 uninstall [platform|checkout]" >&2
   exit 2
 }
 

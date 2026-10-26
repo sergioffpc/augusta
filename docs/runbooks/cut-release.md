@@ -71,9 +71,11 @@ cut that release first and the hotfix off it.
   [`scripts/changelog.sh`](../../scripts/changelog.sh), which runs git-cliff
   through `uvx` with [`cliff.toml`](../../cliff.toml): WSL, the dev container,
   or Git Bash on Windows.
-- `podman`, `jq` and `cosign`, for step 8's wait on the image, which
-  `scripts/bootstrap.sh` installs. GHCR serves the image and its signatures
-  without a login.
+- `podman`, `jq` and `cosign`, for step 8's wait on the image:
+  `scripts/bootstrap.sh` installs `podman` and `jq`, and `cosign` is the
+  toolchain's, the one CI signs with. Run `make toolchain`, then
+  `source .toolchain/activate` in the shell that runs step 8. GHCR serves the
+  image and its signatures without a login.
 - Access to the cluster's `develop` environment, for the NFR-01 check in step 6.
 
 ## Steps

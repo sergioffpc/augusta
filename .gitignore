@@ -118,3 +118,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# The checkout's toolchain, links into the shared store (ADR-0077).
+.toolchain/

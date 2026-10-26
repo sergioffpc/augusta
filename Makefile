@@ -48,18 +48,38 @@ YAML_SOURCES := "*.yaml" "*.yml" "*.yamlfmt" "*.yamllint" ":!:third_party/*" \
   ":!:charts/augustad/templates/*" ":!:clusters/onprem/flux-system/gotk-components.yaml" \
   ":!:clusters/onprem/infrastructure/kube-bench/cfg/*"
 
-# The formatters and linters uv runs, at the versions CI pins.
-RUFF := uv tool run ruff@0.16.10
-SHFMT := uv tool run --from shfmt-py==4.2.0 shfmt
-SHELLCHECK := uv tool run --from shellcheck-py==0.11.0.1 shellcheck
-ACTIONLINT := uv tool run --from actionlint-py==1.7.12.25 --with shellcheck-py==0.11.0.1 actionlint
-GERSEMI := uv tool run gersemi@0.29.2
-PYMARKDOWN := uv tool run --from pymarkdownlnt==0.9.40 pymarkdown --config .pymarkdown.json
-YAMLLINT := uv tool run --from yamllint==1.37.1 yamllint --strict -c .yamllint
-# Prettier is a Node package: uv runs Node from its PyPI wheel, and npx Prettier.
-PRETTIER := uv tool run --from nodejs-wheel==24.19.0 npx --yes prettier@3.9.9
-# Buf too, from npm: it reads buf.yaml's workspace, every .proto at once.
-BUF := uv tool run --from nodejs-wheel==24.19.0 npx --yes @bufbuild/buf@1.73.0
+# The toolchain's formatters and linters (ADR-0077), from the checkout's
+# .toolchain/bin, at the versions scripts/bootstrap/versions.env pins. Never
+# another binary: without .toolchain/, a target that runs one stops and says to
+# make it. Recursive, so the targets that run none run without it. cmd.exe
+# reads a forward slash as an option, so Windows' paths take backslashes.
+ifeq ($(wildcard .toolchain/bin),)
+TOOLCHAIN_MISSING = $(error .toolchain/bin not found: run `make toolchain` first)
+endif
+ifeq ($(OS),Windows_NT)
+toolchain_bin = $(TOOLCHAIN_MISSING).toolchain\bin\$(1)
+else
+toolchain_bin = $(TOOLCHAIN_MISSING).toolchain/bin/$(1)
+endif
+RUFF = $(call toolchain_bin,ruff)
+SHFMT = $(call toolchain_bin,shfmt)
+SHELLCHECK = $(call toolchain_bin,shellcheck)
+# actionlint lints the workflows' run scripts with the toolchain's shellcheck.
+ACTIONLINT = $(call toolchain_bin,actionlint) -shellcheck=$(call toolchain_bin,shellcheck)
+GERSEMI = $(call toolchain_bin,gersemi)
+PYMARKDOWN = $(call toolchain_bin,pymarkdown) --config .pymarkdown.json
+YAMLLINT = $(call toolchain_bin,yamllint) --strict -c .yamllint
+# LLVM's, which .toolchain/bin links to the system's of the pinned major.
+CLANG_FORMAT = $(call toolchain_bin,clang-format)
+# Prettier is a Node package, in .toolchain/node_modules, which the toolchain's
+# Node runs.
+PRETTIER = $(call toolchain_bin,node) .toolchain/node_modules/prettier/bin/prettier.cjs
+YAMLFMT = $(call toolchain_bin,yamlfmt) -conf .yamlfmt
+STYLUA = $(call toolchain_bin,stylua)
+LUACHECK = $(call toolchain_bin,luacheck)
+TAPLO = $(call toolchain_bin,taplo)
+# buf reads buf.yaml's workspace, every .proto at once.
+BUF = $(call toolchain_bin,buf)
 
 # What CI's Lint steps run clang-tidy's full profile on: every src .cpp and the
 # C++ tools' (tools/agent), built with them, except the audio module's silent
@@ -112,7 +132,7 @@ TIDY_CHECKS := $(addprefix tidy/,$(TIDY_SOURCES))
 INCLUDE_CHECKS := $(addprefix include-cleaner/,$(INCLUDE_SOURCES))
 
 .DEFAULT_GOAL := all
-.PHONY: all help configure build test check coverage pack-native install uninstall clean distclean format format-check format-files tidy lint lint-files prepush docs
+.PHONY: all help configure build test check coverage pack-native install uninstall clean distclean format format-check format-files tidy lint lint-files prepush docs toolchain toolchain-check
 
 all: build
 
@@ -141,6 +161,8 @@ help:
 	$(info $()  lint-files    lint's linters and tidy's clang-tidy on FILES alone, as the pre-push hook runs them)
 	$(info $()  prepush       the pre-push hook's checks on this branch's unpushed commits and uncommitted changes, without pushing)
 	$(info $()  docs          the documentation site, MkDocs and Doxygen, into build/docs-site)
+	$(info $()  toolchain     install the pinned tools missing from the shared store, then link .toolchain/bin to them)
+	$(info $()  toolchain-check  fail on each .toolchain/bin tool that isn't its pinned version, and each editor path to none)
 	@:
 
 configure:
@@ -207,32 +229,50 @@ docs:
 	doxygen tools/docs/Doxyfile
 
 format:
-	clang-format -i $(shell git ls-files -- $(CXX_SOURCES))
-	yamlfmt -conf .yamlfmt
-	stylua $(shell git ls-files -- $(LUA_SOURCES))
-	taplo fmt $(shell git ls-files -- $(TOML_SOURCES))
+	$(CLANG_FORMAT) -i $(shell git ls-files -- $(CXX_SOURCES))
+	$(YAMLFMT)
+	$(STYLUA) $(shell git ls-files -- $(LUA_SOURCES))
+	$(TAPLO) fmt $(shell git ls-files -- $(TOML_SOURCES))
 	$(RUFF) format $(shell git ls-files -- $(PYTHON_SOURCES))
 	$(SHFMT) -w $(shell git ls-files -- $(SHELL_SOURCES))
 	$(GERSEMI) -i $(shell git ls-files -- $(CMAKE_SOURCES))
 	$(PRETTIER) --log-level warn --write $(shell git ls-files -- $(MARKDOWN_SOURCES))
 	$(BUF) format -w
 
-format-check:
-	clang-format --dry-run --Werror $(shell git ls-files -- $(CXX_SOURCES))
-	yamlfmt -conf .yamlfmt -lint
+# One target per formatter and linter, in this order, so CI's format job runs
+# each of them alone with the command written here.
+FORMAT_CHECKS := $(addprefix format-check/,clang-format yamlfmt yamllint stylua luacheck taplo ruff shfmt shellcheck actionlint gersemi prettier pymarkdown buf)
+.PHONY: $(FORMAT_CHECKS)
+format-check: $(FORMAT_CHECKS)
+format-check/clang-format:
+	$(CLANG_FORMAT) --dry-run --Werror $(shell git ls-files -- $(CXX_SOURCES))
+format-check/yamlfmt:
+	$(YAMLFMT) -lint
+format-check/yamllint:
 	$(YAMLLINT) .
-	stylua --check $(shell git ls-files -- $(LUA_SOURCES))
-	luacheck $(shell git ls-files -- $(LUA_SOURCES))
-	taplo fmt --check $(shell git ls-files -- $(TOML_SOURCES))
-	taplo lint $(shell git ls-files -- $(TOML_SOURCES))
+format-check/stylua:
+	$(STYLUA) --check $(shell git ls-files -- $(LUA_SOURCES))
+format-check/luacheck:
+	$(LUACHECK) $(shell git ls-files -- $(LUA_SOURCES))
+format-check/taplo:
+	$(TAPLO) fmt --check $(shell git ls-files -- $(TOML_SOURCES))
+	$(TAPLO) lint $(shell git ls-files -- $(TOML_SOURCES))
+format-check/ruff:
 	$(RUFF) format --check $(shell git ls-files -- $(PYTHON_SOURCES))
 	$(RUFF) check $(shell git ls-files -- $(PYTHON_SOURCES))
+format-check/shfmt:
 	$(SHFMT) -d $(shell git ls-files -- $(SHELL_SOURCES))
+format-check/shellcheck:
 	$(SHELLCHECK) $(shell git ls-files -- $(SHELL_SOURCES))
+format-check/actionlint:
 	$(ACTIONLINT)
+format-check/gersemi:
 	$(GERSEMI) --check $(shell git ls-files -- $(CMAKE_SOURCES))
+format-check/prettier:
 	$(PRETTIER) --log-level warn --check $(shell git ls-files -- $(MARKDOWN_SOURCES))
+format-check/pymarkdown:
 	$(PYMARKDOWN) scan $(shell git ls-files -- $(MARKDOWN_SOURCES))
+format-check/buf:
 	$(BUF) format -d --exit-code
 	$(BUF) lint
 
@@ -244,19 +284,20 @@ tidy: configure
 	$(RUN) cmake --build --preset $(PRESET) --target augusta_protocol_generated
 	$(MAKE) --no-print-directory -j $(JOBS) -k -Otarget "CTCACHE_DIR=$(CTCACHE_DIR)" $(TIDY_CHECKS) $(INCLUDE_CHECKS)
 
-# clang-tidy through ctcache (scripts/bootstrap.sh installs it), as CI's Lint
-# steps run it: a file whose preprocessed source, configuration and arguments
-# passed before is skipped. Its results live under build/, for every preset,
-# apart per clang-tidy version (the first number `clang-tidy --version`
-# prints), which ctcache's key leaves out. Recursive, so only tidy and lint-files
-# run clang-tidy for it, and hand it to the per-file targets.
-CLANG_TIDY := clang-tidy-cache clang-tidy
-# On macOS, Homebrew's clang takes its SDK from a configuration file that
-# clang-tidy does not read: the SDK that clang resolves, handed to clang-tidy.
+# The toolchain's clang-tidy through its ctcache, as CI's Lint steps run it: a
+# file whose preprocessed source, configuration and arguments passed before is
+# skipped. On macOS, Homebrew's clang takes its SDK from a configuration file
+# that clang-tidy does not read: the SDK that the clang beside the linked
+# clang-tidy resolves, handed to clang-tidy.
 ifeq ($(shell uname -s),Darwin)
-CLANG_TIDY += --extra-arg=-isysroot$(shell $(or $(HOMEBREW_PREFIX),/opt/homebrew)/opt/llvm@21/bin/clang++ -\#\#\# -x c++ -c /dev/null 2>&1 | sed -n 's/.*"-isysroot" "\([^"]*\)".*/\1/p')
+TIDY_SYSROOT := --extra-arg=-isysroot$(shell $(dir $(realpath .toolchain/bin/clang-tidy))clang++ -\#\#\# -x c++ -c /dev/null 2>&1 | sed -n 's/.*"-isysroot" "\([^"]*\)".*/\1/p')
 endif
-CTCACHE_DIR = $(abspath build/ctcache)/$(firstword $(filter 1% 2% 3% 4% 5% 6% 7% 8% 9%,$(shell clang-tidy --version)))
+CLANG_TIDY = $(call toolchain_bin,clang-tidy-cache) $(call toolchain_bin,clang-tidy) $(TIDY_SYSROOT)
+# ctcache's results live under build/, for every preset, apart per clang-tidy
+# version (the first number the toolchain's `clang-tidy --version` prints),
+# which ctcache's key leaves out. Recursive, so only tidy and lint-files run
+# clang-tidy for it, and hand it to the per-file targets.
+CTCACHE_DIR = $(abspath build/ctcache)/$(firstword $(filter 1% 2% 3% 4% 5% 6% 7% 8% 9%,$(shell $(call toolchain_bin,clang-tidy) --version)))
 
 .PHONY: $(TIDY_CHECKS) $(INCLUDE_CHECKS)
 $(TIDY_CHECKS): tidy/%:
@@ -266,6 +307,16 @@ $(INCLUDE_CHECKS): include-cleaner/%:
 	$(RUN) $(CLANG_TIDY) --quiet -p=$(BUILD_DIR) --checks=-*,misc-include-cleaner --extra-arg=-w $*
 
 lint: format-check tidy
+
+# The toolchain (ADR-0077), by scripts/bootstrap/toolchain.sh, which says how:
+# toolchain installs what versions.env pins and links .toolchain/bin to it;
+# toolchain-check reads it and fails on each tool it finds stale, as the
+# pre-commit hook runs it. Git's bash on Windows, which runs the hooks too.
+toolchain:
+	bash scripts/bootstrap/toolchain.sh install
+
+toolchain-check:
+	bash scripts/bootstrap/toolchain.sh check
 
 # The hooks' half of format and lint, on the files they hand over (FILES="a b
 # ..."): each formatter and linter runs on the ones it covers, with the commands
@@ -279,10 +330,10 @@ covered = $(filter $(FILES),$(shell git ls-files --cached --others --exclude-sta
 linted = $(if $(filter $(2),$(FILES)),$(shell git ls-files -- $(1)),$(call covered,$(1)))
 
 format-files:
-	$(if $(call covered,$(CXX_SOURCES)),clang-format -i $(call covered,$(CXX_SOURCES)),@:)
-	$(if $(call covered,$(YAML_SOURCES)),yamlfmt -conf .yamlfmt $(call covered,$(YAML_SOURCES)),@:)
-	$(if $(call covered,$(LUA_SOURCES)),stylua $(call covered,$(LUA_SOURCES)),@:)
-	$(if $(call covered,$(TOML_SOURCES)),taplo fmt $(call covered,$(TOML_SOURCES)),@:)
+	$(if $(call covered,$(CXX_SOURCES)),$(CLANG_FORMAT) -i $(call covered,$(CXX_SOURCES)),@:)
+	$(if $(call covered,$(YAML_SOURCES)),$(YAMLFMT) $(call covered,$(YAML_SOURCES)),@:)
+	$(if $(call covered,$(LUA_SOURCES)),$(STYLUA) $(call covered,$(LUA_SOURCES)),@:)
+	$(if $(call covered,$(TOML_SOURCES)),$(TAPLO) fmt $(call covered,$(TOML_SOURCES)),@:)
 	$(if $(call covered,$(PYTHON_SOURCES)),$(RUFF) format --quiet $(call covered,$(PYTHON_SOURCES)),@:)
 	$(if $(call covered,$(SHELL_SOURCES)),$(SHFMT) -w $(call covered,$(SHELL_SOURCES)),@:)
 	$(if $(call covered,$(CMAKE_SOURCES)),$(GERSEMI) --quiet -i $(call covered,$(CMAKE_SOURCES)),@:)
@@ -304,9 +355,9 @@ lint-files:
 lint/yamllint:
 	$(if $(call linted,$(YAML_SOURCES),.yamllint .yamlignore .gitignore),$(YAMLLINT) $(call linted,$(YAML_SOURCES),.yamllint .yamlignore .gitignore),@:)
 lint/luacheck:
-	$(if $(call linted,$(LUA_SOURCES),.luacheckrc),luacheck $(call linted,$(LUA_SOURCES),.luacheckrc),@:)
+	$(if $(call linted,$(LUA_SOURCES),.luacheckrc),$(LUACHECK) $(call linted,$(LUA_SOURCES),.luacheckrc),@:)
 lint/taplo:
-	$(if $(call covered,$(TOML_SOURCES)),taplo lint $(call covered,$(TOML_SOURCES)),@:)
+	$(if $(call covered,$(TOML_SOURCES)),$(TAPLO) lint $(call covered,$(TOML_SOURCES)),@:)
 lint/ruff:
 	$(if $(call linted,$(PYTHON_SOURCES),ruff.toml),$(RUFF) check $(call linted,$(PYTHON_SOURCES),ruff.toml),@:)
 lint/shellcheck:

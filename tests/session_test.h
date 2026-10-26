@@ -7,12 +7,14 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <utility>
 #include <variant>
 #include <vector>
 
+#include <boost/uuid/uuid_io.hpp>
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
@@ -54,6 +56,19 @@ using protocol::SessionIdWire;
 // The session the server admitted view's client as, or nullopt until it has.
 inline std::optional<SessionId> AdmittedSession(const ServerView& view) {
   return view.accepted.has_value() ? std::optional<SessionId>(view.accepted->session) : std::nullopt;
+}
+
+// How a test that waited for the command of client, of that index, names it
+// once it never reached the server: whose, and for the tick after the newest
+// client was told of.
+inline std::string NeverArrived(std::size_t index, const Session& client) {
+  const auto view = client.GetServerView();
+  std::ostringstream named;
+  named << "the command of client " << index << " (Session " << view->accepted->session
+        << ") never reached the server, for the tick after "
+        << (view->authoritative.has_value() ? std::to_string(view->authoritative->tick) : "none")
+        << ", the newest it was told of";
+  return named.str();
 }
 
 inline constexpr auto kPollInterval = std::chrono::milliseconds(10);

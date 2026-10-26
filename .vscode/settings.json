@@ -5,7 +5,7 @@
   "[cpp]": { "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd" },
   "[c]": { "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd" },
   "[lua]": { "editor.defaultFormatter": "JohnnyMorganz.stylua" },
-  "[toml]": { "editor.defaultFormatter": "tamasfe.even-better-toml" },
+  "[toml]": { "editor.defaultFormatter": "tamasfe.even-better-toml", "editor.formatOnSave": false },
   "[yaml]": { "editor.formatOnSave": false, "editor.rulers": [80] },
   "[markdown]": { "editor.defaultFormatter": "esbenp.prettier-vscode", "editor.rulers": [80] },
   "[python]": { "editor.defaultFormatter": "charliermarsh.ruff", "editor.rulers": [80] },
@@ -15,6 +15,7 @@
   "C_Cpp.intelliSenseEngine": "disabled",
   "editor.detectIndentation": false,
 
+  "clangd.path": "${workspaceFolder}/.toolchain/bin/clangd",
   "clangd.arguments": [
     "--compile-commands-dir=${workspaceFolder}",
     "--background-index",
@@ -22,7 +23,12 @@
     "--header-insertion=never"
   ],
 
-  "stylua.searchBinaryInPATH": true,
+  "ruff.path": ["${workspaceFolder}/.toolchain/bin/ruff", "${workspaceFolder}/.toolchain/bin/ruff.exe"],
+  "shfmt.executablePath": "${workspaceFolder}/.toolchain/bin/shfmt",
+  "shellcheck.executablePath": "${workspaceFolder}/.toolchain/bin/shellcheck",
+  "stylua.targetReleaseVersion": "v2.5.2",
+  "buf.commandLine.path": "${workspaceFolder}/.toolchain/bin/buf",
+  "prettier.prettierPath": ".toolchain/node_modules/prettier",
 
   "Lua.runtime.version": "Lua 5.5",
   "Lua.runtime.builtin": {
@@ -55,9 +61,18 @@
   "vs-kubernetes": {
     "vs-kubernetes.kubeconfig": "${userHome}/.kube/augusta.yaml"
   },
-  "terminal.integrated.env.windows": { "KUBECONFIG": "${userHome}/.kube/augusta.yaml" },
-  "terminal.integrated.env.linux": { "KUBECONFIG": "${userHome}/.kube/augusta.yaml" },
-  "terminal.integrated.env.osx": { "KUBECONFIG": "${userHome}/.kube/augusta.yaml" },
+  "terminal.integrated.env.windows": {
+    "KUBECONFIG": "${userHome}/.kube/augusta.yaml",
+    "PATH": "${workspaceFolder}/.toolchain/bin;${env:PATH}"
+  },
+  "terminal.integrated.env.linux": {
+    "KUBECONFIG": "${userHome}/.kube/augusta.yaml",
+    "PATH": "${workspaceFolder}/.toolchain/bin:${env:PATH}"
+  },
+  "terminal.integrated.env.osx": {
+    "KUBECONFIG": "${userHome}/.kube/augusta.yaml",
+    "PATH": "${workspaceFolder}/.toolchain/bin:${env:PATH}"
+  },
 
   "git.detectSubmodules": false,
   "git.autofetch": true,

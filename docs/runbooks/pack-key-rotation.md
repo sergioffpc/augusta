@@ -88,7 +88,7 @@ startup, and the pod crash-loops. The client pack never goes on the node.
   `sudo` ([SSH](k3s-node-recovery.md#ssh)).
 - The day-to-day kubeconfig
   ([Cluster access](k3s-node-recovery.md#cluster-access)), `kubectl`, and the
-  `flux` CLI (see
+  `flux` CLI, the toolchain's, after `source .toolchain/activate` (see
   [Roll Back a Bad Deploy with Flux](flux-rollback.md#prerequisites)). No step
   here needs cluster-admin.
 - A Windows client and server build to smoke-test the packs locally.
