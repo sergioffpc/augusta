@@ -1,6 +1,18 @@
 # free_port.cpp's socket.
 find_package(boost_asio CONFIG REQUIRED)
-add_library(augusta_networking STATIC free_port.cpp networking.cpp transport_events.cpp)
+add_library(
+  augusta_networking
+  STATIC
+  client.cpp
+  free_port.cpp
+  gns_adapter.cpp
+  networking.cpp
+  server.cpp
+  simulated_conditions.cpp
+  status_handlers.cpp
+  tap_endpoints.cpp
+  transport_events.cpp
+)
 target_include_directories(augusta_networking PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(
   augusta_networking
