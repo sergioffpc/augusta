@@ -18,7 +18,6 @@
 #include "augusta/animation.h"
 #include "augusta/assets.h"
 #include "augusta/ballistics.h"
-#include "augusta/body_part.h"
 #include "augusta/clips.h"
 #include "augusta/command.h"
 #include "augusta/grid.h"
@@ -33,6 +32,8 @@
 #include "augusta/pose.h"
 #include "augusta/tick.h"
 #include "augusta/weapon.h"
+#include "combat.h"
+#include "components.h"
 #include "hitbox_history.h"
 #include "hitbox_posing.h"
 #include "policy_bridge.h"
@@ -60,156 +61,11 @@ enum PhaseIndex : std::size_t {
   kCommit,
 };
 
-// A player-controlled entity's components: the entity it is, which commands name.
-struct Player {
-  EntityId entity{};
-};
-
-struct Body {
-  physics::BodyHandle handle{};
-  physics::BodyState state{};
-};
-
-// What CommandIngestion last decided the player is trying to do; Movement acts on it.
-struct Intent {
-  physics::MovementInput input{};
-};
-
-// Where a player's body faces and looks: its last command's view, on its grid,
-// and whether that command aimed down sights.
-struct Facing {
-  float yaw = 0.0F;
-  float pitch = 0.0F;
-  bool ads = false;
-};
-
-// What is left of a player's health, 0 or more.
-struct Health {
-  float value = 0.0F;
-};
-
-// A player's character's hitboxes, each in the space of its Joint.
-struct Hitboxes {
-  std::vector<hitbox::CharacterHitbox> bound;
-  // How far from its root they reach in a pose: a bullet that passes farther
-  // from where the pose puts its root crosses none of them.
-  Reach reach;
-};
-
-// A player's character's Skeleton, which its hitboxes are bound to.
-struct CharacterSkeleton {
-  assets::Skeleton skeleton;
-};
-
-// A player's Hitbox pose as Posing evaluated it this tick: its root, and each
-// Joint relative to its parent and as its world transform, index for index with
-// its Skeleton's Joints.
-struct PosedJoints {
-  animation::SkeletonPose posed;
-};
-
-// A player's Hitbox history: its Joints as Commit recorded each of its recent ticks.
-struct HitboxHistory {
-  PoseHistory poses;
-};
-
-// A round WeaponHandling fired this tick, for Posing to fire from the Muzzle it
-// places: the view it is aimed along, the Command's turned by the Recoil offset
-// from before its own kick, that offset, and its Shooter's delay.
-struct FiredRound {
-  weapon::Heading aim{};
-  weapon::RecoilOffset recoil{};
-  float shooters_delay = 0.0F;
-};
-
-// A player's rifle, as WeaponHandling left it, and the round it fired this
-// tick, if it fired one.
-struct Rifle {
-  weapon::State state{};
-  std::optional<FiredRound> fired;
-};
-
-// A player's character's Clips (Character::clips).
-struct Clips {
-  std::shared_ptr<const animation::CharacterClips> clips;
-};
-
-// Where a player's character sees from standing, relative to its feet (ADR-0040).
-struct Eye {
-  math::Vec3 standing{};
-};
-
-// Where a player's rifle is, as Posing last placed it; nullopt until it has.
-struct Held {
-  std::optional<HeldRifle> rifle;
-};
-
-// A bullet in flight: an entity of its own, from the tick it is fired on until
-// the tick ballistics::World resolves it.
-struct Bullet {
-  ballistics::BulletHandle handle{};
-  EntityId shooter{};
-  // Its Shooter's delay (ADR-0044), in ticks: how long before each tick of its
-  // flight the players it is judged against were where it judges them.
-  float shooters_delay = 0.0F;
-  // Where it was fired for, as its Shot's yaw and pitch: what a Death it deals tells.
-  float yaw = 0.0F;
-  float pitch = 0.0F;
-};
-
-#if AUGUSTA_DEBUG_TOOLS
-// What a bullet fired while Shot judgements are on records of its flight: its
-// Shot judgement, as far as the flight has gone.
-struct ShotRecord {
-  ShotJudgement judgement;
-};
-#endif
-
-// A bullet that struck a player this tick, for Damage to resolve.
-struct PlayerHit {
-  EntityId shooter{};
-  EntityId target{};
-  float yaw = 0.0F;
-  float pitch = 0.0F;
-  body_part::BodyPart part = body_part::BodyPart::kTorso;
-};
-
-// kMaxShootersDelay in ticks at tick_rate_hz: not a whole number at every rate.
-float MaxShootersDelayTicks(std::uint8_t tick_rate_hz) {
-  return std::chrono::duration<float>(kMaxShootersDelay).count() * static_cast<float>(tick_rate_hz);
-}
-
 // A round's Shot whose barrel is in the Map, and where the barrel enters it.
 struct BarrelInTheMap {
   Shot shot;
   math::Vec3 entry{};
 };
-
-// The Shooter's delay (ADR-0044), in ticks, of a round fired on tick by
-// command: from the Seen time command reports to tick, and no more than
-// max_delay. The Seen time is only what a client says, so its fraction is held within 0 to 1
-// and the whole of it to no newer than the last tick's State, the newest any
-// client has been sent.
-float ShootersDelay(tick::Tick tick, const command::Command& command, float max_delay) {
-  const auto now = static_cast<double>(tick);
-  const double reported =
-      static_cast<double>(command.seen_tick) + static_cast<double>(std::clamp(command.seen_fraction, 0.0F, 1.0F));
-  const double seen = std::min(reported, now - 1.0);
-  return std::min(static_cast<float>(now - seen), max_delay);
-}
-
-// What damage gives for a hit on part.
-float DamageFor(const body_part::Damage& damage, body_part::BodyPart part) {
-  switch (part) {
-    case body_part::BodyPart::kHead:
-      return damage.head;
-    case body_part::BodyPart::kTorso:
-      return damage.torso;
-    case body_part::BodyPart::kLimb:
-      return damage.limb;
-  }
-  std::unreachable();
-}
 
 // player as Game policy sees it (ADR-0022).
 policy::PlayerView ViewOf(EntityId entity, const PlayerIdentity& identity, bool alive, float health,
@@ -225,10 +81,6 @@ policy::PlayerView ViewOf(EntityId entity, const PlayerIdentity& identity, bool 
 }
 
 }  // namespace
-
-std::size_t HitboxHistoryTicks(std::uint8_t tick_rate_hz) {
-  return static_cast<std::size_t>(std::chrono::ceil<std::chrono::seconds>(kMaxShootersDelay * tick_rate_hz).count());
-}
 
 struct World::Impl {
   // Where a player lives, for RemovePlayer, and who plays it, for Game policy;
