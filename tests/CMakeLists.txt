@@ -1,5 +1,9 @@
 include(GoogleTest)
 
+# No vcpkg z-applocal step on the test executables, here and in fuzz/:
+# augusta_test_dlls (at the end) puts their DLLs beside them.
+set(VCPKG_APPLOCAL_DEPS OFF)
+
 # Discovery runs each test binary once, at build time, within 5 s by default,
 # which CMake takes from no variable. A binary's first launch can take longer,
 # while dozens link side by side: one that links PhysX (the targets below that
@@ -1102,7 +1106,8 @@ target_link_libraries(
 # the tool) when AUGUSTA_TOOLS builds the tools:
 # what ctest, the benchmarks and the fuzz jobs run. Each directory is
 # EXCLUDE_FROM_ALL, so this is how they get built. Custom targets (the seed
-# regenerators) stay out: they rewrite committed files.
+# regenerators) stay out: they rewrite committed files. A tool's tests/ joins
+# the list here and turns VCPKG_APPLOCAL_DEPS off at its own top (see below).
 add_custom_target(augusta_tests)
 set(test_directories ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/fuzz)
 if(AUGUSTA_TOOLS)
@@ -1110,19 +1115,22 @@ if(AUGUSTA_TOOLS)
 endif()
 
 # On Windows vcpkg gives each executable a POST_BUILD step, z-applocal
-# (VCPKG_APPLOCAL_DEPS), that copies the DLLs it loads from the triplet's bin
-# beside it. The executables of a test directory share its output directory, so
-# when it holds no DLLs yet, dozens of those steps write the same DLLs at once
-# and some fail on a locked file ("Access is denied."). On a 64-core host 5 of 9
-# rebuilds of augusta_tests from an empty tests/ failed, 15 targets in all, and
-# 7 of 9 with test discovery out of the build (PRE_TEST): the copies collide
-# with each other (#1306). So augusta_test_dlls copies every DLL of the
-# triplet's bin into each directory first, keeping the timestamps that
-# z-applocal compares, and each test executable waits for it: z-applocal then
-# finds them up to date and copies nothing. The whole bin, not what the tests
-# load, so that no list goes stale when a dependency is added.
+# (VCPKG_APPLOCAL_DEPS), that runs vcpkg.exe to copy the DLLs it loads from the
+# triplet's bin beside it. When dozens of test executables link side by side,
+# some of those launches of vcpkg.exe fail before it starts ("Access is
+# denied.", "The process cannot access the file because it is being used by
+# another process."), even with every DLL already in place: on a 64-core host,
+# 8 of 9 rebuilds of augusta_tests from an empty tests/ failed, 1 to 3 targets
+# each, after the DLLs had been copied first (#1306). Launching vcpkg.exe 64 at
+# a time, with no build, fails the same way, except from one path: likely an
+# antivirus scan at each launch that an exclusion skips (not confirmed). So
+# tests/ and each tool's tests/ turn z-applocal off at their top
+# (VCPKG_APPLOCAL_DEPS; fuzz/ inherits it), and augusta_test_dlls copies every
+# DLL of the triplet's bin into each test directory instead, before any test
+# executable builds. The whole bin, not
+# what the tests load, so that no list goes stale when a dependency is added.
 set(copy_test_dlls OFF)
-if(WIN32 AND VCPKG_APPLOCAL_DEPS)
+if(WIN32)
   set(copy_test_dlls ON)
   add_custom_target(augusta_test_dlls COMMENT "Copying vcpkg's DLLs into the test directories")
 endif()
