@@ -52,6 +52,9 @@ struct Rifle {
   float ads_recoil_scale = 1.0F;
   /// The vertical field of view aiming down sights zooms to, in radians.
   float ads_field_of_view = 1.0F;
+  /// The rifle's zero range, in meters: how far from the Eye a round crosses
+  /// the line of sight, from the Eye along the view (ADR-0064). Above 0.
+  float zero_range = 1.0F;
   /// The kick of each round of a burst, in order, at most
   /// limits::kMaxRecoilKicks; past the last, the last repeats. Empty: no recoil.
   std::vector<RecoilKick> recoil_pattern;

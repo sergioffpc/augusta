@@ -46,6 +46,13 @@ exits at startup naming the script and the field, as it does for a bad pack. The
 cooker refuses a scenario whose manifest names no Parameters script, so that is
 found when the pack is made rather than when a server starts on it.
 
+**The rifle's Parameters.** The rifle (`rifle`) is its magazine capacity, rate
+of fire, muzzle velocity, reload time, recoil pattern and recovery, ADS's recoil
+scale and field of view, and its zero range (`rifle.zero_range`, ADR-0064): how
+far from the Eye, in meters, a round crosses a Desktop player's line of sight.
+The zero range is above 0; one of 0 or below, or none, is refused when the
+Parameters load, naming the field, not found at the first Shot.
+
 **The tick rate is not a parameter.** It is fixed for the life of the server
 process: every command, acknowledgement and stretch of history is counted in
 ticks, so a rate changed under them would put both sides out of step. It is

@@ -43,6 +43,7 @@ constexpr std::string_view kCombat = R"(
     recoil_recovery_per_second = 0.2,
     ads_recoil_scale = 0.5,
     ads_field_of_view = 0.7,
+    zero_range = 100,
   },
   ammo = {
     gravity = 9.81,
@@ -113,6 +114,7 @@ TEST(ParametersLoaderTest, ReadsEveryValueOfACompleteScript) {
   EXPECT_FLOAT_EQ(rifle.recoil_recovery_per_second, 0.2F);
   EXPECT_FLOAT_EQ(rifle.ads_recoil_scale, 0.5F);
   EXPECT_FLOAT_EQ(rifle.ads_field_of_view, 0.7F);
+  EXPECT_FLOAT_EQ(rifle.zero_range, 100.0F);
   EXPECT_FLOAT_EQ(loaded->ammo.flight.gravity, 9.81F);
   EXPECT_FLOAT_EQ(loaded->ammo.flight.max_range, 1000.0F);
   EXPECT_FLOAT_EQ(loaded->ammo.damage.head, 100.0F);
@@ -203,6 +205,19 @@ TEST(ParametersLoaderCombatTest, ACombatValueOutsideItsRangeIsOutOfRange) {
   ExpectError(Replacing("torso = 34", "torso = -1"), ParametersLoadErrorCode::kOutOfRange, "ammo.damage.torso");
   ExpectError(Replacing("starting_health = 100", "starting_health = 0/0"), ParametersLoadErrorCode::kOutOfRange,
               "starting_health");
+}
+
+// A zero range is a distance a round crosses the line of sight at: one of 0 or
+// less, or none, is refused when the Parameters load, not at the first Shot.
+// Requirements: US-22
+TEST(ParametersLoaderCombatTest, AZeroRangeThatIsNotAboveZeroIsRefusedNamingIt) {
+  ExpectError(Replacing("zero_range = 100,", ""), ParametersLoadErrorCode::kMissingKey, "rifle.zero_range");
+  for (const std::string_view range : {"0", "-0", "-25", "0/0", "-math.huge"}) {
+    ExpectError(Replacing("zero_range = 100", "zero_range = " + std::string(range)),
+                ParametersLoadErrorCode::kOutOfRange, "rifle.zero_range");
+  }
+  ExpectError(Replacing("zero_range = 100", "zero_range = '100'"), ParametersLoadErrorCode::kWrongType,
+              "rifle.zero_range");
 }
 
 // Requirements: US-22

@@ -2185,7 +2185,8 @@ class ScriptedParametersTest : public LoopbackMatch {
         "  forced_walk_below = 0.2,\n"
         "},\n"
         "  rifle = { magazine_capacity = 30, rounds_per_minute = 600, muzzle_velocity = 800, reload_seconds = 2.5,\n"
-        "    recoil_pattern = {}, recoil_recovery_per_second = 0, ads_recoil_scale = 1, ads_field_of_view = 0.7 },\n"
+        "    recoil_pattern = {}, recoil_recovery_per_second = 0, ads_recoil_scale = 1, ads_field_of_view = 0.7,\n"
+        "    zero_range = 100 },\n"
         "  ammo = { gravity = 9.81, max_range = 1000, damage = { head = 100, torso = 34, limb = 25 } },\n"
         "  starting_health = 100,\n"
         "}",
