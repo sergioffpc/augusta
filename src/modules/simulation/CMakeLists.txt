@@ -3,6 +3,7 @@
 add_library(
   augusta_simulation
   STATIC
+  combat.cpp
   hitbox_history.cpp
   hitbox_posing.cpp
   policy_bridge.cpp
