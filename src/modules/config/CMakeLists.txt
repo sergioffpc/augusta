@@ -9,7 +9,7 @@ find_package(yaml-cpp CONFIG REQUIRED)
 find_package(boost_dll CONFIG REQUIRED)
 find_package(boost_program_options CONFIG REQUIRED)
 
-add_library(augusta_config STATIC config.cpp)
+add_library(augusta_config STATIC command_line.cpp config.cpp)
 target_include_directories(augusta_config PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(augusta_config PRIVATE yaml-cpp::yaml-cpp Boost::dll Boost::program_options augusta_logging)
 augusta_set_module_scope(augusta_config SHARED)
