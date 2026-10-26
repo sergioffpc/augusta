@@ -2749,4 +2749,17 @@ TEST_F(ZeroedRifleTest, FromTheHipARoundNearerThanTheZeroRangeLandsBelowAndRight
   EXPECT_GT(landed.x, eye.x + kOffTheSight);
 }
 
+// Past the zero range it has crossed the sight and goes on: above it, its hand
+// further below her Eye than the round drops by twice the zero range, and to
+// her left.
+// Requirements: US-07
+TEST_F(ZeroedRifleTest, FromTheHipARoundFurtherThanTheZeroRangeLandsAboveAndLeftOfTheSight) {
+  const Vec3 eye = Eye();
+
+  const Vec3 landed = LandingAt(kZeroRange * 2.0F, eye, Aiming(0.0F, 0.0F, false));
+
+  EXPECT_GT(landed.y, eye.y + kOffTheSight);
+  EXPECT_LT(landed.x, eye.x - kOffTheSight);
+}
+
 }  // namespace
