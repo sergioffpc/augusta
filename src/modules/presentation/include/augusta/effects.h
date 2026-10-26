@@ -34,11 +34,6 @@ struct Effect {
 /// lifetime. An effect added after the frame's call shows on that frame.
 void Age(std::vector<Effect>& effects, float elapsed, float lifetime);
 
-/// Where the local player's muzzle flash shows, its camera at eye looking along
-/// direction: a short way ahead of the eye along it, about where its rifle's
-/// Muzzle is. Another player's shows at its Shot's origin, its Muzzle.
-[[nodiscard]] math::Vec3 MuzzleOf(const math::Vec3& eye, const math::Vec3& direction);
-
 /// Counts the rounds the local player's rifle fired between two frames, from
 /// the running total each Prediction State carries
 /// (prediction::State::total_rounds_fired): every one once, even when a frame

@@ -15,7 +15,6 @@
 #include "augusta/failure.h"
 #include "augusta/logging.h"
 #include "augusta/map.h"
-#include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/parameters_loader.h"
 #include "augusta/policy.h"
@@ -91,13 +90,7 @@ std::expected<weapon::Markers, failure::Failure> ReadRifle(const assets::Pack& p
     return std::unexpected(ContentFailure(pack, {{.key = "asset", .value = std::string(assets::kRiflePath)}},
                                           assets::DescribeResolveError(rifle.error(), "rifle")));
   }
-  const auto frame = [](const assets::RifleMarker& marker) {
-    return math::ToMat4(marker.translation, marker.rotation, math::Vec3(1.0F));
-  };
-  return weapon::Markers{.grip = frame(rifle->grip),
-                         .muzzle = frame(rifle->muzzle),
-                         .sight = frame(rifle->sight),
-                         .fore_end = frame(rifle->fore_end)};
+  return weapon::MarkersOf(*rifle);
 }
 
 // The scenario's Parameters script, out of the pack (it was cooked into the

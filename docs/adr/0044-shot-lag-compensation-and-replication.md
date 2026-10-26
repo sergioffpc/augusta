@@ -87,13 +87,15 @@ unreliable ones, so the Authoritative State updates are not held back behind it.
 PresentationWorld computes the announced bullet's trajectory with the same
 ballistics math the server uses and the ballistics values of the Parameters
 (ADR-0039), to draw the tracer and the impact on the Map, from the Shot's
-origin; another player's muzzle flash shows there too. A round fired into a wall
-stops there by the client's own Map raycast, where the server put it, with no
-Map impacts sent. Hits on players (blood, hit reactions) are drawn only from the
-server's hit messages, never from that local trajectory, so a client's drawing
-can differ from the server's outcome without ever showing a hit that did not
-happen. Ballistics' trajectory math is therefore shared by client and server;
-deciding a bullet's outcome (HitDetection, Damage) stays the server's alone.
+origin; another player's muzzle flash shows there too, and the shooter's own,
+predicted, at the Muzzle its predicted body holds (ADR-0064). A round fired into
+a wall stops there by the client's own Map raycast, where the server put it,
+with no Map impacts sent. Hits on players (blood, hit reactions) are drawn only
+from the server's hit messages, never from that local trajectory, so a client's
+drawing can differ from the server's outcome without ever showing a hit that did
+not happen. Ballistics' trajectory math is therefore shared by client and
+server; deciding a bullet's outcome (HitDetection, Damage) stays the server's
+alone.
 
 **On the wire.** The Shot, the Hit confirmation and the Command's Seen time (its
 tick and fraction) follow ADR-0038: the smallest types, quantized numbers on its

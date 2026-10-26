@@ -179,13 +179,15 @@ policy (ADR-0060).
   The pose is its Clips' (ADR-0066): its stance's blend space at its velocity,
   synchronised by its Stride, its Aim offset and ADS grip on top, onto a root
   its position and facing place, then the rifle held in it. SimulationWorld's
-  Posing phase poses every player each tick. Presentation gives what a client
-  would pose a remote player from, its interpolated state, but no client poses
-  one until drawing a posed player arrives with skinning; the one other consumer
-  is a Development build's client (ADR-0074), which places a Character's
-  Hitboxes in its root space by the Rest pose once, when the character loads,
-  for the Hitboxes Debug overlay. That is a loader, not a World: neither
-  PredictionWorld nor PresentationWorld poses a player
+  Posing phase poses every player each tick. PresentationWorld poses the local
+  player's predicted body on a frame its predicted fire fires a round, holding
+  the rifle, to show its muzzle flash at the Muzzle (ADR-0064); it gives what a
+  client would pose a remote player from, its interpolated state, but poses no
+  remote player until drawing a posed player arrives with skinning. The one
+  other consumer is a Development build's client (ADR-0074), which places a
+  Character's Hitboxes in its root space by the Rest pose once, when the
+  character loads, for the Hitboxes Debug overlay: a loader, not a World.
+  PredictionWorld poses no player
 - Networking Protocol — message definitions, serialized as Protocol Buffers
   (ADR-0007)
 - Link — the channel of one Session (augusta_link): every conversion between the
