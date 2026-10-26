@@ -8,14 +8,19 @@
   // Every config starts from config/augustac.yaml / config/augustad.yaml
   // (ADR-0034): local copies of config/*.example.yaml, git-ignored because they
   // hold this machine's paths. Create them before the first F5.
+  //
+  // Each OS lists only the configs it can run: a config's "windows", "linux"
+  // or "osx" section may set its presentation, so the (lldb) configs are
+  // hidden on Windows and the (MSVC) configs everywhere else. One file serves
+  // every OS, as the dev container mounts the Windows checkout itself.
   "configurations": [
     // The (lldb) configs below debug the Linux build of augustad (the real
     // deployment target, ADR-0026) and of augustac through LLVM's lldb-dap
     // extension, which runs the lldb-dap on PATH - the dev container's, from
     // the lldb package scripts/bootstrap.sh installs. On macOS (their "osx"
     // halves) they debug the macos presets' native build instead, with
-    // Homebrew's lldb-dap, which is off PATH (scripts/bootstrap/macos.sh). For
-    // debugging natively on Windows during dev, use the (MSVC) configs instead.
+    // Homebrew's lldb-dap, which is off PATH (scripts/bootstrap/macos.sh). On
+    // Windows, the (MSVC) configs debug the native build instead.
     {
       "name": "Debug Server - Release (lldb)",
       "type": "lldb-dap",
@@ -24,6 +29,7 @@
       "cwd": "${workspaceFolder}",
       "args": ["--config", "${workspaceFolder}/config/augustad.yaml"],
       "preLaunchTask": "Build augustad (Release)",
+      "windows": { "presentation": { "hidden": true } },
       "osx": {
         "program": "${workspaceFolder}/build/arm64-macos/src/server/augustad",
         "debugAdapterExecutable": "/opt/homebrew/opt/lldb/bin/lldb-dap"
@@ -37,6 +43,7 @@
       "cwd": "${workspaceFolder}",
       "args": ["--config", "${workspaceFolder}/config/augustad.yaml"],
       "preLaunchTask": "Build augustad (Debug)",
+      "windows": { "presentation": { "hidden": true } },
       "osx": {
         "program": "${workspaceFolder}/build/arm64-macos-debug/src/server/augustad",
         "debugAdapterExecutable": "/opt/homebrew/opt/lldb/bin/lldb-dap"
@@ -50,6 +57,7 @@
       "cwd": "${workspaceFolder}",
       "args": ["--config", "${workspaceFolder}/config/augustac.yaml"],
       "preLaunchTask": "Build augustac (Release)",
+      "windows": { "presentation": { "hidden": true } },
       "osx": {
         "program": "${workspaceFolder}/build/arm64-macos/src/client/augustac",
         "debugAdapterExecutable": "/opt/homebrew/opt/lldb/bin/lldb-dap"
@@ -71,6 +79,7 @@
         "VK_ADD_LAYER_PATH": "${workspaceFolder}/build/x64-linux-debug/vcpkg_installed/x64-linux/share/vulkan/explicit_layer.d",
         "LD_LIBRARY_PATH": "${workspaceFolder}/build/x64-linux-debug/vcpkg_installed/x64-linux/debug/lib"
       },
+      "windows": { "presentation": { "hidden": true } },
       "osx": {
         "program": "${workspaceFolder}/build/arm64-macos-debug/src/client/augustac",
         "debugAdapterExecutable": "/opt/homebrew/opt/lldb/bin/lldb-dap",
@@ -88,7 +97,9 @@
       "cwd": "${workspaceFolder}",
       "args": ["--config", "${workspaceFolder}/config/augustad.yaml"],
       "preLaunchTask": "Build augustad (Release)",
-      "externalConsole": true
+      "externalConsole": true,
+      "presentation": { "hidden": true },
+      "windows": { "presentation": { "hidden": false } }
     },
     {
       "name": "Debug Server - Debug (MSVC)",
@@ -98,7 +109,9 @@
       "cwd": "${workspaceFolder}",
       "args": ["--config", "${workspaceFolder}/config/augustad.yaml"],
       "preLaunchTask": "Build augustad (Debug)",
-      "externalConsole": true
+      "externalConsole": true,
+      "presentation": { "hidden": true },
+      "windows": { "presentation": { "hidden": false } }
     },
     {
       "name": "Debug Client - Release (MSVC)",
@@ -108,7 +121,9 @@
       "cwd": "${workspaceFolder}",
       "args": ["--config", "${workspaceFolder}/config/augustac.yaml"],
       "preLaunchTask": "Build augustac (Release)",
-      "externalConsole": true
+      "externalConsole": true,
+      "presentation": { "hidden": true },
+      "windows": { "presentation": { "hidden": false } }
     },
     {
       "name": "Debug Client - Debug (MSVC)",
@@ -126,7 +141,9 @@
         }
       ],
       "preLaunchTask": "Build augustac (Debug)",
-      "externalConsole": true
+      "externalConsole": true,
+      "presentation": { "hidden": true },
+      "windows": { "presentation": { "hidden": false } }
     }
   ]
 }
