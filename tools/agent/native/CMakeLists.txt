@@ -37,7 +37,19 @@ endif()
 # a test executable is: it holds an Agent and the test-only server in one
 # process.
 set(AUGUSTA_AGENT_PACKAGE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../src/augusta_agent")
-pybind11_add_module(augusta_agent_py module.cpp)
+pybind11_add_module(
+  augusta_agent_py
+  agent_binding.cpp
+  command_binding.cpp
+  conversions.cpp
+  dispatch.cpp
+  link_faults_binding.cpp
+  module.cpp
+  reports_binding.cpp
+  stats_binding.cpp
+  testing_binding.cpp
+  view_binding.cpp
+)
 target_link_libraries(
   augusta_agent_py
   PRIVATE
