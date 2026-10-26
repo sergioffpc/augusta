@@ -68,9 +68,7 @@ struct StanceClips {
 /// Grip hangs, and the left hand that reaches the rifle's Fore-end by two-bone
 /// IK, each Joint an index in the Character's assets::Skeleton.
 struct WeaponSocket {
-  /// The Joint of its right hand, which the socket moves with. That Joint's
-  /// grandparent is the shoulder of the arm that holds the rifle, from which a
-  /// Muzzle in a wall is found (ADR-0044).
+  /// The Joint of its right hand, which the socket moves with.
   std::uint32_t right_hand = 0;
   /// The socket in that Joint's space: where the rifle's Grip goes, pointing
   /// along its -Z as the Grip does.
@@ -79,6 +77,11 @@ struct WeaponSocket {
   /// parent, the shoulder, are the arm that bends to reach the Fore-end.
   std::uint32_t left_hand = 0;
 };
+
+/// The shoulder of the arm that holds the rifle on socket, a Joint of
+/// skeleton: its right hand's grandparent, which LoadClips makes sure it has.
+/// Where a Muzzle in a wall is found from (ADR-0044).
+[[nodiscard]] std::uint32_t ShoulderOf(const assets::Skeleton& skeleton, const WeaponSocket& socket);
 
 /// A Character's Clips, as the Hitbox pose uses them: its ozz-animation
 /// Skeleton, each stance's Clips, its `air` Clip, how long each change of

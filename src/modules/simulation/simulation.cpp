@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -118,8 +117,7 @@ struct HitboxHistory {
 // places: the view it is aimed along, the Command's turned by the Recoil offset
 // from before its own kick, that offset, and its Shooter's delay.
 struct FiredRound {
-  float yaw = 0.0F;
-  float pitch = 0.0F;
+  weapon::Heading aim{};
   weapon::RecoilOffset recoil{};
   float shooters_delay = 0.0F;
 };
@@ -179,18 +177,6 @@ struct PlayerHit {
 // kMaxShootersDelay in ticks at tick_rate_hz: not a whole number at every rate.
 float MaxShootersDelayTicks(std::uint8_t tick_rate_hz) {
   return std::chrono::duration<float>(kMaxShootersDelay).count() * static_cast<float>(tick_rate_hz);
-}
-
-// The shoulder of the arm that holds the rifle on socket: its right hand's
-// grandparent in skeleton, which LoadClips makes sure it has.
-std::uint32_t ShoulderOf(const assets::Skeleton& skeleton, const animation::WeaponSocket& socket) {
-  return skeleton.joints.at(skeleton.joints.at(socket.right_hand).parent).parent;
-}
-
-// direction as a view's yaw and pitch (command::ViewDirection's inverse).
-weapon::Heading HeadingOf(const math::Vec3& direction) {
-  const math::Vec3 along = math::Normalize(direction);
-  return weapon::Heading{.yaw = std::atan2(-along.x, -along.z), .pitch = std::asin(std::clamp(along.y, -1.0F, 1.0F))};
 }
 
 // A round's Shot whose barrel is in the Map, and where the barrel enters it.
@@ -414,8 +400,7 @@ struct World::Impl {
     const weapon::Result result = weapon::Step(parameters.rifle, rifle.state, command, delta_time);
     rifle.fired = std::nullopt;
     if (result.fired) {
-      rifle.fired = FiredRound{.yaw = result.yaw,
-                               .pitch = result.pitch,
+      rifle.fired = FiredRound{.aim = weapon::Heading{.yaw = result.yaw, .pitch = result.pitch},
                                .recoil = rifle.state.recoil,
                                .shooters_delay = ShootersDelay(tick, command, max_shooters_delay)};
     }
@@ -437,7 +422,8 @@ struct World::Impl {
       FireFromTheMuzzle(
           delta_time, player, *rifle.fired, weapon::Recoiled(hand, facing.yaw, facing.pitch, rifle.fired->recoil),
           body.state.position + physics::LowerToStance(eye.standing, body.state.stance),
-          math::TranslationOf(posed.posed.world.at(ShoulderOf(skeleton.skeleton, clips.clips->weapon_socket))));
+          math::TranslationOf(
+              posed.posed.world.at(animation::ShoulderOf(skeleton.skeleton, clips.clips->weapon_socket))));
     }
   }
 
@@ -456,8 +442,8 @@ struct World::Impl {
       FireIntoTheMap(*blocked, round.shooters_delay);
       return;
     }
-    const weapon::Heading heading = weapon::Zeroed(parameters.rifle, parameters.ammo.flight, delta_time, muzzle, eye,
-                                                   weapon::Heading{.yaw = round.yaw, .pitch = round.pitch});
+    const weapon::Heading heading =
+        weapon::Zeroed(parameters.rifle, parameters.ammo.flight, delta_time, muzzle, eye, round.aim);
     const Shot shot{
         .shooter = player.entity,
         .origin = math::SnapPosition(muzzle),
@@ -478,7 +464,7 @@ struct World::Impl {
     if (muzzle == shoulder) {
       return std::nullopt;
     }
-    const weapon::Heading heading = HeadingOf(muzzle - shoulder);
+    const weapon::Heading heading = weapon::HeadingOf(muzzle - shoulder);
     const Shot shot{
         .shooter = shooter,
         .origin = math::SnapPosition(shoulder),

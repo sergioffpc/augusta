@@ -133,6 +133,10 @@ struct Heading {
   bool operator==(const Heading&) const = default;
 };
 
+/// direction, of any length but 0, as a view's yaw and pitch:
+/// command::ViewDirection's inverse.
+[[nodiscard]] Heading HeadingOf(const math::Vec3& direction);
+
 /// Where a round of rifle leaves muzzle for, zeroed (ADR-0064): so that, flying
 /// as flight makes it in ballistics::World steps of step_seconds, it crosses
 /// the line of sight from eye along sight at the rifle's zero range. Computed

@@ -128,6 +128,11 @@ math::Mat4 Recoiled(const math::Mat4& hand, float yaw, float pitch, const Recoil
   return kicked * math::Inverse(view) * hand;
 }
 
+Heading HeadingOf(const math::Vec3& direction) {
+  return Heading{.yaw = std::atan2(-direction.x, -direction.z),
+                 .pitch = std::asin(std::clamp(math::Normalize(direction).y, -1.0F, 1.0F))};
+}
+
 Heading Zeroed(const Rifle& rifle, const ballistics::BulletConfig& flight, float step_seconds, const math::Vec3& muzzle,
                const math::Vec3& eye, const Heading& sight) {
   // After t seconds in steps of step_seconds, semi-implicit Euler has dropped a
@@ -149,12 +154,10 @@ Heading Zeroed(const Rifle& rifle, const ballistics::BulletConfig& flight, float
   // taking along's afresh: most of what atan2 and asin round off cancels out,
   // and a round with little to turn leaves along sight's own angles.
   constexpr float kTurn = 2.0F * std::numbers::pi_v<float>;
-  const auto yaw_of = [](const math::Vec3& direction) { return std::atan2(-direction.x, -direction.z); };
-  const auto pitch_of = [](const math::Vec3& direction) {
-    return std::asin(std::clamp(math::Normalize(direction).y, -1.0F, 1.0F));
-  };
-  return Heading{.yaw = sight.yaw + std::remainder(yaw_of(along) - yaw_of(view), kTurn),
-                 .pitch = sight.pitch + (pitch_of(along) - pitch_of(view))};
+  const Heading to = HeadingOf(along);
+  const Heading from = HeadingOf(view);
+  return Heading{.yaw = sight.yaw + std::remainder(to.yaw - from.yaw, kTurn),
+                 .pitch = sight.pitch + (to.pitch - from.pitch)};
 }
 
 }  // namespace augusta::weapon

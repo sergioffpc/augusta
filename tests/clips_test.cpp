@@ -343,6 +343,15 @@ TEST_F(ClipsTest, TheWeaponSocketLoadsOnItsJointWithTheLeftHand) {
   EXPECT_EQ(augusta::math::TranslationOf(clips->weapon_socket.frame), augusta::math::Vec3(0.0F, 0.0F, -0.1F));
 }
 
+// The arm that holds the rifle hangs from the hand's grandparent: the hand on
+// the spine, on the root.
+TEST_F(ClipsTest, TheShoulderOfTheWeaponSocketIsItsRightHandsGrandparent) {
+  const auto clips = Load();
+
+  ASSERT_TRUE(clips.has_value());
+  EXPECT_EQ(augusta::animation::ShoulderOf(Soldier(), clips->weapon_socket), 0U);
+}
+
 TEST_F(ClipsTest, ACharacterWithoutAWeaponSocketIsRefused) {
   Remove(augusta::assets::CharacterWeaponSocketPath(kCharacter));
 

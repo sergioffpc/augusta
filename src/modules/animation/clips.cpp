@@ -239,6 +239,10 @@ const StanceClips& CharacterClips::Of(physics::Stance stance) const {
   return stances[static_cast<std::size_t>(stance)];
 }
 
+std::uint32_t ShoulderOf(const assets::Skeleton& skeleton, const WeaponSocket& socket) {
+  return skeleton.joints.at(skeleton.joints.at(socket.right_hand).parent).parent;
+}
+
 namespace {
 
 // What part is called in a message, as DescribeResolveError names it too.
