@@ -27,7 +27,10 @@ holding hand. A Desktop player holds the rifle where its pose holds it: its Grip
 on the weapon socket of its posed right hand (ADR-0066), so the Muzzle follows
 its stance, its Aim offset and its ADS grip, which shoulders the rifle with its
 Sight at the Eye. The Posing phase places it, after posing the body, and fires
-each round of the tick from it there.
+each round of the tick from it there. A client shows its local player's own
+muzzle flash, predicted ahead of the Shot, at the Muzzle placed the same way:
+its predicted body posed where it aims, the rifle held and turned by the Recoil
+offset the round left with. It draws no rifle.
 
 **Zeroing.** The barrel is pitched and turned so that a round crosses the line
 of sight at the rifle's zero range, a Parameter (ADR-0039): above or below it a

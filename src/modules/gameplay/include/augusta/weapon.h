@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "augusta/assets.h"
 #include "augusta/ballistics.h"
 #include "augusta/body_part.h"
 #include "augusta/command.h"
@@ -98,6 +99,11 @@ struct Markers {
 
   bool operator==(const Markers&) const = default;
 };
+
+/// The markers of rifle, as a pack holds them (ADR-0064): each a frame in the
+/// rifle's space, at its translation and turned by its rotation. What the
+/// server and the client each resolve the scenario's rifle into.
+[[nodiscard]] Markers MarkersOf(const assets::RifleData& rifle);
 
 /// Where the Muzzle of the rifle markers describes is, held by hand at its
 /// Grip: hand times the Grip's inverse times the Muzzle (ADR-0064). The one

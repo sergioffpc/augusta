@@ -522,7 +522,12 @@ target_link_libraries(augusta_audio_cues_tests PRIVATE augusta_presentation GTes
 gtest_discover_tests(augusta_audio_cues_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_presentation_tests presentation_test.cpp)
-target_link_libraries(augusta_presentation_tests PRIVATE augusta_presentation GTest::gtest GTest::gtest_main)
+# Links augusta_animation and ozz-animation's offline libraries for the Clips of
+# the local player's Character it authors (clips_fixture.h).
+target_link_libraries(
+  augusta_presentation_tests
+  PRIVATE augusta_presentation augusta_animation ozz::animation_offline GTest::gtest GTest::gtest_main
+)
 # Links augusta_prediction publicly (so PhysX), same first-launch cost as above.
 gtest_discover_tests(augusta_presentation_tests DISCOVERY_TIMEOUT 30)
 

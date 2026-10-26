@@ -30,9 +30,11 @@
 /// A pure function of replicated state: the Poser holds ozz-animation's
 /// working buffers alone, so posing the same state twice gives the same pose,
 /// whatever was posed between. SimulationWorld's Posing phase poses every player
-/// with one. A client has what it would pose a remote player from, its
-/// interpolated state (presentation::PoseInputOf, ADR-0061), and the two agree,
-/// but no client poses one yet: drawing a posed player comes with skinning.
+/// with one. A client poses its local player's predicted body with one on a
+/// frame it fires, to show its muzzle flash at the Muzzle it holds (ADR-0064),
+/// and has what it would pose a remote player from, its interpolated state
+/// (presentation::PoseInputOf, ADR-0061), and the two agree, but it draws no
+/// posed player yet: drawing one comes with skinning.
 namespace augusta::animation {
 
 /// How fast a body rises at the start of its air Clip, and falls at its end, in

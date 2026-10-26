@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <numbers>
 
+#include "augusta/assets.h"
 #include "augusta/ballistics.h"
 #include "augusta/command.h"
 #include "augusta/grid.h"
@@ -93,6 +94,16 @@ Result Step(const Rifle& rifle, const State& state, const command::Command& comm
     }
   }
   return result;
+}
+
+Markers MarkersOf(const assets::RifleData& rifle) {
+  const auto frame = [](const assets::RifleMarker& marker) {
+    return math::ToMat4(marker.translation, marker.rotation, math::Vec3(1.0F));
+  };
+  return Markers{.grip = frame(rifle.grip),
+                 .muzzle = frame(rifle.muzzle),
+                 .sight = frame(rifle.sight),
+                 .fore_end = frame(rifle.fore_end)};
 }
 
 math::Mat4 PlaceMuzzle(const math::Mat4& hand, const Markers& markers) {
