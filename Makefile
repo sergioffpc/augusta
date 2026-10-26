@@ -13,12 +13,19 @@
 # Visual Studio Build Tools environment first (clang-cl needs it, see README).
 # GNU make for Windows: `winget install ezwinports.make`.
 
+# The host's system, as uname names it; Windows has no uname.
 ifeq ($(OS),Windows_NT)
+HOST_OS := Windows_NT
+else
+HOST_OS := $(shell uname -s)
+endif
+
+ifeq ($(HOST_OS),Windows_NT)
 SHELL := cmd.exe
 .SHELLFLAGS := /c
 PRESET ?= windows
 RUN := scripts\vcenv.cmd
-else ifeq ($(shell uname -s),Darwin)
+else ifeq ($(HOST_OS),Darwin)
 PRESET ?= macos
 RUN :=
 else
@@ -42,8 +49,8 @@ SHELL_SOURCES := "*.sh" ".githooks/*"
 CMAKE_SOURCES := "CMakeLists.txt" "*/CMakeLists.txt" "*.cmake" ":!:third_party/*"
 MARKDOWN_SOURCES := "*.md" ":!:third_party/*" ":!:CHANGELOG.md"
 PROTO_SOURCES := "*.proto" ":!:third_party/*"
-# What .yamlfmt and .yamllint cover, named file by file for format-files and
-# lint-files.
+# What .yamlfmt and .yamllint cover, named file by file, so FILES narrows them
+# as it does the rest.
 YAML_SOURCES := "*.yaml" "*.yml" "*.yamlfmt" "*.yamllint" ":!:third_party/*" \
   ":!:charts/augustad/templates/*" ":!:clusters/onprem/flux-system/gotk-components.yaml" \
   ":!:clusters/onprem/infrastructure/kube-bench/cfg/*"
@@ -97,7 +104,7 @@ TIDY_CLIENT_TESTS := "tests/client_*.cpp" "tests/renderer_*.cpp"
 OTHER_PLATFORMS := ":(exclude)src/*_linux.cpp" ":(exclude)src/*_macos.cpp" ":(exclude)src/*_posix.cpp"
 TIDY_EXCLUDES += $(OTHER_PLATFORMS)
 else
-ifeq ($(shell uname -s),Darwin)
+ifeq ($(HOST_OS),Darwin)
 OTHER_PLATFORMS := ":(exclude)src/*_linux.cpp"
 else
 OTHER_PLATFORMS := ":(exclude)src/*_macos.cpp"
@@ -132,36 +139,45 @@ TIDY_CHECKS := $(addprefix tidy/,$(TIDY_SOURCES))
 INCLUDE_CHECKS := $(addprefix include-cleaner/,$(INCLUDE_SOURCES))
 
 .DEFAULT_GOAL := all
-.PHONY: all help configure build test check coverage pack-native install uninstall clean distclean format format-check format-files tidy lint lint-files prepush docs toolchain toolchain-check
+.PHONY: all help configure build test check coverage pack-native install uninstall clean distclean format format-check tidy tidy-prepare lint prepush docs toolchain toolchain-check
 
 all: build
 
 # $(info), not echo: make prints it itself, so the parentheses reach neither
 # cmd.exe nor /bin/sh, which would read them as syntax.
 help:
-	$(info Presets: windows-shipping and linux-shipping make a Shipping build, without the debug tools;)
+	$(info Usage: make [target] [PRESET=...] [FILES="a b ..."])
+	$(info $()  PRESET is $(PRESET); override with windows-debug, linux-san, ...)
+	$(info $()  windows-shipping and linux-shipping make a Shipping build, without the debug tools;)
 	$(info $()  every other preset a Development build, with them (ADR-0074).)
-	$(info Targets (PRESET=$(PRESET), override with PRESET=windows-debug, linux-san, ...):)
-	$(info $()  all           the default: build)
-	$(info $()  configure     cmake --preset)
-	$(info $()  build         configure, then compile the binaries (no tests), or TARGETS=augustad ... alone)
-	$(info $()  test          build, then compile the tests and run ctest)
-	$(info $()  check         configure, then the repository's structural checks (checks/) and their pytest)
-	$(info $()  coverage      test under the linux-coverage preset, then its report into build/x64-linux-coverage/report)
-	$(info $()  pack-native   the asset cooker's native module alone, into tools/pack (PYTHON_EXECUTABLE=...))
-	$(info $()  install       build, then cmake --install augustad (prefix=..., DESTDIR=...))
-	$(info $()  uninstall     remove what install put in place (same DESTDIR))
-	$(info $()  clean         remove build outputs, keep the configuration)
-	$(info $()  distclean     delete $(BUILD_DIR))
-	$(info $()  format        every formatter (C++, YAML, Lua, TOML, Python, shell, CMake, Markdown) on tracked files)
-	$(info $()  format-files  format's formatters on FILES alone, as the pre-commit hook runs them)
-	$(info $()  format-check  every formatter check and linter CI's format job runs (not clang-tidy))
-	$(info $()  tidy          clang-tidy on src, include-cleaner on what it leaves out, as CI runs them (configures first))
-	$(info $()  lint          format-check, then tidy: everything CI lints)
-	$(info $()  lint-files    lint's linters and tidy's clang-tidy on FILES alone, as the pre-push hook runs them)
-	$(info $()  prepush       the pre-push hook's checks on this branch's unpushed commits and uncommitted changes, without pushing)
-	$(info $()  docs          the documentation site, MkDocs and Doxygen, into build/docs-site)
-	$(info $()  toolchain     install the pinned tools missing from the shared store, then link .toolchain/bin to them)
+	$(info )
+	$(info Build:)
+	$(info $()  all              the default: build)
+	$(info $()  configure        cmake --preset)
+	$(info $()  build            configure, then compile the binaries (no tests), or TARGETS=augustad ... alone)
+	$(info $()  pack-native      the asset cooker's native module alone, into tools/pack (PYTHON_EXECUTABLE=...))
+	$(info $()  docs             the documentation site, MkDocs and Doxygen, into build/docs-site)
+	$(info )
+	$(info Test:)
+	$(info $()  test             build, then compile the tests and run ctest)
+	$(info $()  check            configure, then the repository's structural checks (checks/) and their pytest)
+	$(info $()  coverage         test under the linux-coverage preset, then its report into build/x64-linux-coverage/report)
+	$(info )
+	$(info Format and lint, on every tracked file, or FILES alone as the hooks run them:)
+	$(info $()  format           every formatter (C++, YAML, Lua, TOML, Python, shell, CMake, Markdown, protobuf))
+	$(info $()  format-check     every formatter check and linter CI's format job runs (not clang-tidy))
+	$(info $()  tidy             clang-tidy on src, include-cleaner on what it leaves out, as CI runs them)
+	$(info $()  lint             format-check and tidy: everything CI lints)
+	$(info $()  prepush          lint on this branch's unpushed commits and uncommitted changes, as the pre-push hook does)
+	$(info )
+	$(info Install and clean:)
+	$(info $()  install          build, then cmake --install augustad (prefix=..., DESTDIR=...))
+	$(info $()  uninstall        remove what install put in place (same DESTDIR))
+	$(info $()  clean            remove build outputs, keep the configuration)
+	$(info $()  distclean        delete $(BUILD_DIR))
+	$(info )
+	$(info Toolchain:)
+	$(info $()  toolchain        install the pinned tools missing from the shared store, then link .toolchain/bin to them)
 	$(info $()  toolchain-check  fail on each .toolchain/bin tool that isn't its pinned version, and each editor path to none)
 	@:
 
@@ -228,16 +244,30 @@ docs:
 	uv run --locked --project tools --only-group docs mkdocs build --strict
 	doxygen tools/docs/Doxyfile
 
+# format, format-check, tidy and lint run on every tracked file, or on FILES="a
+# b ..." alone, the files the hooks hand over: each formatter and linter on the
+# ones it covers, so a hook never states their commands again. One that covers
+# none of them doesn't run.
+#
+# The files of FILES that the pathspecs $(1) cover, tracked or new and not
+# ignored, as `make prepush` hands over the files not added yet.
+covered = $(filter $(FILES),$(shell git ls-files --cached --others --exclude-standard -- $(1)))
+# Those, or every tracked file the pathspecs $(1) cover without FILES.
+sources = $(if $(FILES),$(call covered,$(1)),$(shell git ls-files -- $(1)))
+# The same, or all of them when FILES holds one of $(2), the linter's own
+# configuration, which reaches every file it lints.
+linted = $(if $(filter $(2),$(FILES)),$(shell git ls-files -- $(1)),$(call sources,$(1)))
+
 format:
-	$(CLANG_FORMAT) -i $(shell git ls-files -- $(CXX_SOURCES))
-	$(YAMLFMT)
-	$(STYLUA) $(shell git ls-files -- $(LUA_SOURCES))
-	$(TAPLO) fmt $(shell git ls-files -- $(TOML_SOURCES))
-	$(RUFF) format $(shell git ls-files -- $(PYTHON_SOURCES))
-	$(SHFMT) -w $(shell git ls-files -- $(SHELL_SOURCES))
-	$(GERSEMI) -i $(shell git ls-files -- $(CMAKE_SOURCES))
-	$(PRETTIER) --log-level warn --write $(shell git ls-files -- $(MARKDOWN_SOURCES))
-	$(BUF) format -w
+	$(if $(call sources,$(CXX_SOURCES)),$(CLANG_FORMAT) -i $(call sources,$(CXX_SOURCES)),@:)
+	$(if $(call sources,$(YAML_SOURCES)),$(YAMLFMT) $(call sources,$(YAML_SOURCES)),@:)
+	$(if $(call sources,$(LUA_SOURCES)),$(STYLUA) $(call sources,$(LUA_SOURCES)),@:)
+	$(if $(call sources,$(TOML_SOURCES)),$(TAPLO) fmt $(call sources,$(TOML_SOURCES)),@:)
+	$(if $(call sources,$(PYTHON_SOURCES)),$(RUFF) format --quiet $(call sources,$(PYTHON_SOURCES)),@:)
+	$(if $(call sources,$(SHELL_SOURCES)),$(SHFMT) -w $(call sources,$(SHELL_SOURCES)),@:)
+	$(if $(call sources,$(CMAKE_SOURCES)),$(GERSEMI) --quiet -i $(call sources,$(CMAKE_SOURCES)),@:)
+	$(if $(call sources,$(MARKDOWN_SOURCES)),$(PRETTIER) --log-level warn --write $(call sources,$(MARKDOWN_SOURCES)),@:)
+	$(if $(call sources,$(PROTO_SOURCES)),$(BUF) format -w,@:)
 
 # One target per formatter and linter, in this order, so CI's format job runs
 # each of them alone with the command written here.
@@ -245,57 +275,72 @@ FORMAT_CHECKS := $(addprefix format-check/,clang-format yamlfmt yamllint stylua 
 .PHONY: $(FORMAT_CHECKS)
 format-check: $(FORMAT_CHECKS)
 format-check/clang-format:
-	$(CLANG_FORMAT) --dry-run --Werror $(shell git ls-files -- $(CXX_SOURCES))
+	$(if $(call sources,$(CXX_SOURCES)),$(CLANG_FORMAT) --dry-run --Werror $(call sources,$(CXX_SOURCES)),@:)
 format-check/yamlfmt:
-	$(YAMLFMT) -lint
+	$(if $(call sources,$(YAML_SOURCES)),$(YAMLFMT) -lint $(call sources,$(YAML_SOURCES)),@:)
 format-check/yamllint:
-	$(YAMLLINT) .
+	$(if $(call linted,$(YAML_SOURCES),.yamllint .yamlignore .gitignore),$(YAMLLINT) $(call linted,$(YAML_SOURCES),.yamllint .yamlignore .gitignore),@:)
 format-check/stylua:
-	$(STYLUA) --check $(shell git ls-files -- $(LUA_SOURCES))
+	$(if $(call sources,$(LUA_SOURCES)),$(STYLUA) --check $(call sources,$(LUA_SOURCES)),@:)
 format-check/luacheck:
-	$(LUACHECK) $(shell git ls-files -- $(LUA_SOURCES))
+	$(if $(call linted,$(LUA_SOURCES),.luacheckrc),$(LUACHECK) $(call linted,$(LUA_SOURCES),.luacheckrc),@:)
 format-check/taplo:
-	$(TAPLO) fmt --check $(shell git ls-files -- $(TOML_SOURCES))
-	$(TAPLO) lint $(shell git ls-files -- $(TOML_SOURCES))
+	$(if $(call sources,$(TOML_SOURCES)),$(TAPLO) fmt --check $(call sources,$(TOML_SOURCES)),@:)
+	$(if $(call sources,$(TOML_SOURCES)),$(TAPLO) lint $(call sources,$(TOML_SOURCES)),@:)
 format-check/ruff:
-	$(RUFF) format --check $(shell git ls-files -- $(PYTHON_SOURCES))
-	$(RUFF) check $(shell git ls-files -- $(PYTHON_SOURCES))
+	$(if $(call sources,$(PYTHON_SOURCES)),$(RUFF) format --check $(call sources,$(PYTHON_SOURCES)),@:)
+	$(if $(call linted,$(PYTHON_SOURCES),ruff.toml),$(RUFF) check $(call linted,$(PYTHON_SOURCES),ruff.toml),@:)
 format-check/shfmt:
-	$(SHFMT) -d $(shell git ls-files -- $(SHELL_SOURCES))
+	$(if $(call sources,$(SHELL_SOURCES)),$(SHFMT) -d $(call sources,$(SHELL_SOURCES)),@:)
 format-check/shellcheck:
-	$(SHELLCHECK) $(shell git ls-files -- $(SHELL_SOURCES))
+	$(if $(call linted,$(SHELL_SOURCES),.shellcheckrc),$(SHELLCHECK) $(call linted,$(SHELL_SOURCES),.shellcheckrc),@:)
+# actionlint reads the workflows together: a call into another is checked
+# against it.
 format-check/actionlint:
-	$(ACTIONLINT)
+	$(if $(call linted,".github/workflows/*",.github/actionlint.yaml),$(ACTIONLINT),@:)
 format-check/gersemi:
-	$(GERSEMI) --check $(shell git ls-files -- $(CMAKE_SOURCES))
+	$(if $(call sources,$(CMAKE_SOURCES)),$(GERSEMI) --check $(call sources,$(CMAKE_SOURCES)),@:)
 format-check/prettier:
-	$(PRETTIER) --log-level warn --check $(shell git ls-files -- $(MARKDOWN_SOURCES))
+	$(if $(call sources,$(MARKDOWN_SOURCES)),$(PRETTIER) --log-level warn --check $(call sources,$(MARKDOWN_SOURCES)),@:)
 format-check/pymarkdown:
-	$(PYMARKDOWN) scan $(shell git ls-files -- $(MARKDOWN_SOURCES))
+	$(if $(call linted,$(MARKDOWN_SOURCES),.pymarkdown.json),$(PYMARKDOWN) scan $(call linted,$(MARKDOWN_SOURCES),.pymarkdown.json),@:)
+# buf reads the workspace whole, as buf.yaml names it.
 format-check/buf:
-	$(BUF) format -d --exit-code
-	$(BUF) lint
+	$(if $(call linted,$(PROTO_SOURCES),buf.yaml),$(BUF) format -d --exit-code,@:)
+	$(if $(call linted,$(PROTO_SOURCES),buf.yaml),$(BUF) lint,@:)
 
-# Configuring first keeps
-# compile_commands.json in step with the sources (a file new on a branch has no
-# entry until then); then protoc writes augusta.pb.h, which the protocol
-# module's sources include.
-tidy: configure
-	$(RUN) cmake --build --preset $(PRESET) --target augusta_protocol_generated
-	$(MAKE) --no-print-directory -j $(JOBS) -k -Otarget "CTCACHE_DIR=$(CTCACHE_DIR)" $(TIDY_CHECKS) $(INCLUDE_CHECKS)
+# tidy's per-file checks: every one, or FILES' alone.
+TIDY_RUN := $(if $(FILES),$(strip $(filter $(addprefix tidy/,$(FILES)),$(TIDY_CHECKS)) $(filter $(addprefix include-cleaner/,$(FILES)),$(INCLUDE_CHECKS))),$(TIDY_CHECKS) $(INCLUDE_CHECKS))
+# The per-file targets side by side, each reporting what it finds.
+RUN_CHECKS = $(MAKE) --no-print-directory -j $(JOBS) -k -Otarget "FILES=$(FILES)" $(if $(TIDY_RUN),"CTCACHE_DIR=$(CTCACHE_DIR)")
+
+# Configuring first keeps compile_commands.json in step with the sources (a
+# file new on a branch has no entry until then), except with FILES, which
+# would make every push wait on CMake and vcpkg: that build must have been
+# configured. Then protoc writes augusta.pb.h, which the protocol module's
+# sources include.
+tidy-prepare: $(if $(FILES),,configure)
+	$(if $(TIDY_RUN),$(if $(wildcard $(BUILD_DIR)/compile_commands.json),,$(error $(BUILD_DIR)/compile_commands.json not found: configure a build first (make configure PRESET=$(PRESET)))))
+	$(if $(filter tidy/src/modules/protocol/%,$(TIDY_RUN)),$(RUN) cmake --build --preset $(PRESET) --target augusta_protocol_generated,@:)
+
+tidy: tidy-prepare
+	$(if $(TIDY_RUN),$(RUN_CHECKS) $(TIDY_RUN),@:)
+
+lint: tidy-prepare
+	$(RUN_CHECKS) $(FORMAT_CHECKS) $(TIDY_RUN)
 
 # The toolchain's clang-tidy through its ctcache, as CI's Lint steps run it: a
 # file whose preprocessed source, configuration and arguments passed before is
 # skipped. On macOS, Homebrew's clang takes its SDK from a configuration file
 # that clang-tidy does not read: the SDK that the clang beside the linked
 # clang-tidy resolves, handed to clang-tidy.
-ifeq ($(shell uname -s),Darwin)
+ifeq ($(HOST_OS),Darwin)
 TIDY_SYSROOT := --extra-arg=-isysroot$(shell $(dir $(realpath .toolchain/bin/clang-tidy))clang++ -\#\#\# -x c++ -c /dev/null 2>&1 | sed -n 's/.*"-isysroot" "\([^"]*\)".*/\1/p')
 endif
 CLANG_TIDY = $(call toolchain_bin,clang-tidy-cache) $(call toolchain_bin,clang-tidy) $(TIDY_SYSROOT)
 # ctcache's results live under build/, for every preset, apart per clang-tidy
 # version (the first number the toolchain's `clang-tidy --version` prints),
-# which ctcache's key leaves out. Recursive, so only tidy and lint-files run
+# which ctcache's key leaves out. Recursive, so only tidy and lint run
 # clang-tidy for it, and hand it to the per-file targets.
 CTCACHE_DIR = $(abspath build/ctcache)/$(firstword $(filter 1% 2% 3% 4% 5% 6% 7% 8% 9%,$(shell $(call toolchain_bin,clang-tidy) --version)))
 
@@ -306,8 +351,6 @@ $(TIDY_CHECKS): tidy/%:
 $(INCLUDE_CHECKS): include-cleaner/%:
 	$(RUN) $(CLANG_TIDY) --quiet -p=$(BUILD_DIR) --checks=-*,misc-include-cleaner --extra-arg=-w $*
 
-lint: format-check tidy
-
 # The toolchain (ADR-0077), by scripts/bootstrap/toolchain.sh, which says how:
 # toolchain installs what versions.env pins and links .toolchain/bin to it;
 # toolchain-check reads it and fails on each tool it finds stale, as the
@@ -317,60 +360,6 @@ toolchain:
 
 toolchain-check:
 	bash scripts/bootstrap/toolchain.sh check
-
-# The hooks' half of format and lint, on the files they hand over (FILES="a b
-# ..."): each formatter and linter runs on the ones it covers, with the commands
-# above, so a hook never states them again.
-#
-# The files of FILES that the pathspecs $(1) cover, tracked or new and not
-# ignored, as `make prepush` hands over the files not added yet.
-covered = $(filter $(FILES),$(shell git ls-files --cached --others --exclude-standard -- $(1)))
-# The same, or all of them when FILES holds one of $(2), the linter's own
-# configuration, which reaches every file it lints.
-linted = $(if $(filter $(2),$(FILES)),$(shell git ls-files -- $(1)),$(call covered,$(1)))
-
-format-files:
-	$(if $(call covered,$(CXX_SOURCES)),$(CLANG_FORMAT) -i $(call covered,$(CXX_SOURCES)),@:)
-	$(if $(call covered,$(YAML_SOURCES)),$(YAMLFMT) $(call covered,$(YAML_SOURCES)),@:)
-	$(if $(call covered,$(LUA_SOURCES)),$(STYLUA) $(call covered,$(LUA_SOURCES)),@:)
-	$(if $(call covered,$(TOML_SOURCES)),$(TAPLO) fmt $(call covered,$(TOML_SOURCES)),@:)
-	$(if $(call covered,$(PYTHON_SOURCES)),$(RUFF) format --quiet $(call covered,$(PYTHON_SOURCES)),@:)
-	$(if $(call covered,$(SHELL_SOURCES)),$(SHFMT) -w $(call covered,$(SHELL_SOURCES)),@:)
-	$(if $(call covered,$(CMAKE_SOURCES)),$(GERSEMI) --quiet -i $(call covered,$(CMAKE_SOURCES)),@:)
-	$(if $(call covered,$(MARKDOWN_SOURCES)),$(PRETTIER) --log-level warn --write $(call covered,$(MARKDOWN_SOURCES)),@:)
-	$(if $(call covered,$(PROTO_SOURCES)),$(BUF) format -w,@:)
-
-# format-check's linters, then tidy's clang-tidy and include-cleaner, side by
-# side as tidy runs them. Unlike tidy it does not configure first, which would
-# make every push wait on CMake and vcpkg: the build must have been configured.
-# It generates augusta.pb.h when it lints a protocol source, as tidy does.
-LINT_CHECKS := $(addprefix lint/,yamllint luacheck taplo ruff shellcheck pymarkdown actionlint buf)
-LINT_TIDY := $(strip $(filter $(addprefix tidy/,$(FILES)),$(TIDY_CHECKS)) $(filter $(addprefix include-cleaner/,$(FILES)),$(INCLUDE_CHECKS)))
-lint-files:
-	$(if $(LINT_TIDY),$(if $(wildcard $(BUILD_DIR)/compile_commands.json),,$(error $(BUILD_DIR)/compile_commands.json not found: configure a build first (make configure PRESET=$(PRESET)))))
-	$(if $(filter tidy/src/modules/protocol/%,$(LINT_TIDY)),$(RUN) cmake --build --preset $(PRESET) --target augusta_protocol_generated,@:)
-	$(MAKE) --no-print-directory -j $(JOBS) -k -Otarget "FILES=$(FILES)" $(if $(strip $(LINT_TIDY)),"CTCACHE_DIR=$(CTCACHE_DIR)") $(LINT_CHECKS) $(LINT_TIDY)
-
-.PHONY: $(LINT_CHECKS)
-lint/yamllint:
-	$(if $(call linted,$(YAML_SOURCES),.yamllint .yamlignore .gitignore),$(YAMLLINT) $(call linted,$(YAML_SOURCES),.yamllint .yamlignore .gitignore),@:)
-lint/luacheck:
-	$(if $(call linted,$(LUA_SOURCES),.luacheckrc),$(LUACHECK) $(call linted,$(LUA_SOURCES),.luacheckrc),@:)
-lint/taplo:
-	$(if $(call covered,$(TOML_SOURCES)),$(TAPLO) lint $(call covered,$(TOML_SOURCES)),@:)
-lint/ruff:
-	$(if $(call linted,$(PYTHON_SOURCES),ruff.toml),$(RUFF) check $(call linted,$(PYTHON_SOURCES),ruff.toml),@:)
-lint/shellcheck:
-	$(if $(call linted,$(SHELL_SOURCES),.shellcheckrc),$(SHELLCHECK) $(call linted,$(SHELL_SOURCES),.shellcheckrc),@:)
-lint/pymarkdown:
-	$(if $(call linted,$(MARKDOWN_SOURCES),.pymarkdown.json),$(PYMARKDOWN) scan $(call linted,$(MARKDOWN_SOURCES),.pymarkdown.json),@:)
-# actionlint reads the workflows together: a call into another is checked
-# against it.
-lint/actionlint:
-	$(if $(filter .github/workflows/% .github/actionlint.yaml,$(FILES)),$(ACTIONLINT),@:)
-# buf lint reads the workspace whole, as buf.yaml names it.
-lint/buf:
-	$(if $(or $(call covered,$(PROTO_SOURCES)),$(filter buf.yaml,$(FILES))),$(BUF) lint,@:)
 
 # The pre-push hook's checks, as a push of HEAD now would run them: on the
 # files of its commits the remote lacks, and of the changes not committed yet,

@@ -684,11 +684,11 @@ no self-hosted GitHub Actions runner in this pipeline).
   `clang-tidy`, and `make tidy` alone runs `clang-tidy`, through ctcache as CI's
   Lint steps do (CI, clang-tidy results), keeping its results under
   `build/ctcache`; the toolchain holds it. The hooks name no tool themselves:
-  `pre-commit` runs `make format-files` on the staged files and `pre-push` runs
-  `make lint-files` on the changed ones, the same commands as `make format` and
-  `make lint` on fewer files, with clang-tidy one file a process through the
-  same ctcache results; `make test` and `make check` run `ctest` in parallel, as
-  CI does.
+  `pre-commit` runs `make format` on the staged files and `pre-push` runs
+  `make lint` on the changed ones, narrowed to them by `FILES="a b ..."`, which
+  every one of these targets takes, with clang-tidy one file a process through
+  the same ctcache results; `make test` and `make check` run `ctest` in
+  parallel, as CI does.
 - A scenario's Lua scripts (ADR-0022, ADR-0039) are formatted by StyLua
   (`stylua.toml`: two-space indentation, 120 columns, as the C++) and linted by
   luacheck (`.luacheckrc`), whose standard library is the engine's Lua sandbox
