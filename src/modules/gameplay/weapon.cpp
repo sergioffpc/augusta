@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <numbers>
 
+#include "augusta/ballistics.h"
 #include "augusta/command.h"
 #include "augusta/grid.h"
 #include "augusta/math.h"
