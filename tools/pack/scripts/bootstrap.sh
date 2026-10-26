@@ -199,9 +199,9 @@ main() {
 
   # --- Native module build (ADR-0030) ---
   # tools/pack/native is built by the repository's own CMake project, as the
-  # Agents' module is: `make pack-native` configures the platform's preset
-  # without the client, in a build directory of its own, and builds the
-  # module's target alone, straight into src/augusta_pack, so `import
+  # Agents' module is: `make tools` configures the platform's preset without
+  # the client, in a build directory of its own, and builds the tools alone,
+  # this module straight into src/augusta_pack, so `import
   # augusta_pack._native` just works with no separate copy step. Its first
   # configure installs the project's vcpkg dependencies, the runtime's among
   # them. PYTHON_EXECUTABLE (the variable pybind11's vcpkg port's legacy
@@ -212,14 +212,14 @@ main() {
   # checkout's sources, including any output the target gained since.
   local pack_package_dir="${pack_project}/src/augusta_pack" missing_outputs
   echo "Building the native module and the protocol's Python" \
-    "(${pack_project}/native, make pack-native)..."
-  make -C "$(native_path "${repo_root}")" pack-native \
+    "(${pack_project}/native, make tools)..."
+  make -C "$(native_path "${repo_root}")" tools \
     "PYTHON_EXECUTABLE=$(cmake_path \
       "${python_dir}/augusta-pack/${venv_python}")"
   missing_outputs="$(missing_build_outputs "${pack_package_dir}" \
     "${module_suffix}")"
   if [[ -n "${missing_outputs}" ]]; then
-    echo "bootstrap: make pack-native did not produce" \
+    echo "bootstrap: make tools did not produce" \
       "${missing_outputs} in ${pack_package_dir} - see the make output" \
       "above." >&2
     exit 1

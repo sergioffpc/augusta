@@ -246,6 +246,12 @@ if(AUGUSTA_TOOLS)
   endif()
   add_subdirectory(tools/agent)
   add_subdirectory(tools/pack)
+  # Every tool, which `make tools` builds alone.
+  add_custom_target(augusta_tools)
+  add_dependencies(augusta_tools augusta_agent augusta_agent_testing_server)
+  if(AUGUSTA_TOOLS_PYTHON)
+    add_dependencies(augusta_tools augusta_agent_py augusta_pack_py)
+  endif()
 endif()
 # The linux-coverage preset's report as build targets, for an editor that runs
 # one before and one after its tests (VS Code's CMake Tools, "Run Tests with

@@ -1,7 +1,8 @@
 #!/bin/bash
-# Runs the Makefile's lint-files on the files the push changes before pushing:
-# format-check's linters, then clang-tidy and include-cleaner as tidy runs
-# them. Git LFS uploads still run after the checks pass.
+# Runs the Makefile's lint on the files the push changes before pushing:
+# format-check's formatter checks and linters, and clang-tidy and
+# include-cleaner as tidy runs them. Git LFS uploads still run after the checks
+# pass.
 
 readonly ZERO_SHA=0000000000000000000000000000000000000000
 
@@ -71,9 +72,9 @@ $(git ls-files --others --exclude-standard)"
     echo "pre-push: linting $(echo "${files}" | wc -l | tr -d ' ')" \
       "changed file(s)..." >&2
     # One line, one space between files; tracked paths have no spaces.
-    make -s --no-print-directory lint-files PRESET="${preset}" \
+    make -s --no-print-directory lint PRESET="${preset}" \
       FILES="$(echo "${files}" | tr '\n' ' ')" || {
-      echo "pre-push: lint-files failed - fix the findings above, or push" \
+      echo "pre-push: lint failed - fix the findings above, or push" \
         "with --no-verify to skip." >&2
       exit 1
     }

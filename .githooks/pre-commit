@@ -1,6 +1,6 @@
 #!/bin/bash
-# Auto-formats the staged files with the Makefile's format-files, the
-# formatters `make format` runs, and stages what they changed. CI's format
+# Auto-formats the staged files with the Makefile's format, narrowed to them,
+# and stages what the formatters changed. CI's format
 # checks remain the actual gate if the hook is bypassed with --no-verify.
 
 staged=$(git diff --cached --name-only --diff-filter=ACMR)
@@ -22,7 +22,7 @@ hashes() {
 
 before=$(hashes)
 # One line, one space between files; tracked paths have no spaces.
-make -s --no-print-directory format-files \
+make -s --no-print-directory format \
   FILES="$(echo "${staged}" | tr '\n' ' ')" || exit $?
 
 # Stages only what a formatter changed, so a file staged in part keeps its
