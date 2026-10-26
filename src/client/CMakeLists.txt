@@ -159,8 +159,11 @@ target_link_libraries(
 # The debug HUD's lines, the Debug overlays' shapes, the Debug panels, the
 # Debug index and Debug interaction, and the pcapng writer the connection is
 # tapped with, with the engine version its file names, in a Development build
-# only (ADR-0074, ADR-0075, ADR-0076).
+# only (ADR-0074, ADR-0075, ADR-0076). The Runtime drives the debug tools on its
+# Main/Render thread (see debug_tools.h), from the connection's readings the
+# Network I/O thread hands it (see debug_connection_readings.h).
 if(AUGUSTA_DEBUG_TOOLS)
+  target_sources(augusta_client PRIVATE debug_connection_readings.cpp debug_tools.cpp)
   target_link_libraries(
     augusta_client
     PRIVATE
