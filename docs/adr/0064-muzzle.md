@@ -1,12 +1,9 @@
 # Muzzle: rounds leave the rifle, not the Eye
 
-A Shot leaves the shooter's Eye today, lowered for its stance (ADR-0040): the
-point a player sees from is the point its rounds start from. In VR the rifle is
-in the player's hand, far from the Eye, and on a desktop a round from the Eye
-fires from the head. A round leaves the rifle's Muzzle instead, in both Play
-modes (ADR-0063). This takes effect in its own change, after ADR-0061's, so hits
-change once and on purpose; that change amends ADR-0038, ADR-0039, ADR-0040 and
-ADR-0044 to match.
+A round leaves the rifle's Muzzle, in both Play modes (ADR-0063), not the
+shooter's Eye: the point a player sees from is not the point its rounds start
+from. In VR the rifle is in the player's hand, far from the Eye, and on a
+desktop a round from the Eye would fire from the head.
 
 **The rifle is authored.** Like a Character, the rifle is a USD stage, the one a
 scenario's manifest names as its `rifle` (ADR-0041), whose default prim holds
@@ -26,12 +23,20 @@ Grip toward it, as a rifle held in two hands does; with it elsewhere, along the
 holding hand. A Desktop player holds the rifle where its pose holds it: its Grip
 on the weapon socket of its posed right hand (ADR-0066), so the Muzzle follows
 its stance, its Aim offset and its ADS grip, which shoulders the rifle with its
-Sight at the Eye. The Posing phase places it, after posing the body.
+Sight at the Eye. The Posing phase places it, after posing the body, and fires
+each round of the tick from it there. A client shows its local player's own
+muzzle flash, predicted ahead of the Shot, at the Muzzle placed the same way:
+its predicted body posed where it aims, the rifle held and turned by the Recoil
+offset the round left with. It draws no rifle.
 
-**Zeroing.** The barrel is pitched so that a round crosses the line of sight at
-the rifle's zero range, a Parameter (ADR-0039): above or below it a round lands
-above or below the sight, as with a real rifle. A desktop's line of sight is
-from the Eye along the view; a VR player brings the sight to its eye itself.
+**Zeroing.** The barrel is pitched and turned so that a round crosses the line
+of sight at the rifle's zero range, a Parameter (ADR-0039): above or below it a
+round lands above or below the sight, as with a real rifle, and from the hip to
+the side of it too. A desktop's line of sight is from the Eye along the view,
+turned by the Recoil offset the round is fired with: the one before its own
+kick, as the rifle the round leaves is turned by. It is solved on the
+gravity-only ballistics, with no raycast. A VR player brings the sight to its
+eye itself.
 
 **Recoil turns the rifle about its Grip.** A desktop's Recoil offset turns the
 view a Shot leaves along, and the rifle its pose holds turns with it: the Posing
@@ -51,8 +56,9 @@ rifle's line of sight within a tolerance, which scales its recoil as ADS does; a
 VR Command's ADS flag is ignored.
 
 **A Muzzle in a wall fires into the wall.** The server tests the segment from
-the holding arm's shoulder joint to the Muzzle against the Map; if it is
-blocked, the round hits the Map where it is, and does not fly on.
+the holding arm's shoulder joint, the grandparent of the weapon socket's right
+hand, to the Muzzle against the Map; if it is blocked, the round hits the Map
+where the segment enters it, and does not fly on (ADR-0044).
 
 ## Considered Options
 

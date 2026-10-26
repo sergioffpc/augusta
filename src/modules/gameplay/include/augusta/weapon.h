@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "augusta/assets.h"
 #include "augusta/ballistics.h"
 #include "augusta/body_part.h"
 #include "augusta/command.h"
@@ -52,6 +53,9 @@ struct Rifle {
   float ads_recoil_scale = 1.0F;
   /// The vertical field of view aiming down sights zooms to, in radians.
   float ads_field_of_view = 1.0F;
+  /// The rifle's zero range, in meters: how far from the Eye a round crosses
+  /// the line of sight, from the Eye along the view (ADR-0064). Above 0.
+  float zero_range = 1.0F;
   /// The kick of each round of a burst, in order, at most
   /// limits::kMaxRecoilKicks; past the last, the last repeats. Empty: no recoil.
   std::vector<RecoilKick> recoil_pattern;
@@ -96,6 +100,11 @@ struct Markers {
   bool operator==(const Markers&) const = default;
 };
 
+/// The markers of rifle, as a pack holds them (ADR-0064): each a frame in the
+/// rifle's space, at its translation and turned by its rotation. What the
+/// server and the client each resolve the scenario's rifle into.
+[[nodiscard]] Markers MarkersOf(const assets::RifleData& rifle);
+
 /// Where the Muzzle of the rifle markers describes is, held by hand at its
 /// Grip: hand times the Grip's inverse times the Muzzle (ADR-0064). The one
 /// function the server and the client place a Muzzle with, whatever the hand:
@@ -114,6 +123,28 @@ struct Markers {
 /// as recoil turns a view of yaw and pitch, which a Shot leaves along
 /// (ADR-0064). Only the rifle turns; the body that holds it does not.
 [[nodiscard]] math::Mat4 Recoiled(const math::Mat4& hand, float yaw, float pitch, const RecoilOffset& recoil);
+
+/// A direction as a view's yaw and pitch, in radians (command::ViewDirection
+/// gives it as a vector).
+struct Heading {
+  float yaw = 0.0F;
+  float pitch = 0.0F;
+
+  bool operator==(const Heading&) const = default;
+};
+
+/// direction, of any length but 0, as a view's yaw and pitch:
+/// command::ViewDirection's inverse.
+[[nodiscard]] Heading HeadingOf(const math::Vec3& direction);
+
+/// Where a round of rifle leaves muzzle for, zeroed (ADR-0064): so that, flying
+/// as flight makes it in ballistics::World steps of step_seconds, it crosses
+/// the line of sight from eye along sight at the rifle's zero range. Computed
+/// from how far ballistics::World drops a round, with no raycast. Nearer or
+/// further, the round passes off the line of sight, by the Muzzle's offset from
+/// it and by the drop. Unwrapped as sight is: sight's yaw, turned.
+[[nodiscard]] Heading Zeroed(const Rifle& rifle, const ballistics::BulletConfig& flight, float step_seconds,
+                             const math::Vec3& muzzle, const math::Vec3& eye, const Heading& sight);
 
 /// One player's rifle between two ticks.
 struct State {
@@ -141,9 +172,10 @@ struct State {
 struct Result {
   /// The rifle after the tick.
   State state{};
-  /// Where the round fired left for, as a view's yaw and pitch in radians
+  /// Where the round fired is aimed, as a view's yaw and pitch in radians
   /// (command::ViewDirection gives the direction): the Command's view turned by
-  /// the Recoil offset the rifle had. Only of a tick that fired.
+  /// the Recoil offset the rifle had, the line of sight its round is zeroed
+  /// onto (Zeroed). Only of a tick that fired.
   float yaw = 0.0F;
   float pitch = 0.0F;
   /// Whether a round was fired on it. At most one fires a tick.

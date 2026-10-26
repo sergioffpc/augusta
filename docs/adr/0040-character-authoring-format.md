@@ -18,14 +18,16 @@ heights. The `Eye` is where the character sees from standing; crouching or
 prone, the client lowers it in proportion to the body's height in that stance
 (the stance collision heights, `physics::StanceHeight`), so the view drops with
 the body without the character authoring an eye per stance. The eye is also
-where a player's Shots leave from (US-07): the server fires each round from the
-shooter's eye, lowered for its stance the same way, so a shot goes where the
-view looks. The cooker writes that point, in the character's root space, as an
-eye blob at `<character name>/Character/Eye` in both packs, and refuses a
-character stage without one; the client reads the eye of the character it plays
-and keeps the camera there, following its body, and the server reads the eye of
-every character of the scenario at startup, refusing to run on one it could not
-fire for. A character is never itself the argument the cooker (`augusta-pack`)
+where a player's line of sight starts (US-07): a round leaves the rifle's
+Muzzle, never the eye, and the server zeroes it to cross the line of sight from
+the shooter's eye, lowered for its stance the same way, along its view at the
+rifle's zero range (ADR-0064), so a shot goes where the sight looks. The cooker
+writes that point, in the character's root space, as an eye blob at
+`<character name>/Character/Eye` in both packs, and refuses a character stage
+without one; the client reads the eye of the character it plays and keeps the
+camera there, following its body, and the server reads the eye of every
+character of the scenario at startup, refusing to run on one it could not zero a
+round for. A character is never itself the argument the cooker (`augusta-pack`)
 takes; it's shared authoring content scenarios draw on, not scenario content.
 This follows GLOSSARY.md's own line between the two: "Map" is the static space a
 match is played in — collision, spawn points, hitboxes — and a player character
@@ -79,7 +81,10 @@ and shoulder it bends. The cooker writes it at
 `<character name>/Character/WeaponSocket` in both packs, its frame in its
 joint's rest space, and refuses a character without one, one bound to no joint
 or to one its skeleton lacks, and a left hand missing, unknown or without a
-parent and a grandparent, naming the socket's prim or the character's.
+parent and a grandparent, naming the socket's prim or the character's. The right
+hand's grandparent is the shoulder a Muzzle in a wall is found from (ADR-0044):
+loading a character's Clips refuses a right hand without a parent and a
+grandparent, naming it, as it refuses such a left hand.
 
 A character is hittable through its **hitboxes**, authored in its own stage
 under `Character`: each is geometry (a `UsdGeomMesh`, `Cube` or `Capsule`,
@@ -128,7 +133,8 @@ map's root prims, and the cooker refuses that scenario, so they never collide.
 Client/server split follows ADR-0019's existing rule unchanged: mesh/texture
 data is client-pack-only, hitbox geometry, the skeleton, the Clips the Hitbox
 pose uses and the eye ship to both packs — the server needs them for hit
-detection and for where a Shot leaves from, same as level collision.
+detection, for where a Shot leaves from and for the line of sight it is zeroed
+onto, same as level collision.
 
 A scenario's packs carry exactly the characters its manifest names (ADR-0041),
 not every character under `authoring/characters/`.

@@ -72,6 +72,10 @@ return {
     ads_recoil_scale = 0.5,
     -- The vertical field of view aiming down sights zooms to (above 0, below pi).
     ads_field_of_view = math.rad(40),
+    -- How far from the Eye, in meters, a round crosses the line of sight
+    -- (above 0): nearer or further, it lands a little off the sight, as from a
+    -- real rifle zeroed at that range.
+    zero_range = 100,
   },
   -- The rifle's rounds (US-10, US-12).
   ammo = {

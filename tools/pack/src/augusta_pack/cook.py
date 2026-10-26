@@ -55,8 +55,9 @@ BASE_COLOR_PROPERTY = "base_color"
 # <character name>/Character/Visual.
 CHARACTER_ROOT_PRIM = "Character"
 # The child of CHARACTER_ROOT_PRIM every character stage has, whose origin is
-# where the local player's camera sits and its Shots leave from (ADR-0040):
-# client and server read it at <character name>/Character/Eye.
+# where the local player's camera sits and the line of sight its Shots are
+# zeroed onto starts (ADR-0040, ADR-0064): client and server read it at
+# <character name>/Character/Eye.
 CHARACTER_EYE_PRIM = "Eye"
 # The child of CHARACTER_ROOT_PRIM every character stage has: its UsdSkel
 # Skeleton (ADR-0061), which client and server read at <character
@@ -748,12 +749,12 @@ def _maybe_cook_texture_prim(
 
 
 # True for the AssetType values ADR-0019 puts in the server pack: collision
-# geometry, hitboxes, spawn points, character eyes (the server fires each
-# Shot from its shooter's eye, ADR-0040), character skeletons (the same
-# joints on either side, ADR-0061), the rifle's markers (the server places
-# each Muzzle, ADR-0064) and character weapon sockets (the server poses the
-# rifle and the left arm, ADR-0066). Mesh/texture/scene are client-only
-# (scene is handled separately, since it needs its mesh/material
+# geometry, hitboxes, spawn points, character eyes (the server zeroes each
+# Shot onto its shooter's line of sight from its eye, ADR-0064), character
+# skeletons (the same joints on either side, ADR-0061), the rifle's markers
+# (the server places each Muzzle, ADR-0064) and character weapon sockets (the
+# server poses the rifle and the left arm, ADR-0066). Mesh/texture/scene are
+# client-only (scene is handled separately, since it needs its mesh/material
 # references stripped rather than being dropped outright).
 _SERVER_PACK_ASSET_TYPES = frozenset(
     {
@@ -1793,8 +1794,8 @@ def cook_scenario(
                 f"{stage_path}: a character's default prim must be named "
                 f"{CHARACTER_ROOT_PRIM!r}",
             )
-        # The camera sits, and Shots leave from, <character name>/Character/Eye
-        # (ADR-0040).
+        # The camera sits, and the line of sight Shots are zeroed onto starts,
+        # at <character name>/Character/Eye (ADR-0040, ADR-0064).
         eye_prim = default_prim.GetChild(CHARACTER_EYE_PRIM)
         if not eye_prim:
             raise CookError(

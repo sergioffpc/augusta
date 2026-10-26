@@ -551,6 +551,11 @@ Fore-end. _Avoid_: Attachment point, hand bone, grip bone
 sight: one of the rifle's markers. In ADS a Desktop player holds the rifle with
 its Sight on the Eye. _Avoid_: Scope, aim point
 
+**Zero range**: How far from the Eye a round crosses a Desktop player's line of
+sight, from the Eye along the view: a rifle Parameter, above 0. Nearer or
+further, a round lands a little off the sight. _Avoid_: Zero distance, zeroing
+(the act of setting it), sight-in range
+
 **Recoil offset**: How far a rifle points off its player's view, as a pitch and
 a yaw: every round of a Burst adds its kick to it, scaled down in ADS, and it
 shrinks back to zero while the trigger is not pulled. A Shot leaves along the

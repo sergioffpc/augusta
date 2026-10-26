@@ -25,7 +25,10 @@ ask for Shot judgements, which the client Runtime sends.
 
 A remote player's interpolated body carries every input of its Hitbox pose, so
 the Animation module poses it from that as the server poses it from its
-Authoritative State, within a tolerance (ADR-0061).
+Authoritative State, within a tolerance (ADR-0061). The local player's predicted
+body is posed on the frame its predicted fire fires a round, holding the rifle,
+so its muzzle flash shows at the Muzzle the server fires that round from
+(ADR-0064), ahead of the Shot; no rifle is drawn.
 
 Each frame it also reports the interpolation buffer's slack: how far the newest
 Authoritative State update is ahead of the time remote players are shown at, in
@@ -51,6 +54,7 @@ dry. The Network Debug panel reads it against the Interpolation delay.
 [ADR-0044](../../../docs/adr/0044-shot-lag-compensation-and-replication.md),
 [ADR-0045](../../../docs/adr/0045-dynamic-bodies.md),
 [ADR-0061](../../../docs/adr/0061-skeletal-hitboxes.md),
+[ADR-0064](../../../docs/adr/0064-muzzle.md),
 [ADR-0066](../../../docs/adr/0066-character-animation.md),
 [ADR-0074](../../../docs/adr/0074-debug-tools-compiled-out-of-shipping-builds.md),
 [ADR-0075](../../../docs/adr/0075-debug-overlays-and-panels-are-values.md).

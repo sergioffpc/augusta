@@ -52,6 +52,19 @@ neither needs a history. A lead the shooter gave a moving target, judged on its
 own screen, then hits. Because the delay is fixed and capped, every tick of a
 flight finds the hitboxes it needs within the same bounded history.
 
+**A Muzzle in a wall fires into the wall.** Before a round flies, the server
+tests one segment against the Map: from the shoulder of the arm that holds the
+rifle, the grandparent Joint of the Weapon socket's right hand (ADR-0066), as
+the Posing phase poses it, to the Muzzle (ADR-0064). The test is one Map raycast
+per Shot: no hitbox and no Prop is part of it. If the segment is clear, the
+round flies from the Muzzle. If it is blocked, the round strikes the Map where
+the segment enters it, on the tick it is fired, and flies no further: that point
+is its Map impact, and its Shot judgement's (ADR-0038) is the Map. Its Shot
+leaves from the shoulder toward the Muzzle, on ADR-0038's grids, and the server
+tests the segment along that Shot, so the line every client is told of meets the
+Map where the server put the round. A player behind the wall the barrel pokes
+through is never hit by it.
+
 **Hit feedback is confirmed by the server, not predicted.** When a shot hits a
 player, the server sends the shooter a Hit confirmation: the target, the body
 part and the damage. It is reliable, since its loss would leave the shooter
@@ -62,21 +75,27 @@ feedback (muzzle flash, sound, recoil, ammo), never a bullet's outcome
 (ADR-0024).
 
 **The server announces every Shot to everyone, reliably.** A Shot message (the
-shooter, by its Entity ID; the server tick; the origin and the direction) goes
-reliably to every client, the shooter's included: a gunshot's sound is gameplay
-information and must not be lost. With GameNetworkingSockets (ADR-0003), a lost
-reliable message does not delay unreliable ones, so the Authoritative State
-updates are not held back behind it.
+shooter, by its Entity ID; the server tick; the origin, the shooter's Muzzle as
+the server placed it, never its Eye; and the direction, the barrel's zeroed onto
+the line of sight, ADR-0064; or, for a round fired into a wall, its shoulder and
+the way to its Muzzle) goes reliably to every client, the shooter's included: a
+gunshot's sound is gameplay information and must not be lost. With
+GameNetworkingSockets (ADR-0003), a lost reliable message does not delay
+unreliable ones, so the Authoritative State updates are not held back behind it.
 
 **Clients draw a Shot's trajectory as a visual only.** Each client's
 PresentationWorld computes the announced bullet's trajectory with the same
 ballistics math the server uses and the ballistics values of the Parameters
-(ADR-0039), to draw the tracer and the impact on the Map. Hits on players
-(blood, hit reactions) are drawn only from the server's hit messages, never from
-that local trajectory, so a client's drawing can differ from the server's
-outcome without ever showing a hit that did not happen. Ballistics' trajectory
-math is therefore shared by client and server; deciding a bullet's outcome
-(HitDetection, Damage) stays the server's alone.
+(ADR-0039), to draw the tracer and the impact on the Map, from the Shot's
+origin; another player's muzzle flash shows there too, and the shooter's own,
+predicted, at the Muzzle its predicted body holds (ADR-0064). A round fired into
+a wall stops there by the client's own Map raycast, where the server put it,
+with no Map impacts sent. Hits on players (blood, hit reactions) are drawn only
+from the server's hit messages, never from that local trajectory, so a client's
+drawing can differ from the server's outcome without ever showing a hit that did
+not happen. Ballistics' trajectory math is therefore shared by client and
+server; deciding a bullet's outcome (HitDetection, Damage) stays the server's
+alone.
 
 **On the wire.** The Shot, the Hit confirmation and the Command's Seen time (its
 tick and fraction) follow ADR-0038: the smallest types, quantized numbers on its

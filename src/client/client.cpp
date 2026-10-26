@@ -20,7 +20,6 @@
 #include <nvtx3/nvtx3.hpp>
 
 #include "augusta/audio.h"
-#include "augusta/clips.h"
 #include "augusta/command.h"
 #include "augusta/cues.h"
 #include "augusta/failure.h"
@@ -31,7 +30,6 @@
 #include "augusta/local_view.h"
 #include "augusta/logging.h"
 #include "augusta/map.h"
-#include "augusta/math.h"
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/presentation.h"
@@ -453,12 +451,12 @@ struct ClientRuntime::Impl {
 #endif
   }
 
-  Impl(const RuntimeConfig& cfg, const Map& map, const math::Vec3& eye, const audio::CueSounds& cue_sounds,
-       CharacterLoader loader, std::shared_ptr<const animation::CharacterClips> clips)
+  Impl(const RuntimeConfig& cfg, const Map& map, const audio::CueSounds& cue_sounds, CharacterLoader loader,
+       const presentation::LocalCharacter& local)
       : config(cfg),
         load_character(std::move(loader)),
         input(cfg.input),
-        presentation(audio, cue_sounds, eye),
+        presentation(audio, cue_sounds, local),
         window(WindowConfig()),
         renderer(window, RendererConfig()) {
     if (cfg.reenactment.has_value()) {
@@ -471,7 +469,7 @@ struct ClientRuntime::Impl {
     // server's once it has joined, so the two cannot drift.
     // The Map goes into PresentationWorld too, for the tracers to meet. It
     // predicts the Stride by the Clips of the character this player plays.
-    prediction::World world(std::move(clips));
+    prediction::World world(local.clips);
     const auto added = map::AddCollision(world, map.collision).and_then([&] {
       return map::AddCollision(presentation, map.collision);
     });
@@ -839,8 +837,11 @@ struct ClientRuntime::Impl {
 };
 
 ClientRuntime::ClientRuntime(const RuntimeConfig& config, Content content)
-    : impl_(std::make_unique<Impl>(config, content.map, content.eye, content.cue_sounds,
-                                   std::move(content.load_character), std::move(content.clips))) {
+    : impl_(std::make_unique<Impl>(config, content.map, content.cue_sounds, std::move(content.load_character),
+                                   presentation::LocalCharacter{.eye = content.eye,
+                                                                .skeleton = std::move(content.skeleton),
+                                                                .clips = std::move(content.clips),
+                                                                .rifle = content.rifle})) {
   impl_->renderer.SetScene(content.scene);
 }
 

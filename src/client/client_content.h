@@ -14,6 +14,7 @@
 #include "augusta/math.h"
 #include "augusta/physics.h"
 #include "augusta/renderer.h"
+#include "augusta/weapon.h"
 #include "client_character_loader.h"
 
 #if AUGUSTA_DEBUG_TOOLS
@@ -22,8 +23,9 @@
 
 /// \file
 /// What the client loads from its verified pack at startup (ADR-0018): the scene
-/// it draws, the map it predicts against, every cue's sound, the Clips of the
-/// character it asked to play, which its predicted Stride advances by, and how to load the
+/// it draws, the map it predicts against, every cue's sound, the Skeleton and
+/// Clips of the character it asked to play, which its predicted Stride advances
+/// by and its body holds the rifle with, the rifle, and how to load the
 /// characters other players bring once the Lobby names them (ADR-0043). Where
 /// content comes from is the executable's business, not the orchestrator's:
 /// ClientRuntime (client.h) is handed it already loaded.
@@ -62,9 +64,16 @@ struct Content {
   Map map;
   CharacterLoader load_character;
   audio::CueSounds cue_sounds;
+  /// The Skeleton of the character it asked to play, which clips pose
+  /// (ADR-0061).
+  assets::Skeleton skeleton;
   /// The Clips of the character it asked to play (ADR-0066): what PredictionWorld
-  /// advances its Stride by, as the server's World does.
+  /// advances its Stride by, as the server's World does, and how PresentationWorld
+  /// poses its body holding the rifle.
   std::shared_ptr<const animation::CharacterClips> clips;
+  /// The scenario's rifle (ADR-0064): where the local player's muzzle flash shows
+  /// is its Muzzle, held as the server holds it.
+  weapon::Markers rifle;
 };
 
 /// Loads startup content from the verified pack for the local player's

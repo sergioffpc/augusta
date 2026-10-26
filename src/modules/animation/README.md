@@ -37,12 +37,14 @@ durations.
   simulation, which poses every player each tick.
 - Loading a Character's Hitboxes for the Hitboxes Debug overlay: the client, in
   a Development build only (ADR-0074), its one other consumer. It places them in
-  the Character's root space by the Rest pose once, when the character loads; no
-  client World poses a player.
+  the Character's root space by the Rest pose once, when the character loads.
+- Which frames a client poses its local player on: presentation, which poses its
+  predicted body on a frame it fires, for its muzzle flash at its Muzzle
+  (ADR-0064).
 - Refusing to start on a Character whose Clips do not load: scenario.
 - A Cosmetic layer's Clips, and drawing a posed Character: presentation, once
   skinning arrives (ADR-0066). Presentation already gives what a remote player
-  would be posed from, its interpolated state, but no client poses one yet.
+  would be posed from, its interpolated state, but poses none of them yet.
 
 ## Decisions
 

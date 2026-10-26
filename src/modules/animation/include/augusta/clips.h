@@ -78,6 +78,11 @@ struct WeaponSocket {
   std::uint32_t left_hand = 0;
 };
 
+/// The shoulder of the arm that holds the rifle on socket, a Joint of
+/// skeleton: its right hand's grandparent, which LoadClips makes sure it has.
+/// Where a Muzzle in a wall is found from (ADR-0044).
+[[nodiscard]] std::uint32_t ShoulderOf(const assets::Skeleton& skeleton, const WeaponSocket& socket);
+
 /// A Character's Clips, as the Hitbox pose uses them: its ozz-animation
 /// Skeleton, each stance's Clips, its `air` Clip, how long each change of
 /// stance takes and its Weapon socket. A Cosmetic layer's Clips are the
@@ -138,6 +143,9 @@ enum class ClipLoadCause {
   /// The Weapon socket's left hand, ClipLoadError::joint, has no arm: no parent
   /// or no grandparent.
   kLeftHandHasNoArm,
+  /// The Weapon socket's right hand, ClipLoadError::joint, has no arm: no
+  /// parent or no grandparent.
+  kRightHandHasNoArm,
 };
 
 /// Why LoadClips refused a Character's Clips: the part and the cause, and what
@@ -165,7 +173,7 @@ struct ClipLoadError {
 /// ozz-animation Skeleton, which must hold skeleton's Joints, every Clip the
 /// Hitbox pose uses (each required one, and each optional one it has), each a
 /// track for each Joint, its stance transitions, and its Weapon socket, whose
-/// Joints must be skeleton's, its left hand's with a parent and a grandparent.
+/// Joints must be skeleton's, each hand's with a parent and a grandparent.
 /// Refuses the first part missing or not loading.
 [[nodiscard]] std::expected<CharacterClips, ClipLoadError> LoadClips(const assets::Pack& pack,
                                                                      std::string_view character,

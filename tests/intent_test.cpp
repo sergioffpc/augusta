@@ -458,6 +458,19 @@ TEST(IntentExecutorTest, AnAimAtLooksFromItsPredictedBodyAtTheTargetWhereTheNewe
   EXPECT_NEAR(aim.z, 0.0F, 1e-3F);
 }
 
+// A round leaves the rifle's Muzzle, and lands on the sight only aimed down
+// it (ADR-0064): an AimAt aims down sights, a Look does not.
+// Requirements: US-23
+TEST(IntentExecutorTest, AnAimAtAimsDownSightsWhileALookDoesNot) {
+  IntentExecutor aiming;
+  IntentExecutor looking;
+  aiming.SetAim(AimAt{.target = kTarget});
+  looking.SetAim(Look{.yaw = 0.5F, .pitch = 0.0F});
+
+  EXPECT_TRUE(aiming.NextCommand(WithTargetAt(Vec3(0.0F, 0.0F, -10.0F)), At(Vec3(0.0F))).ads);
+  EXPECT_FALSE(looking.NextCommand(WithTargetAt(Vec3(0.0F, 0.0F, -10.0F)), At(Vec3(0.0F))).ads);
+}
+
 // Requirements: US-23
 TEST(IntentExecutorTest, AnAimAtFollowsATargetThatMovesBetweenTicks) {
   IntentExecutor executor;

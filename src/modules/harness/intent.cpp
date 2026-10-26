@@ -35,7 +35,8 @@ constexpr float kProgressM = 0.1F;
 
 // Where a body's eye and torso are, as a fraction of its height in its stance:
 // estimates, but near enough to aim by at the ranges a Map holds. The Shot
-// itself leaves from the character's real eye (ADR-0040).
+// itself leaves from the rifle's Muzzle, zeroed onto the line of sight from
+// the character's real eye (ADR-0064).
 constexpr float kEyeHeightFraction = 0.9F;
 constexpr float kTorsoHeightFraction = 0.6F;
 
@@ -200,6 +201,8 @@ std::optional<IntentEnding> IntentExecutor::Carry(Held<AimIntent>& held, const S
                                  if (TargetGone(aim_at, tracking, view)) {
                                    return IntentEnding::kTargetGone;
                                  }
+                                 // Down sights: a round lands on the sight only aimed down it (ADR-0064).
+                                 command.ads = true;
                                  const std::optional<physics::BodyState> target = BodyOf(view, aim_at.target);
                                  if (!target.has_value()) {
                                    // No Authoritative State yet to place it by.

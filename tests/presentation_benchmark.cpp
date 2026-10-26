@@ -15,6 +15,7 @@
 #include "augusta/presentation.h"
 #include "augusta/tick.h"
 #include "benchmark_scene.h"
+#include "clips_fixture.h"
 
 // One render frame of PresentationWorld (ADR-0024), all five phases, in a full
 // Match, handed its input as ClientRuntime hands it each frame: the newest
@@ -89,7 +90,13 @@ void BM_RenderFrame(benchmark::State& state, bool new_state) {
     return;
   }
   augusta::audio::Engine audio;
-  augusta::presentation::World world(audio, *cue_sounds, Vec3(0.0F, 1.5F, 0.0F));
+  augusta::presentation::World world(audio, *cue_sounds,
+                                     augusta::presentation::LocalCharacter{
+                                         .eye = augusta::clips_fixture::kHolderEye,
+                                         .skeleton = augusta::clips_fixture::HolderSkeleton(),
+                                         .clips = augusta::clips_fixture::HolderClips(),
+                                         .rifle = augusta::clips_fixture::HolderRifle(),
+                                     });
   if (!world.AddCollisionMesh(augusta::benchmarks::Floor()).has_value()) {
     state.SkipWithError("the floor does not build");
     return;

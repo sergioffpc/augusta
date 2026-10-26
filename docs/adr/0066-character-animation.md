@@ -71,12 +71,14 @@ frame where the rifle's Grip goes, naming its left hand's Joint in
 shoulder the IK turns. The rifle authors its Fore-end as a marker beside its
 Grip. The cooker refuses a Character without a socket, one bound to no Joint of
 its Skeleton, and a left hand missing, unknown or without an elbow and a
-shoulder, and a rifle without a Fore-end, naming them. The elbow bends the way
-the pose bent it, toward the side of the line from the shoulder to the hand it
-was on, so the Clips decide where it points; a Fore-end out of the arm's reach
-leaves the arm straight toward it. The grip, ADS and the left hand's IK are
-Hitbox pose and run on both sides, so a player's view pitch and ADS are
-replicated.
+shoulder, and a rifle without a Fore-end, naming them. The right hand's parent
+and grandparent are its elbow and the shoulder a Muzzle in a wall is found from
+(ADR-0044): `LoadClips` refuses a right hand without them, as it does such a
+left hand. The elbow bends the way the pose bent it, toward the side of the line
+from the shoulder to the hand it was on, so the Clips decide where it points; a
+Fore-end out of the arm's reach leaves the arm straight toward it. The grip, ADS
+and the left hand's IK are Hitbox pose and run on both sides, so a player's view
+pitch and ADS are replicated.
 
 **Desktop and VR.** A Desktop player's pose is evaluated from its Clips; a VR
 player's is its bounded Tracked pose (ADR-0063). From there both take one path:

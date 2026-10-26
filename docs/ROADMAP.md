@@ -498,8 +498,9 @@ through their Joints
   shoulder Joint, not from the Eye
 - A Muzzle inside the Map's geometry strikes the Map there
 
-**Exercises:** ADR-0064, NFR-03 **Exit criteria:** every round's trajectory
-starts at its rifle's Muzzle
+**Exercises:** ADR-0064, NFR-03 **Exit criteria:** every round leaves its
+rifle's Muzzle, and one whose barrel is in the Map strikes the Map where the
+barrel enters it
 
 ### M22 — Clips & the Hitbox Pose (M)
 

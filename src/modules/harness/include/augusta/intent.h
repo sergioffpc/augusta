@@ -70,8 +70,9 @@ struct Look {
 };
 
 /// Aim: every tick, look from the eye of the body, where its prediction leaves
-/// it, at the torso of another, where the newest Authoritative State places it.
-/// Ends TargetGone once the target is dead, its body has left the newest state
+/// it, at the torso of another, where the newest Authoritative State places it,
+/// aiming down sights, as a round lands on the sight only aimed down it
+/// (ADR-0064). Ends TargetGone once the target is dead, its body has left the newest state
 /// (its player left the Match) or the Match it was aimed in is over.
 struct AimAt {
   EntityId target{};
