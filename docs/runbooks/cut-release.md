@@ -21,7 +21,7 @@ skipped: a branch cut from `main` already has everything `main` has.
 ## Pack format changes
 
 The engine reads packs of one pack format version, `kFormatVersion` in
-[`src/modules/assets/assets.cpp`](../../src/modules/assets/assets.cpp)
+[`src/modules/assets/pack_format.h`](../../src/modules/assets/pack_format.h)
 (ADR-0031), and a server exits at startup on a pack of any other. Each server in
 [`clusters/onprem/apps/`](../../clusters/onprem/apps/) records the `packFormat`
 its pack was cooked in beside its `packVersion`, and CI's `format` job, a

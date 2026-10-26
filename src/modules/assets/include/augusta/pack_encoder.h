@@ -13,7 +13,7 @@
 
 /// \file
 /// augusta_assets' pack encoder: the Encode* blob functions and WritePack
-/// (ADR-0031/ADR-0032/ADR-0007), implemented in encoder.cpp/assets.cpp. The
+/// (ADR-0031/ADR-0032/ADR-0007), implemented in encoder.cpp/pack_writer.cpp. The
 /// write half of the pack's wire format, for the cooker, which links it
 /// through its native module (tools/pack, ADR-0030), and for tests that build
 /// packs; augusta/pack_decoder.h is its read half.

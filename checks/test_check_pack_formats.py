@@ -28,7 +28,7 @@ spec:
 
 def _repo(root, kformat_version, pack_format_line):
     """A repository at root with one environment and the engine's format."""
-    assets = root / "src" / "modules" / "assets" / "assets.cpp"
+    assets = root / "src" / "modules" / "assets" / "pack_format.h"
     assets.parent.mkdir(parents=True)
     assets.write_text(
         "constexpr std::array<char, 4> kMagic = {'A', 'U', 'G', 'P'};\n"
@@ -91,7 +91,7 @@ def test_every_document_of_a_file_is_checked():
 
 
 def _engine(root, source):
-    assets = root / "src" / "modules" / "assets" / "assets.cpp"
+    assets = root / "src" / "modules" / "assets" / "pack_format.h"
     assets.parent.mkdir(parents=True)
     assets.write_text(source, encoding="utf-8")
     return root
