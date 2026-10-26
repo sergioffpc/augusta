@@ -1,12 +1,9 @@
 # Muzzle: rounds leave the rifle, not the Eye
 
-A Shot leaves the shooter's Eye today, lowered for its stance (ADR-0040): the
-point a player sees from is the point its rounds start from. In VR the rifle is
-in the player's hand, far from the Eye, and on a desktop a round from the Eye
-fires from the head. A round leaves the rifle's Muzzle instead, in both Play
-modes (ADR-0063). This takes effect in its own change, after ADR-0061's, so hits
-change once and on purpose; that change amends ADR-0038, ADR-0039, ADR-0040 and
-ADR-0044 to match.
+A round leaves the rifle's Muzzle, in both Play modes (ADR-0063), not the
+shooter's Eye: the point a player sees from is not the point its rounds start
+from. In VR the rifle is in the player's hand, far from the Eye, and on a
+desktop a round from the Eye would fire from the head.
 
 **The rifle is authored.** Like a Character, the rifle is a USD stage, the one a
 scenario's manifest names as its `rifle` (ADR-0041), whose default prim holds
