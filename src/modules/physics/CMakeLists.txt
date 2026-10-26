@@ -2,7 +2,15 @@
 # physics::World, including a map's static collision from a verified Pack, which
 # ships collision data to client and server alike (ADR-0019); see physics.h,
 # map.h.
-add_library(augusta_physics STATIC physics.cpp map.cpp)
+add_library(
+  augusta_physics
+  STATIC
+  map.cpp
+  movement_rules.cpp
+  physics.cpp
+  physx_state.cpp
+  recording.cpp
+)
 target_include_directories(augusta_physics PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(augusta_physics PUBLIC augusta_assets augusta_math PRIVATE augusta_logging)
 
