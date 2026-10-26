@@ -1,5 +1,9 @@
 include(GoogleTest)
 
+# No vcpkg z-applocal step on the test executables: augusta_test_dlls
+# (tests/CMakeLists.txt) puts their DLLs beside them.
+set(VCPKG_APPLOCAL_DEPS OFF)
+
 # The C++ tests' load test (see match_loop.h): Agents composing Intents as
 # load_test.py does, with no Python. Untagged, as a test executable is: it
 # holds Agents and the test-only server in one process.
