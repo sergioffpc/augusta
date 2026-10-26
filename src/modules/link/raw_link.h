@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_RAW_LINK_H_
-#define AUGUSTA_RAW_LINK_H_
+#ifndef AUGUSTA_LINK_RAW_LINK_H_
+#define AUGUSTA_LINK_RAW_LINK_H_
 
 #include <cstddef>
 #include <expected>
@@ -88,4 +88,4 @@ class RawServer {
 
 }  // namespace augusta::link
 
-#endif  // AUGUSTA_RAW_LINK_H_
+#endif  // AUGUSTA_LINK_RAW_LINK_H_

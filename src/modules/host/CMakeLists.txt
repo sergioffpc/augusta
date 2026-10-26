@@ -27,8 +27,7 @@ add_library(augusta_host_misbehaviour STATIC misbehaviour.cpp)
 target_include_directories(augusta_host_misbehaviour PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 augusta_set_module_scope(augusta_host_misbehaviour SERVER_ONLY)
 
-# When a peer that has not been admitted is past its deadline (see
-# augusta/admission.h).
+# When a peer that has not been admitted is past its deadline (see admission.h).
 add_library(augusta_host_admission STATIC admission.cpp)
 target_include_directories(augusta_host_admission PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(augusta_host_admission PUBLIC augusta_link)

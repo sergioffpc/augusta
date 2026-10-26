@@ -43,6 +43,7 @@ if(AUGUSTA_DEBUG_TOOLS)
     augusta_protocol_decode_seeds_pcapng_tests
     PRIVATE augusta_pcapng augusta_version GTest::gtest GTest::gtest_main
   )
+  target_include_directories(augusta_protocol_decode_seeds_pcapng_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/pcapng)
   target_compile_definitions(
     augusta_protocol_decode_seeds_pcapng_tests
     PRIVATE

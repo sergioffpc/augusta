@@ -17,7 +17,7 @@
 #include <boost/uuid/nil_generator.hpp>
 #include <boost/uuid/uuid.hpp>
 
-#include "augusta/admission.h"
+#include "admission.h"
 #include "augusta/capturer.h"
 #include "augusta/command_queue.h"
 #include "augusta/failure.h"

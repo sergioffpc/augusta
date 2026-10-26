@@ -16,11 +16,11 @@
 #include "augusta/simulation.h"
 
 /// \file
-/// The conversions Host makes at SimulationWorld's edge, the way
-/// link_mapping.h makes them at the Link's: Match's names for players
-/// and bodies into SimulationWorld's, which are the same numbers, and the pack's
-/// characters into what SimulationWorld judges hits against; and the World
-/// itself, built from the scenario.
+/// The conversions Host makes at SimulationWorld's edge, the way link_mapping.h
+/// makes them at the Link's: Match's names for players and bodies into
+/// SimulationWorld's, which are the same numbers, and the pack's characters
+/// into what SimulationWorld judges hits against; and the World itself, built
+/// from the scenario.
 namespace augusta::host {
 
 /// entity as SimulationWorld names the same body.

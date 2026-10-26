@@ -20,8 +20,8 @@
 #include "augusta/faults.h"
 #include "augusta/logging.h"
 #include "augusta/networking.h"
-#include "augusta/pcapng.h"
 #include "augusta/pcapng_file_writer.h"
+#include "pcapng.h"
 
 namespace augusta::pcapng {
 namespace {

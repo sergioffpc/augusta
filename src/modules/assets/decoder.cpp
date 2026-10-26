@@ -11,7 +11,7 @@
 
 #include "augusta/assets.h"
 #include "augusta/math.h"
-#include "pack_decoder.h"
+#include "augusta/pack_decoder.h"
 #include "wire_format.h"
 
 // The Decode* half of augusta_assets' blob (de)serialization (ADR-0031/

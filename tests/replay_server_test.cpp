@@ -43,10 +43,10 @@
 #include "augusta/policy.h"
 #include "augusta/prediction.h"
 #include "augusta/protocol.h"
-#include "augusta/raw_link.h"
 #include "augusta/replay_catalog.h"
 #include "augusta/version.h"
 #include "clips_fixture.h"
+#include "raw_link.h"
 #include "scenario_fixture.h"
 
 // A replay server (ADR-0051) over loopback, driven by hand: what a Replay

@@ -16,13 +16,13 @@
 
 /// \file
 /// The conversions Host makes at the Link's edge (ADR-0038), the way
-/// simulation_mapping.h makes them at SimulationWorld's: what Match
-/// and replication decide to send, which name players and bodies by
-/// the server's own IDs, as the Link's messages (augusta/link_types.h), which
-/// name them by the same numbers. A Session ID is one boost::uuids::uuid on
-/// both sides, so it needs no conversion. The Link alone turns those into the
-/// protocol's. What a client sends needs none: a join, a Replay request and a
-/// command are the Link's own types on the server too.
+/// simulation_mapping.h makes them at SimulationWorld's: what Match and
+/// replication decide to send, which name players and bodies by the server's
+/// own IDs, as the Link's messages (augusta/link_types.h), which name them by
+/// the same numbers. A Session ID is one boost::uuids::uuid on both sides, so
+/// it needs no conversion. The Link alone turns those into the protocol's. What
+/// a client sends needs none: a join, a Replay request and a command are the
+/// Link's own types on the server too.
 namespace augusta::host {
 
 [[nodiscard]] link::EntityId ToLink(EntityId entity);

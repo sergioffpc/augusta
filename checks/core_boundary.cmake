@@ -32,10 +32,9 @@
 # decides about the transport (augusta_link_transport_tests), which reach the
 # private headers each tests, and the pcapng writer (augusta_pcapng, ADR-0076),
 # a Development-only tap that takes networking's tap types and sends nothing.
-# Every other end of the transport, a test's raw
-# one too, is the Link's (augusta/link.h, augusta/raw_link.h). The
-# check proves itself first on a planted violation, so it cannot pass by
-# matching nothing.
+# Every other end of the transport, a test's raw one too, is the Link's
+# (augusta/link.h, raw_link.h). The check proves itself first on a planted
+# violation, so it cannot pass by matching nothing.
 #
 # Run by ctest as `cmake -DSOURCE_DIR=<repo root> -P core_boundary.cmake`.
 if(NOT DEFINED SOURCE_DIR)
@@ -376,7 +375,7 @@ if(networking_violations)
   list(JOIN networking_violations "\n" networking_report)
   string(
     APPEND report
-    "A target other than the Link's own links augusta_networking - speak through augusta/link.h (in a test, augusta/raw_link.h) instead:\n${networking_report}\n"
+    "A target other than the Link's own links augusta_networking - speak through augusta/link.h (in a test, raw_link.h) instead:\n${networking_report}\n"
   )
 endif()
 if(report)

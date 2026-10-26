@@ -439,9 +439,9 @@ std::string SanitizePrimPath(std::string_view usd_prim_path);
 
 }  // namespace augusta::assets
 
-// The Encode*/WritePack functions live in their own header,
-// augusta/pack_encoder.h, and the matching Decode* half in pack_decoder.h,
-// private to the module; the types they share are declared here.
+// The Encode*/WritePack functions and the matching Decode* half live in
+// their own headers, augusta/pack_encoder.h and augusta/pack_decoder.h; the
+// types they share are declared here.
 namespace augusta::assets {
 
 /// One raw blob to be written into a pack, already encoded (e.g. by
