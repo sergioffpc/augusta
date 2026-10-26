@@ -201,6 +201,8 @@ std::optional<IntentEnding> IntentExecutor::Carry(Held<AimIntent>& held, const S
                                  if (TargetGone(aim_at, tracking, view)) {
                                    return IntentEnding::kTargetGone;
                                  }
+                                 // Down sights: a round lands on the sight only aimed down it (ADR-0064).
+                                 command.ads = true;
                                  const std::optional<physics::BodyState> target = BodyOf(view, aim_at.target);
                                  if (!target.has_value()) {
                                    // No Authoritative State yet to place it by.

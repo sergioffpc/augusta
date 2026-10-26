@@ -821,6 +821,17 @@ target_link_libraries(
 # Links PhysX through augusta_physics, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_simulation_mapping_tests DISCOVERY_TIMEOUT 30)
 
+# The example soldier holding the example rifle, as a server loads and poses
+# them from the golden server pack (ADR-0064, ADR-0066).
+add_executable(augusta_example_soldier_tests example_soldier_test.cpp)
+target_link_libraries(augusta_example_soldier_tests PRIVATE augusta_host GTest::gtest GTest::gtest_main)
+target_compile_definitions(
+  augusta_example_soldier_tests
+  PRIVATE AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs"
+)
+# Links PhysX through augusta_physics, so the same first-launch cost applies as above.
+gtest_discover_tests(augusta_example_soldier_tests DISCOVERY_TIMEOUT 30)
+
 add_executable(augusta_assets_tests assets_test.cpp)
 target_link_libraries(augusta_assets_tests PRIVATE augusta_assets GTest::gtest GTest::gtest_main)
 # WritePack/Encode*/Pack::Load round-trip coverage, through augusta_assets'

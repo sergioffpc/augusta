@@ -43,9 +43,11 @@ async def next_event_of_type(agent: augusta_agent.Agent, kind: type):
 
 
 def aim_at(view: augusta_agent.View, target: int) -> augusta_agent.Command:
-    """Fire held at target's torso, from view's own eye.
+    """Fire held at target's torso, from view's own eye, down sights.
 
-    Command's yaw 0 looks down -Z and grows to the left; its pitch grows up.
+    A round lands on the sight only aimed down it: from the hip it leaves the
+    Muzzle well off the line of sight. Command's yaw 0 looks down -Z and grows
+    to the left; its pitch grows up.
     """
     eye = view.own.position
     body = next(b.body for b in view.authoritative.bodies if b.entity == target)
@@ -54,6 +56,7 @@ def aim_at(view: augusta_agent.View, target: int) -> augusta_agent.Command:
     return augusta_agent.Command(
         yaw=math.atan2(-dx, -dz),
         pitch=math.atan2(dy, math.hypot(dx, dz)),
+        ads=True,
         fire=True,
     )
 

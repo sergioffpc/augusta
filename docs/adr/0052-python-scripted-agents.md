@@ -36,8 +36,9 @@ its own:
 - **Movement**: `MoveTo(point, sprint, stance)` walks in a straight line to a
   point; `Move(direction, sprint, stance)` holds a direction.
 - **Aim**: `AimAt(entity)` follows a body as the newest Authoritative State
-  places it, from where the Agent's prediction places its own;
-  `Look(yaw, pitch)` holds a view.
+  places it, from where the Agent's prediction places its own, aiming down
+  sights, since a round lands on the sight only aimed down it (ADR-0064);
+  `Look(yaw, pitch)` holds a view, from the hip.
 - **Trigger**: `FireBursts()` holds and releases the trigger so the Recoil
   offset recovers between Bursts, and reloads when the magazine is empty;
   `HoldFire()` holds it; `Reload()` reloads once.
