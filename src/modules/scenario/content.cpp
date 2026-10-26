@@ -16,10 +16,10 @@
 #include "augusta/logging.h"
 #include "augusta/map.h"
 #include "augusta/parameters.h"
-#include "augusta/parameters_loader.h"
 #include "augusta/policy.h"
 #include "augusta/policy_loader.h"
 #include "augusta/weapon.h"
+#include "parameters_loader.h"
 
 namespace augusta::scenario {
 

@@ -34,7 +34,7 @@
 #include <prometheus/client_metric.h>
 #include <prometheus/metric_family.h>
 
-#include "augusta/admission.h"
+#include "admission.h"
 #include "augusta/assets.h"
 #include "augusta/body_part.h"
 #include "augusta/capture.h"
@@ -58,7 +58,6 @@
 #include "augusta/math.h"
 #include "augusta/misbehaviour.h"
 #include "augusta/parameters.h"
-#include "augusta/parameters_loader.h"
 #include "augusta/physics.h"
 #include "augusta/policy.h"
 #include "augusta/policy_actions.h"
@@ -70,6 +69,7 @@
 #include "augusta/version.h"
 #include "augusta/weapon.h"
 #include "metrics_connection_health.h"
+#include "parameters_loader.h"
 #include "scenario_fixture.h"
 
 // The seam the M3 tickets test through (issue #73): a real server host and a

@@ -65,6 +65,7 @@ target_link_libraries(
     benchmark::benchmark
     benchmark::benchmark_main
 )
+target_include_directories(augusta_benchmarks PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/host)
 target_compile_definitions(
   augusta_benchmarks
   PRIVATE AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs"
@@ -139,6 +140,7 @@ target_compile_definitions(
   PRIVATE
     AUGUSTA_EXAMPLE_PARAMETERS="${CMAKE_SOURCE_DIR}/tools/composer/examples/authoring/scripts/parameters/rules_of_engagement.lua"
 )
+target_include_directories(augusta_parameters_loader_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/scenario)
 gtest_discover_tests(augusta_parameters_loader_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_protocol_tests protocol_test.cpp)
@@ -251,6 +253,7 @@ gtest_discover_tests(augusta_metrics_connection_health_tests DISCOVERY_TIMEOUT 3
 
 add_executable(augusta_admission_tests admission_test.cpp)
 target_link_libraries(augusta_admission_tests PRIVATE augusta_host_admission GTest::gtest GTest::gtest_main)
+target_include_directories(augusta_admission_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/host)
 # Links networking (for PeerId), so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_admission_tests DISCOVERY_TIMEOUT 30)
 
@@ -324,6 +327,7 @@ target_compile_definitions(
     AUGUSTA_EXAMPLE_PARAMETERS="${CMAKE_SOURCE_DIR}/tools/composer/examples/authoring/scripts/parameters/rules_of_engagement.lua"
     AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs"
 )
+target_include_directories(augusta_policy_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/scenario)
 # Links PhysX, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_policy_tests DISCOVERY_TIMEOUT 30)
 
@@ -483,11 +487,13 @@ add_custom_target(
 
 add_executable(augusta_reconciliation_tests reconciliation_test.cpp)
 target_link_libraries(augusta_reconciliation_tests PRIVATE augusta_prediction GTest::gtest GTest::gtest_main)
+target_include_directories(augusta_reconciliation_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/prediction)
 # Links augusta_physics publicly, so the same PhysX DLL launch cost applies.
 gtest_discover_tests(augusta_reconciliation_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_correction_tests correction_test.cpp)
 target_link_libraries(augusta_correction_tests PRIVATE augusta_presentation GTest::gtest GTest::gtest_main)
+target_include_directories(augusta_correction_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/presentation)
 # Links augusta_prediction publicly (so PhysX), same first-launch cost as above.
 gtest_discover_tests(augusta_correction_tests DISCOVERY_TIMEOUT 30)
 
@@ -518,6 +524,7 @@ gtest_discover_tests(augusta_effects_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_audio_cues_tests audio_cues_test.cpp)
 target_link_libraries(augusta_audio_cues_tests PRIVATE augusta_presentation GTest::gtest GTest::gtest_main)
+target_include_directories(augusta_audio_cues_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/presentation)
 # Links augusta_prediction publicly (so PhysX), same first-launch cost as above.
 gtest_discover_tests(augusta_audio_cues_tests DISCOVERY_TIMEOUT 30)
 
@@ -545,6 +552,7 @@ target_link_libraries(
     GTest::gtest
     GTest::gtest_main
 )
+target_include_directories(augusta_prediction_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/presentation)
 # Links augusta_physics publicly, so the same PhysX DLL launch cost applies.
 gtest_discover_tests(augusta_prediction_tests DISCOVERY_TIMEOUT 30)
 
@@ -580,7 +588,14 @@ target_link_libraries(
 )
 # metrics_connection_health.h is private to the server Runtime, reached through
 # its directory.
-target_include_directories(augusta_session_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/server)
+target_include_directories(
+  augusta_session_tests
+  PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/server
+    ${CMAKE_SOURCE_DIR}/src/modules/host
+    ${CMAKE_SOURCE_DIR}/src/modules/link
+    ${CMAKE_SOURCE_DIR}/src/modules/scenario
+)
 # The server runs the example scenario's Game policy, as it loads it from its
 # golden server pack: the Spawn points and the win condition (US-03, US-14).
 target_compile_definitions(
@@ -674,6 +689,7 @@ target_link_libraries(
     GTest::gtest
     GTest::gtest_main
 )
+target_include_directories(augusta_replay_server_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/link)
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_replay_server_tests DISCOVERY_TIMEOUT 30)
 
@@ -775,6 +791,10 @@ target_link_libraries(
     GTest::gtest
     GTest::gtest_main
 )
+target_include_directories(
+  augusta_transport_failure_tests
+  PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/host ${CMAKE_SOURCE_DIR}/src/modules/link
+)
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_transport_failure_tests DISCOVERY_TIMEOUT 30)
 
@@ -808,6 +828,7 @@ gtest_discover_tests(augusta_link_transport_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_tick_messages_tests tick_messages_test.cpp)
 target_link_libraries(augusta_tick_messages_tests PRIVATE augusta_host augusta_protocol GTest::gtest GTest::gtest_main)
+target_include_directories(augusta_tick_messages_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/host)
 # Links networking and PhysX through augusta_host, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_tick_messages_tests DISCOVERY_TIMEOUT 30)
 
@@ -818,6 +839,7 @@ target_link_libraries(
   augusta_simulation_mapping_tests
   PRIVATE augusta_host augusta_animation ozz::animation_offline GTest::gtest GTest::gtest_main
 )
+target_include_directories(augusta_simulation_mapping_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/host)
 # Links PhysX through augusta_physics, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_simulation_mapping_tests DISCOVERY_TIMEOUT 30)
 
@@ -825,6 +847,7 @@ gtest_discover_tests(augusta_simulation_mapping_tests DISCOVERY_TIMEOUT 30)
 # them from the golden server pack (ADR-0064, ADR-0066).
 add_executable(augusta_example_soldier_tests example_soldier_test.cpp)
 target_link_libraries(augusta_example_soldier_tests PRIVATE augusta_host GTest::gtest GTest::gtest_main)
+target_include_directories(augusta_example_soldier_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/host)
 target_compile_definitions(
   augusta_example_soldier_tests
   PRIVATE AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs"
@@ -1231,6 +1254,7 @@ if(AUGUSTA_DEBUG_TOOLS)
   # The pcapng's blocks and its file writer (augusta_pcapng, ADR-0076).
   add_executable(augusta_pcapng_tests pcapng_test.cpp pcapng_file_writer_test.cpp)
   target_link_libraries(augusta_pcapng_tests PRIVATE augusta_pcapng augusta_logging GTest::gtest GTest::gtest_main)
+  target_include_directories(augusta_pcapng_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/pcapng)
   gtest_discover_tests(augusta_pcapng_tests DISCOVERY_TIMEOUT 30)
 
   # The Shipping-only test as an object library that nothing builds or runs:

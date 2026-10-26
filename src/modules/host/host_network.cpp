@@ -16,18 +16,18 @@
 #include "augusta/host_log.h"
 #include "augusta/host_metrics.h"
 #include "augusta/link.h"
-#include "augusta/link_mapping.h"
 #include "augusta/link_types.h"
 #include "augusta/logging.h"
 #include "augusta/match.h"
 #include "augusta/misbehaviour.h"
-#include "augusta/peer_gate.h"
 #include "host_impl.h"
+#include "link_mapping.h"
+#include "peer_gate.h"
 
 #if AUGUSTA_DEBUG_TOOLS
 #include <limits>
 
-#include "augusta/debug_subscriptions.h"
+#include "debug_subscriptions.h"
 #endif
 
 namespace augusta::host {

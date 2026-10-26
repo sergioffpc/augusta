@@ -1,4 +1,4 @@
-#include "augusta/simulation_mapping.h"
+#include "simulation_mapping.h"
 
 #include <cstdint>
 #include <expected>

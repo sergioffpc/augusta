@@ -18,12 +18,11 @@
 #include <flecs.h>
 #include <nvtx3/nvtx3.hpp>
 
+#include "audio_cues.h"
 #include "augusta/animation.h"
 #include "augusta/assets.h"
 #include "augusta/audio.h"
-#include "augusta/audio_cues.h"
 #include "augusta/command.h"
-#include "augusta/correction.h"
 #include "augusta/cues.h"
 #include "augusta/effects.h"
 #include "augusta/interpolation.h"
@@ -36,6 +35,7 @@
 #include "augusta/tick.h"
 #include "augusta/tracers.h"
 #include "augusta/weapon.h"
+#include "correction.h"
 
 namespace augusta::presentation {
 

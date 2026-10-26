@@ -1,4 +1,4 @@
-#include "augusta/debug_subscriptions.h"
+#include "debug_subscriptions.h"
 
 #include <bit>
 #include <cstdint>

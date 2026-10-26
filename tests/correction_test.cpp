@@ -1,4 +1,4 @@
-#include "augusta/correction.h"
+#include "correction.h"
 
 #include <gtest/gtest.h>
 

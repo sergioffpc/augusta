@@ -20,7 +20,7 @@
 #include "augusta/faults.h"
 #include "augusta/logging.h"
 #include "augusta/networking.h"
-#include "augusta/pcapng.h"
+#include "pcapng.h"
 
 // The pcapng file writer (ADR-0076, Development build only), in a directory of
 // the test's temp folder: what it writes, read back block by block, and how it

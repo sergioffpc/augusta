@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_AUDIO_CUES_H_
-#define AUGUSTA_AUDIO_CUES_H_
+#ifndef AUGUSTA_PRESENTATION_AUDIO_CUES_H_
+#define AUGUSTA_PRESENTATION_AUDIO_CUES_H_
 
 #include <cstdint>
 #include <map>
@@ -64,4 +64,4 @@ class CueSelector {
 
 }  // namespace augusta::presentation
 
-#endif  // AUGUSTA_AUDIO_CUES_H_
+#endif  // AUGUSTA_PRESENTATION_AUDIO_CUES_H_

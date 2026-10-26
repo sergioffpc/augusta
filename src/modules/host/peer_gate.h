@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_PEER_GATE_H_
-#define AUGUSTA_PEER_GATE_H_
+#ifndef AUGUSTA_HOST_PEER_GATE_H_
+#define AUGUSTA_HOST_PEER_GATE_H_
 
 #include <chrono>
 #include <functional>
@@ -8,7 +8,7 @@
 #include <unordered_set>
 #include <vector>
 
-#include "augusta/admission.h"
+#include "admission.h"
 #include "augusta/failure_latch.h"
 #include "augusta/host_log.h"
 #include "augusta/host_metrics.h"
@@ -17,13 +17,13 @@
 
 /// \file
 /// What every augustad server - a live host::Host and a replay
-/// host::ReplayServer (ADR-0051) - does with a peer before and around what
-/// it asks for: every connection is accepted, since a refusal needs one to
-/// travel on; a peer not admitted within kAdmissionDeadline (augusta/admission.h), or
-/// that keeps sending what no honest client sends (augusta/misbehaviour.h), is
-/// expelled; and nothing more is taken in from an expelled peer in the round
-/// it was expelled in. PeerGate keeps that state, and PumpPeers runs one round
-/// of a server's Network I/O work through it, so each server only says what a
+/// host::ReplayServer (ADR-0051) - does with a peer before and around what it
+/// asks for: every connection is accepted, since a refusal needs one to travel
+/// on; a peer not admitted within kAdmissionDeadline (admission.h), or that
+/// keeps sending what no honest client sends (augusta/misbehaviour.h), is
+/// expelled; and nothing more is taken in from an expelled peer in the round it
+/// was expelled in. PeerGate keeps that state, and PumpPeers runs one round of
+/// a server's Network I/O work through it, so each server only says what a
 /// message, a departure and an expulsion mean to it. Both are guarded by the
 /// owning server's lock.
 namespace augusta::host {
@@ -89,4 +89,4 @@ void PumpPeers(link::Server& network, HostMetrics& metrics, std::mutex& mutex, P
 
 }  // namespace augusta::host
 
-#endif  // AUGUSTA_PEER_GATE_H_
+#endif  // AUGUSTA_HOST_PEER_GATE_H_

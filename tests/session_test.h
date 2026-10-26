@@ -27,9 +27,9 @@
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/protocol.h"
-#include "augusta/raw_link.h"
 #include "augusta/version.h"
 #include "clips_fixture.h"
+#include "raw_link.h"
 
 // What the Session tests' files share: a real server host and real client
 // sessions over loopback, driven by hand, and a client and a server speaking

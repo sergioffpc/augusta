@@ -11,7 +11,7 @@
 #include "augusta/math.h"
 #include "augusta/physics.h"
 #include "augusta/simulation.h"
-#include "augusta/simulation_mapping.h"
+#include "simulation_mapping.h"
 
 // The example scenario's soldier holding the example rifle, as the server poses
 // it from the golden server pack (ADR-0064, ADR-0066): its ADS grip shoulders

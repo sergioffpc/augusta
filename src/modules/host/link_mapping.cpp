@@ -1,4 +1,4 @@
-#include "augusta/link_mapping.h"
+#include "link_mapping.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -17,8 +17,8 @@
 #include "augusta/parameters.h"
 #include "augusta/replication.h"
 #include "augusta/simulation.h"
-#include "augusta/simulation_mapping.h"
 #include "augusta/tick.h"
+#include "simulation_mapping.h"
 
 namespace augusta::host {
 

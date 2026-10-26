@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_ADMISSION_H_
-#define AUGUSTA_ADMISSION_H_
+#ifndef AUGUSTA_HOST_ADMISSION_H_
+#define AUGUSTA_HOST_ADMISSION_H_
 
 #include <chrono>
 #include <unordered_map>
@@ -45,4 +45,4 @@ class AdmissionDeadlines {
 
 }  // namespace augusta::host
 
-#endif  // AUGUSTA_ADMISSION_H_
+#endif  // AUGUSTA_HOST_ADMISSION_H_

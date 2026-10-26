@@ -5,7 +5,6 @@
 #include <gtest/gtest.h>
 
 #include "augusta/body_part.h"
-#include "augusta/debug_subscriptions.h"
 #include "augusta/failure.h"
 #include "augusta/link.h"
 #include "augusta/link_types.h"
@@ -14,7 +13,8 @@
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
 #include "augusta/simulation.h"
-#include "augusta/tick_messages.h"
+#include "debug_subscriptions.h"
+#include "tick_messages.h"
 
 // Which peer the Host sends a tick's Shot judgements to, in a Development
 // build alone (ADR-0038, ADR-0074), as tick_messages_test.cpp has the rest of

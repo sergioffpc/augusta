@@ -38,8 +38,8 @@ target_link_libraries(
 augusta_set_module_scope(augusta_link SHARED)
 
 # For tests only: the Link's raw ends, which carry bytes as they are
-# (augusta/raw_link.h), so a test speaks the protocol by hand. Apart from
-# augusta_link, so no production target carries them; linked by tests alone.
+# (raw_link.h), so a test speaks the protocol by hand. Apart from augusta_link,
+# so no production target carries them; linked by tests alone.
 add_library(augusta_link_raw STATIC raw_link.cpp)
 target_include_directories(augusta_link_raw PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(augusta_link_raw PUBLIC augusta_failure augusta_link PRIVATE augusta_networking)
