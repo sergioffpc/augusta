@@ -117,7 +117,7 @@ rc::Gen<ShotJudgementWire> ShotJudgement() {
 }
 
 // Every byte of flags is one a client may send, a bit no stream uses included.
-// Requirements: US-30
+// Requirements: US-30, NFR-20
 RC_GTEST_PROP(ProtocolPropertyDebugTest, EveryDebugSubscribeSurvivesEncodeThenDecode, ()) {
   const DebugSubscribeWire subscribe{.flags = *rc::gen::arbitrary<std::uint8_t>()};
 
@@ -129,7 +129,7 @@ RC_GTEST_PROP(ProtocolPropertyDebugTest, EveryDebugSubscribeSurvivesEncodeThenDe
 
 // Every number on its grid and within its range, 0 to 16 entries of 0 to every
 // player a Match holds each, the left-out flag set or not.
-// Requirements: US-30
+// Requirements: US-30, NFR-20
 RC_GTEST_PROP(ProtocolPropertyDebugTest, EveryShotJudgementSurvivesEncodeThenDecode, ()) {
   const ShotJudgementWire judgement = *ShotJudgement();
 

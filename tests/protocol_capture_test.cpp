@@ -92,8 +92,10 @@ CapturedCommandWire Command() {
                              .player = 2};
 }
 
+// Requirements: US-21, NFR-20
 TEST(ProtocolCaptureTest, AHeaderRoundTrips) { EXPECT_EQ(std::get<CaptureHeaderWire>(RoundTrip(Header())), Header()); }
 
+// Requirements: US-21, NFR-20
 TEST(ProtocolCaptureTest, AJoinRoundTrips) {
   const CapturedJoinWire join{.spawn = Vec3{4.0F, 0.5F, -12.25F},
                               .offset = 0,
@@ -104,10 +106,12 @@ TEST(ProtocolCaptureTest, AJoinRoundTrips) {
   EXPECT_EQ(std::get<CapturedJoinWire>(RoundTrip(join)), join);
 }
 
+// Requirements: US-21, NFR-20
 TEST(ProtocolCaptureTest, ACommandRoundTrips) {
   EXPECT_EQ(std::get<CapturedCommandWire>(RoundTrip(Command())), Command());
 }
 
+// Requirements: US-21, NFR-20
 TEST(ProtocolCaptureTest, ALeaveADeathAndAMatchEndRoundTrip) {
   const CapturedLeaveWire leave{.offset = 12, .player = 3};
   const CapturedDeathWire death{.offset = 40, .victim = 1, .killer = 2};
@@ -117,6 +121,7 @@ TEST(ProtocolCaptureTest, ALeaveADeathAndAMatchEndRoundTrip) {
   EXPECT_EQ(std::get<CapturedMatchEndWire>(RoundTrip(end)), end);
 }
 
+// Requirements: NFR-20
 TEST(ProtocolCaptureTest, EachRecordIsItsTypesMember) {
   EXPECT_EQ(TypeOf(CaptureRecordWire{Header()}), CaptureRecordTypeWire::kHeader);
   EXPECT_EQ(TypeOf(CaptureRecordWire{Command()}), CaptureRecordTypeWire::kCommand);
@@ -126,6 +131,7 @@ TEST(ProtocolCaptureTest, EachRecordIsItsTypesMember) {
 
 // ADR-0050: a captured Command is the very augusta.Command a Commands message
 // carries, so the same command's fields read as the same command in either.
+// Requirements: US-21, NFR-20
 TEST(ProtocolCaptureTest, ACapturedCommandCarriesTheCommandACommandsMessageDoes) {
   // Every field away from its default: a sequence, which a capture ignores,
   // direction (2, 0, -4) and yaw 5 and pitch -2 steps, sprint and fire with
@@ -195,17 +201,20 @@ TEST(ProtocolCaptureTest, ACommandWithAFlagNoCommandHasIsRefused) {
   EXPECT_EQ(DecodeCaptureRecord(CapturedCommandRecord(VarintField(7, 0x40))).error(), DecodeError::kReservedBits);
 }
 
+// Requirements: NFR-20
 TEST(ProtocolCaptureEncodeTest, AnEngineVersionLongerThanAllowedIsNotEncoded) {
   CaptureHeaderWire header = Header();
   header.engine_version = std::string(kMaxEngineVersionLength + 1, 'v');
   EXPECT_EQ(EncodeCaptureRecord(header).error(), EncodeError::kFieldTooLong);
 }
 
+// Requirements: NFR-20
 TEST(ProtocolCaptureEncodeTest, ACharacterLongerThanAllowedIsNotEncoded) {
   const CapturedJoinWire join{.character = std::string(kMaxCharacterNameLength + 1, 'c')};
   EXPECT_EQ(EncodeCaptureRecord(join).error(), EncodeError::kFieldTooLong);
 }
 
+// Requirements: NFR-20
 TEST(ProtocolCaptureEncodeTest, ACommandFlagNoCommandHasIsNotEncoded) {
   CapturedCommandWire command = Command();
   command.command.flags = 0x40;

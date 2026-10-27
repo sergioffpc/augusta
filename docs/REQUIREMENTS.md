@@ -60,6 +60,7 @@ version only when it is cut (ENGINEERING.md, Milestones).
     - [NFR-17: Desktop Frame Rate](#nfr-17-desktop-frame-rate)
     - [NFR-18: Failure Containment](#nfr-18-failure-containment)
     - [NFR-19: Diagnosable Runs](#nfr-19-diagnosable-runs)
+    - [NFR-20: Wire Fidelity](#nfr-20-wire-fidelity)
 
 ---
 
@@ -1151,3 +1152,31 @@ Measure:     Every line is a UTC timestamp, the level and the message; only a
 ADR-0027 and ADR-0029 define the logger, the line and its levels; ADR-0038 the
 Run ID a client sends with its join. What a crash leaves in the log, and the
 `run=`, `session=` and `match=` that end a client's lines, are NFR-10's.
+
+### NFR-20: Wire Fidelity
+
+Version: v5
+
+```text
+Source:      A client, server or Agent sending a message, or a server writing
+             a Match capture
+Stimulus:    Any message or capture record the protocol has, with any values
+Environment: Peers of one build, however long the server has run
+Artifact:    The protocol's codec and the Link's conversions
+Response:    The receiver reads what was sent: each number on its grid, every
+             other value exactly; a value the wire cannot carry is never sent
+Measure:     Every message and capture record decodes to what was encoded;
+             positions travel in 1/1024 m steps (about a millimetre) and
+             angles in 2^-21 rad steps, as ADR-0038's grids say, each rounded
+             by at most half a step, a number past its grid as the grid's
+             bound and a NaN as zero; the encoder refuses a message holding a
+             value its fields cannot (text too long or not UTF-8, a list past
+             its bound, a flag or enumerator the protocol lacks); a tick and a
+             command sequence are 64 bits and never wrap; a number a field or
+             enumerator was given is never given to another
+```
+
+Met by v5, when the messages moved to Protocol Buffers: each value travels in
+the narrowest type that carries it, its flags and stance packed into one
+bitfield (ADR-0007, #940). What a receiver does with bytes no sender writes is
+NFR-12's.
