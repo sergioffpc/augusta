@@ -394,11 +394,12 @@ jobs:
         # linted alike, and their tests like the runtime's.
         # Then the tests get .clang-tidy's misc-include-cleaner alone, as the
         # Makefile's tidy target runs it (which says why -w); the client tests
-        # are the client-x64-windows job's.
+        # are the client-x64-windows job's, and the allocator benchmarks'
+        # files no job's: only a configure that asks for them compiles them.
         run: |
           status=0
           find src tools/agent -name '*.cpp' -not -path 'tools/*/tests/*' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_miniaudio.cpp' -not -path 'src/modules/audio/miniaudio.cpp' -not -path 'src/modules/window/window.cpp' -not -path 'src/modules/window/glfw_keys.cpp' -not -name '*_windows.cpp' -not -name '*_macos.cpp' -print0 | xargs -0 -P "$(nproc)" -n 1 clang-tidy-cache clang-tidy -p build/x64-linux || status=1
-          git ls-files 'tests/*.cpp' 'tools/agent/tests/*.cpp' ':!:tests/client_*' | xargs -P "$(nproc)" -n 1 clang-tidy-cache clang-tidy --quiet -p build/x64-linux --checks=-*,misc-include-cleaner --extra-arg=-w || status=1
+          git ls-files 'tests/*.cpp' 'tools/agent/tests/*.cpp' ':!:tests/client_*' ':!:tests/allocator_*' | xargs -P "$(nproc)" -n 1 clang-tidy-cache clang-tidy --quiet -p build/x64-linux --checks=-*,misc-include-cleaner --extra-arg=-w || status=1
           exit "$status"
       - uses: ./.github/actions/save-ctcache-cache
         if: ${{ !cancelled() && (steps.lint.outcome == 'success' || steps.lint.outcome == 'failure') }}
