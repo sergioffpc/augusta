@@ -43,13 +43,6 @@ namespace augusta::logging {
 
 namespace {
 
-// path in UTF-8: path::string() converts to the ANSI code page on Windows, and
-// throws for a character it lacks.
-std::string Utf8(const std::filesystem::path& path) {
-  const std::u8string text = path.u8string();
-  return {text.begin(), text.end()};
-}
-
 // The per-record attribute carrying when the message was written (the
 // severity travels as Boost.Log's own "Severity" attribute).
 constexpr const char* kTimeAttribute = "AugustaTime";

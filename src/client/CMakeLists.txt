@@ -72,7 +72,11 @@ if(AUGUSTA_DEBUG_TOOLS)
     augusta_client_debug_profiling_panel
     PUBLIC ${CMAKE_SOURCE_DIR}/src/modules/renderer/include
   )
-  target_link_libraries(augusta_client_debug_profiling_panel PUBLIC augusta_debug augusta_window_events)
+  target_link_libraries(
+    augusta_client_debug_profiling_panel
+    PUBLIC augusta_debug augusta_window_events
+    PRIVATE augusta_logging
+  )
   augusta_set_module_scope(augusta_client_debug_profiling_panel CLIENT_ONLY)
 
   # Which debug tools the Debug index lists, and which Physics overlays start
@@ -201,8 +205,13 @@ augusta_set_module_scope(augusta_client_application CLIENT_ONLY)
 # from the Run ID, which Runs are kept, and how the previous one ended.
 add_library(augusta_client_run_files STATIC run_files.cpp)
 target_include_directories(augusta_client_run_files PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-# It reads a log's last line for the events crash and application write.
-target_link_libraries(augusta_client_run_files PUBLIC Boost::uuid PRIVATE augusta_application augusta_crash)
+# It reads a log's last line for the events crash and application write, and
+# a Run file's name as UTF-8 (logging::Utf8).
+target_link_libraries(
+  augusta_client_run_files
+  PUBLIC Boost::uuid
+  PRIVATE augusta_application augusta_crash augusta_logging
+)
 augusta_set_module_scope(augusta_client_run_files CLIENT_ONLY)
 
 # The start of one Run (see client_run.h): its Run ID, its log file and its

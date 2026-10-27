@@ -156,6 +156,56 @@ TEST(ServerApplicationTest, APackWithoutServerContentIsAContentFailure) {
   EXPECT_FALSE(outcome->detail.empty());
 }
 
+// "中文" in UTF-8, as a path under the folder is logged and described.
+constexpr std::string_view kNonAnsiUtf8 = "\xE4\xB8\xAD\xE6\x96\x87";
+
+// A directory named u8"中文", which no Windows ANSI code page but the CJK ones
+// has, so path::string() throws for anything under it there.
+class NonAnsiFolderTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    // Named after the running test: ctest runs every test in a process of its
+    // own, possibly in parallel, so no other test removes it while in use.
+    root_ = std::filesystem::temp_directory_path() / (std::string("augusta_server_application_test_") +
+                                                      ::testing::UnitTest::GetInstance()->current_test_info()->name());
+    std::filesystem::remove_all(root_);
+    directory_ = root_ / std::filesystem::path(u8"中文");
+    std::filesystem::create_directories(directory_);
+  }
+
+  void TearDown() override { std::filesystem::remove_all(root_); }
+
+  std::filesystem::path root_;
+  std::filesystem::path directory_;
+};
+
+// Requirements: US-28, NFR-18
+TEST_F(NonAnsiFolderTest, AConfigMissingFromItIsAConfigurationFailureNamingIt) {
+  const auto config = ReadServerConfig(CommandLine{
+      .config_file = directory_ / "augustad.yaml", .message = {}, .options = {}, .action = CommandLineAction::kRun});
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, Code::kInvalidConfiguration);
+  EXPECT_NE(config.error().detail.find(kNonAnsiUtf8), std::string::npos) << config.error().detail;
+}
+
+// A pack in such a folder verifies, which is logged with its path, and the
+// content it then lacks is named by that path.
+// Requirements: NFR-08, NFR-18
+TEST_F(NonAnsiFolderTest, APackInItVerifiesAndIsNamedByItsContentFailure) {
+  Faults faults;
+  ServerConfig config = ExampleConfig();
+  const std::filesystem::path pack = std::filesystem::path("client").replace_extension(augusta::assets::kPackExtension);
+  std::filesystem::copy_file(kPacks / pack, directory_ / pack);
+  config.pack_path = directory_ / pack;
+
+  const Outcome outcome = Served(config, faults);
+
+  ASSERT_TRUE(outcome.has_value());
+  EXPECT_EQ(outcome->code, Code::kInvalidContent);
+  EXPECT_NE(ContextOf(*outcome, "path").find(kNonAnsiUtf8), std::string::npos);
+}
+
 // The example's server pack without its rifle, signed with a key of the test's
 // own at directory/server.apak, its public key at directory/test.pub: a pack a
 // server would verify, and holding all it needs but the rifle.

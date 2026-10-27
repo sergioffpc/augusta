@@ -55,7 +55,7 @@ std::vector<Gpu> QueryGpus() {
   std::vector<std::filesystem::path> cards;
   std::error_code error;
   for (std::filesystem::directory_iterator it("/sys/class/drm", error), end; !error && it != end; it.increment(error)) {
-    const std::string name = it->path().filename().string();
+    const std::string name = it->path().filename().native();
     if (name.starts_with("card") && name.size() > 4 && name.find_first_not_of("0123456789", 4) == std::string::npos) {
       cards.push_back(it->path());
     }

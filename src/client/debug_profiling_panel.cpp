@@ -9,6 +9,7 @@
 #include <variant>
 
 #include "augusta/debug_panels.h"
+#include "augusta/logging.h"
 #include "augusta/renderer.h"
 
 namespace augusta::client {
@@ -40,7 +41,7 @@ debug::Panel ProfilingPanel::BuildPanel() const {
       debug::Text{.text = gpu_crash_dumps_.enabled ? "Aftermath: enabled" : "Aftermath: not enabled"});
   panel.elements.emplace_back(
       debug::Text{.text = gpu_crash_dumps_.attached ? "Attached to the device: yes" : "Attached to the device: no"});
-  panel.elements.emplace_back(debug::Text{.text = "Dumps land in: " + gpu_crash_dumps_.directory.string()});
+  panel.elements.emplace_back(debug::Text{.text = "Dumps land in: " + logging::Utf8(gpu_crash_dumps_.directory)});
   return panel;
 }
 

@@ -152,9 +152,20 @@ ambiguous — not as a default way to avoid thinking about ownership.
 See [ADR-0033](../adr/0033-error-handling.md). Never return an error as a string
 — always as a type.
 
+## Paths as text
+
+A path that becomes text — a log line, a `failure::Failure`'s context, a message
+— is `logging::Utf8(path)`, never `path::string()` or `generic_string()`: on
+Windows both convert to the ANSI code page and throw for a character it lacks,
+so a folder it lacks would stop the process. A path made from another, such as a
+`.tmp` sibling, is made with path operations (`/`, `+=`, `replace_extension`),
+never through a string. `make format-check/path-text` and CI refuse either call
+under `src/` (`checks/path_text.cmake`).
+
 ## Enforcement
 
 Everything `clang-format`/`clang-tidy` already check (ADR-0012) is not repeated
 here. Everything else in this doc is enforced by agents reading it plus human
 code review, except that a module without a `README.md` fails to configure
-(`augusta_set_module_scope`, `cmake/AugustaModule.cmake`).
+(`augusta_set_module_scope`, `cmake/AugustaModule.cmake`), and a path's text is
+checked as Paths as text says.

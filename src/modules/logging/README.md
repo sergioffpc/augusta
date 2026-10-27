@@ -8,7 +8,9 @@ Writes the process's log lines: one process-wide, thread-safe console sink, a
 file sink where the process adds one, and a context of `run=`, `session=` and
 `match=` fields appended to every line once set, which a crash handler can also
 read without a lock, with macros that compile away below
-`AUGUSTA_LOG_ACTIVE_LEVEL`. Boost.Log does the work, hidden behind the module.
+`AUGUSTA_LOG_ACTIVE_LEVEL`. Boost.Log does the work, hidden behind the module. A
+path a line, a failure's context or a message names is written as its UTF-8 text
+(`Utf8`), whatever the system's code page.
 
 ## Not its responsibility
 

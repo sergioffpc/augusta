@@ -27,13 +27,6 @@ namespace augusta::host {
 
 namespace {
 
-// path in UTF-8: path::string() converts to the ANSI code page on Windows, and
-// throws for a character it lacks.
-std::string Utf8(const std::filesystem::path& path) {
-  const std::u8string text = path.u8string();
-  return {text.begin(), text.end()};
-}
-
 // What directory's retention reports, told to observer: the directory's
 // files and bytes, and each deletion and failed one.
 CaptureRetentionObserver RetentionReports(CaptureObserver& observer) {
@@ -214,18 +207,18 @@ std::optional<Capturer::Writer::Failed> Capturer::Writer::Handle(const Item& ite
 }
 
 std::optional<Capturer::Writer::Failed> Capturer::Writer::OpenFile(const Item& item) {
-  if (!directory_.Open(item.match, Utf8(item.path.filename()), item.encoded->SizeOnDisk())) {
+  if (!directory_.Open(item.match, logging::Utf8(item.path.filename()), item.encoded->SizeOnDisk())) {
     return Failed{.step = CaptureStep::kRetentionBudget, .detail = {}};
   }
   file_ = std::ofstream(item.path, std::ios::binary | std::ios::trunc);
   if (!file_) {
-    return Failed{.step = CaptureStep::kCreate, .detail = Utf8(item.path)};
+    return Failed{.step = CaptureStep::kCreate, .detail = logging::Utf8(item.path)};
   }
   file_match_ = item.match;
   path_ = item.path;
   records_ = 0;
   LOG_INFO("subsystem=capture event=capture_started match={} path={}", boost::uuids::to_string(item.match),
-           Utf8(path_));
+           logging::Utf8(path_));
   observer_->OnStarted();
   return Write(*item.encoded);
 }
@@ -248,7 +241,7 @@ std::optional<Capturer::Writer::Failed> Capturer::Writer::Write(const capture::E
   }
   capture::Write(file_, encoded);
   if (!file_) {
-    return Failed{.step = CaptureStep::kWrite, .detail = Utf8(path_)};
+    return Failed{.step = CaptureStep::kWrite, .detail = logging::Utf8(path_)};
   }
   if (std::optional<std::string> fault = Trip(failure::Site::kCaptureFlush)) {
     file_.setstate(std::ios::badbit);
@@ -256,7 +249,7 @@ std::optional<Capturer::Writer::Failed> Capturer::Writer::Write(const capture::E
   }
   file_.flush();
   if (!file_) {
-    return Failed{.step = CaptureStep::kFlush, .detail = Utf8(path_)};
+    return Failed{.step = CaptureStep::kFlush, .detail = logging::Utf8(path_)};
   }
   ++records_;
   observer_->OnWritten(encoded.SizeOnDisk());
@@ -278,7 +271,7 @@ void Capturer::Writer::CloseFile(const boost::uuids::uuid& match) {
   // A capture that stopped said so once already.
   if (!stopped) {
     LOG_INFO("subsystem=capture event=capture_completed match={} path={} records={}", boost::uuids::to_string(match),
-             Utf8(path_), records_);
+             logging::Utf8(path_), records_);
     observer_->OnCompleted();
   }
 }

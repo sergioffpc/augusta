@@ -38,13 +38,6 @@ namespace augusta::host {
 
 namespace {
 
-// path in UTF-8: path::string() converts to the ANSI code page on Windows, and
-// throws for a character it lacks.
-std::string Utf8(const std::filesystem::path& path) {
-  const std::u8string text = path.u8string();
-  return {text.begin(), text.end()};
-}
-
 // What captures each Match into the directory config names, if it names one
 // (ADR-0050), creating it first, what it does counted into metrics through
 // observer; none otherwise.
@@ -58,10 +51,10 @@ std::unique_ptr<Capturer> BuildCapturer(const HostConfig& config, const assets::
   if (error) {
     throw failure::ClassifiedFailure(
         failure::Failure{.code = failure::Code::kInvalidConfiguration,
-                         .context = {{.key = "directory", .value = Utf8(config.capture_directory)}},
+                         .context = {{.key = "directory", .value = logging::Utf8(config.capture_directory)}},
                          .detail = error.message()});
   }
-  LOG_INFO("subsystem=capture event=capture_enabled directory={} mode={}", Utf8(config.capture_directory),
+  LOG_INFO("subsystem=capture event=capture_enabled directory={} mode={}", logging::Utf8(config.capture_directory),
            CaptureModeName(config.capture_mode));
   observer.SetRetention(config.capture_retention);
   return std::make_unique<Capturer>(config.capture_directory,

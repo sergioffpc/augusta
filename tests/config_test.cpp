@@ -238,6 +238,20 @@ TEST(DescribeConfigErrorTest, NamesTheKeyAndTheFile) {
   EXPECT_TRUE(Contains(message, std::filesystem::path("dir/augustac.yaml").string())) << message;
 }
 
+// A file whose folder the ANSI code page lacks is named in UTF-8, on Windows
+// too.
+// Requirements: US-28
+TEST(DescribeConfigErrorTest, NamesAFileOutsideTheCodePageInUtf8) {
+  const ConfigError error{.code = ConfigErrorCode::kCannotOpenFile,
+                          .subject = {},
+                          .reason = {},
+                          .file = std::filesystem::path(u8"中文") / "augustac.yaml"};
+
+  const auto message = DescribeConfigError(error);
+
+  EXPECT_TRUE(Contains(message, "\xE4\xB8\xAD\xE6\x96\x87")) << message;
+}
+
 // Requirements: US-28
 TEST(DescribeConfigErrorTest, SaysWhatANumberMustBe) {
   const auto message = DescribeConfigError(

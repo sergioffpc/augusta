@@ -31,7 +31,7 @@ namespace {
 // naming the pack first.
 failure::Failure ContentFailure(const assets::Pack& pack, std::vector<failure::ContextField> context,
                                 std::string detail) {
-  context.insert(context.begin(), {.key = "path", .value = pack.Path().string()});
+  context.insert(context.begin(), {.key = "path", .value = logging::Utf8(pack.Path())});
   return {.code = failure::Code::kInvalidContent, .context = std::move(context), .detail = std::move(detail)};
 }
 

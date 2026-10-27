@@ -28,13 +28,6 @@ namespace {
 
 constexpr std::string_view kExtension = ".pcapng";
 
-// path in UTF-8: path::string() converts to the ANSI code page on Windows, and
-// throws for a character it lacks.
-std::string Utf8(const std::filesystem::path& path) {
-  const std::u8string text = path.u8string();
-  return {text.begin(), text.end()};
-}
-
 // Why the file stopped, as its WARN line's reason=.
 enum class StopReason : std::uint8_t {
   kCreateFailed,
@@ -124,7 +117,7 @@ struct FileWriter::Impl {
 
   void LogStopped(StopReason reason, std::string_view detail) const {
     LOG_WARN("subsystem=pcapng event=pcapng_stopped reason={} path=\"{}\" detail=\"{}\"", StopReasonName(reason),
-             Utf8(path), detail);
+             logging::Utf8(path), detail);
   }
 
   // The writer's thread: the headers, then each queued block until closing, or
@@ -203,7 +196,7 @@ std::unique_ptr<FileWriter> RunWriter(const std::filesystem::path& directory, st
     return nullptr;
   }
   auto writer = std::make_unique<FileWriter>(directory, executable, version, std::chrono::system_clock::now());
-  LOG_INFO("subsystem=pcapng event=pcapng_writing path=\"{}\"", Utf8(writer->Path()));
+  LOG_INFO("subsystem=pcapng event=pcapng_writing path=\"{}\"", logging::Utf8(writer->Path()));
   return writer;
 }
 

@@ -37,7 +37,7 @@ constexpr std::uintmax_t kMiB = std::uintmax_t{1024} * 1024;
 
 failure::Failure ContentFailure(const std::filesystem::path& pack_path, std::string detail) {
   return {.code = failure::Code::kInvalidContent,
-          .context = {{.key = "path", .value = pack_path.string()}},
+          .context = {{.key = "path", .value = logging::Utf8(pack_path)}},
           .detail = std::move(detail)};
 }
 
@@ -89,7 +89,7 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructRuntime
     return std::unexpected(ContentFailure(
         pack_path, assets::DescribeVerifiedPackError(pack.error(), pack_path, file_config.public_key_path)));
   }
-  LOG_INFO("subsystem=server event=pack_verified path={}", pack_path.string());
+  LOG_INFO("subsystem=server event=pack_verified path={}", logging::Utf8(pack_path));
 
   auto content = scenario::LoadServerContent(*pack, file_config.tick_rate_hz);
   if (!content) {
@@ -142,13 +142,19 @@ std::function<void()> DebugToolsStart([[maybe_unused]] const config::ServerConfi
 
 std::expected<config::ServerConfig, failure::Failure> ReadServerConfig(
     const std::expected<config::CommandLine, config::ConfigError>& command_line) {
-  return command_line
-      .and_then([](const config::CommandLine& read) { return config::LoadServerConfig(read.config_file); })
-      .transform_error([](const config::ConfigError& error) {
-        return failure::Failure{.code = failure::Code::kInvalidConfiguration,
-                                .context = {},
-                                .detail = config::DescribeServerConfigError(error)};
-      });
+  // Guarded, as main reads it before the application boundary runs anything.
+  return failure::Guard(
+             failure::Code::kInvalidConfiguration,
+             [&command_line] {
+               return command_line
+                   .and_then([](const config::CommandLine& read) { return config::LoadServerConfig(read.config_file); })
+                   .transform_error([](const config::ConfigError& error) {
+                     return failure::Failure{.code = failure::Code::kInvalidConfiguration,
+                                             .context = {},
+                                             .detail = config::DescribeServerConfigError(error)};
+                   });
+             })
+      .and_then([](std::expected<config::ServerConfig, failure::Failure> read) { return read; });
 }
 
 application::Program<ServerRuntime> ServerProgram(const config::ServerConfig& file_config, failure::Faults* faults) {

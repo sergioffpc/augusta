@@ -18,8 +18,18 @@
 /// one process-wide, thread-safe console sink, a file sink beside it where the
 /// process adds one, and a context of fields every line carries. Boost.Log does the
 /// work behind logging.cpp; nothing here includes it, so no other translation
-/// unit pays for its headers.
+/// unit pays for its headers. A path a line, a failure's context or a message
+/// names is written as its UTF-8 text (Utf8).
 namespace augusta::logging {
+
+/// path's text in UTF-8, whatever the system's code page: path::string()
+/// converts to the ANSI code page on Windows and throws for a character it
+/// lacks, so no source under src/ calls it (docs/agents/coding-standards.md).
+/// Inline, so a module that only names paths links nothing of the logger.
+[[nodiscard]] inline std::string Utf8(const std::filesystem::path& path) {
+  const std::u8string text = path.u8string();
+  return {text.begin(), text.end()};
+}
 
 /// A log line's severity, lowest to highest.
 enum class Severity : std::uint8_t {

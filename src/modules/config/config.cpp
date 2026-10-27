@@ -291,7 +291,7 @@ std::expected<std::uint32_t, ConfigError> RequireWholeNumber(const ConfigValues&
 std::string DescribeConfigError(const ConfigError& error) { return DescribeConfigError(error, Phrase(error)); }
 
 std::string DescribeConfigError(const ConfigError& error, std::string_view phrase) {
-  return error.file.empty() ? std::string(phrase) : std::format("{}: {}", error.file.string(), phrase);
+  return error.file.empty() ? std::string(phrase) : std::format("{}: {}", logging::Utf8(error.file), phrase);
 }
 
 }  // namespace augusta::config
