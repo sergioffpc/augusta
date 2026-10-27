@@ -358,6 +358,13 @@ one: it is fixed for the life of the server process, so it is a startup setting
 of the server that the server tells each client when it joins (ADR-0039).
 _Avoid_: Tuning, settings; not a function's parameters
 
+**Parameters schema**: The exact set of keys a data-driven configuration script
+must define - every one required, none other allowed - as one server build reads
+them. A pack loads only on a server whose Parameters schema its script matches,
+so a change to the schema leaves every pack cooked before it unloadable until
+re-cooked (ADR-0039). _Avoid_: Parameters version, content version (it covers
+the Parameters alone, not the rest of a pack's content)
+
 **Scenario**: One playable composition of authored content - a Map, the
 Characters it offers, its sounds, its Parameters and its Rules - named by one
 manifest and cooked into its own Packs (ADR-0041). An Authoritative server runs
