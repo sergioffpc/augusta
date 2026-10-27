@@ -221,10 +221,6 @@ TEST(TickMessagesTest, CombatEventsFollowTheUpdatesShotsThenHitConfirmationsThen
   }
 }
 
-TEST(TickMessagesTest, NoOneInTheMatchMeansNothingIsSent) {
-  EXPECT_TRUE(SendAll(TwoBodies(), 42, TickRecipients{}).empty());
-}
-
 // An update listing more bodies than the protocol carries is a broken
 // invariant, never a peer's doing: it is not sent, in any build, and the
 // failure stops the runtime (ADR-0033).

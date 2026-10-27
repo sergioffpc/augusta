@@ -427,6 +427,7 @@ TEST_F(PresentationWorldTest, TheSeenTimeIsOfTheUpdatesTheFrameRecorded) {
 }
 
 // The frame samples 0.1 s before tick 3's 3 s, where the newest update is.
+// Requirements: US-29
 TEST_F(PresentationWorldTest, WithUpdatesWaitingTheSlackIsTheNewestUpdatesLead) {
   const std::vector<PlayerCharacter> characters = SessionOrder();
   const std::vector<WorldSnapshot> updates = {SniperAt(1, 0.0F), SniperAt(2, 0.0F), SniperAt(3, 10.0F)};
@@ -438,6 +439,7 @@ TEST_F(PresentationWorldTest, WithUpdatesWaitingTheSlackIsTheNewestUpdatesLead) 
 }
 
 // Frames run on, well past kInterpolationDelay, with no newer update.
+// Requirements: US-29
 TEST_F(PresentationWorldTest, PastTheNewestUpdateTheSlackIsZeroOrBelow) {
   const std::vector<PlayerCharacter> characters = SessionOrder();
   const std::vector<WorldSnapshot> updates = {SniperAt(3, 10.0F)};
@@ -452,6 +454,7 @@ TEST_F(PresentationWorldTest, PastTheNewestUpdateTheSlackIsZeroOrBelow) {
   EXPECT_LE(*dry.interpolation_slack, 0.0);
 }
 
+// Requirements: US-29
 TEST_F(PresentationWorldTest, OutsideAMatchThereIsNoSlack) {
   const WorldSnapshot snapshot = ThreePlayersAt(5);
   const std::vector<PlayerCharacter> characters = SessionOrder();
@@ -467,6 +470,7 @@ TEST_F(PresentationWorldTest, OutsideAMatchThereIsNoSlack) {
 }
 
 // The sniper's update is the control: the same frame with someone to show.
+// Requirements: US-29
 TEST_F(PresentationWorldTest, WithNoRemotePlayerThereIsNoSlack) {
   const std::vector<PlayerCharacter> characters = SessionOrder();
   const WorldSnapshot with_sniper = SniperAt(3, 10.0F);

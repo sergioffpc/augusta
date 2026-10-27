@@ -51,6 +51,7 @@ TEST(PlayMatchesTest, ThePlayerCountOfAgentsPlaysTheExampleForTwoThroughTwoMatch
   }
 }
 
+// Requirements: US-23
 TEST(PlayMatchesTest, AServerThatNeverAdmitsAnyoneTimesTheRunOut) {
   // Listening, but never pumped, so no one is ever admitted.
   const augusta::link::Server silent(augusta::link::Endpoint{.address = "127.0.0.1:0"});
