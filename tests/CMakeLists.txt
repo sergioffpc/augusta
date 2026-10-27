@@ -93,29 +93,31 @@ target_link_libraries(augusta_benchmarks PRIVATE augusta_hot_path_benchmarks ben
 # oneTBB on macOS, where its proxy does not replace malloc; google/tcmalloc
 # and rpmalloc anywhere, which have no vcpkg port.
 if(AUGUSTA_ALLOCATOR_BENCHMARKS)
-  add_library(augusta_allocator_benchmark_main OBJECT allocator_benchmark_main.cpp allocator_churn_benchmark.cpp)
-  target_link_libraries(augusta_allocator_benchmark_main PUBLIC benchmark::benchmark)
+  add_library(augusta_allocator_benchmark_common OBJECT allocator_benchmark_main.cpp allocator_churn_benchmark.cpp)
+  target_link_libraries(augusta_allocator_benchmark_common PUBLIC benchmark::benchmark)
   file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/allocator-results)
 
   # One candidate's executable, augusta_allocator_benchmarks_<candidate>, from
   # SOURCES (its allocator_candidate.h) linked with LIBRARIES, and the test
-  # that runs it, as the nightly runs augusta_benchmarks. LIBRARIES go first on
-  # the link line, so that on Windows their DLLs come first in the import table
-  # and load before the CRT's, as mimalloc's redirect needs. Both object
-  # libraries are linked directly: an object library's objects reach only the
-  # targets that link it themselves, not through another.
+  # that runs it, five repetitions as the nightly runs augusta_benchmarks, but
+  # with every repetition's row in the file beside the aggregates, not the
+  # aggregates alone: only those rows carry the resident set. LIBRARIES go
+  # first on the link line, so that on Windows their DLLs come first in the
+  # import table and load before the CRT's, as mimalloc's redirect needs. Both
+  # object libraries are linked directly: an object library's objects reach
+  # only the targets that link it themselves, not through another.
   function(augusta_allocator_benchmark candidate)
     cmake_parse_arguments(PARSE_ARGV 1 arg "" "" "SOURCES;LIBRARIES")
     set(target augusta_allocator_benchmarks_${candidate})
     add_executable(${target} ${arg_SOURCES})
     target_link_libraries(
       ${target}
-      PRIVATE ${arg_LIBRARIES} augusta_allocator_benchmark_main augusta_hot_path_benchmarks
+      PRIVATE ${arg_LIBRARIES} augusta_allocator_benchmark_common augusta_hot_path_benchmarks
     )
     add_test(
       NAME allocator_${candidate}
       COMMAND
-        ${target} --benchmark_repetitions=5 --benchmark_report_aggregates_only=true
+        ${target} --benchmark_repetitions=5 --benchmark_display_aggregates_only=true
         --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/allocator-results/${candidate}.json --benchmark_out_format=json
     )
     set_tests_properties(
