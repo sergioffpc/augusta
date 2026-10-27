@@ -843,6 +843,7 @@ TEST_F(ReplayViewerTest, AReplayListQueryGetsTheServersList) {
   EXPECT_FALSE(query.GetFailure().has_value());
 }
 
+// Requirements: NFR-18
 TEST(ReplayListQueryTest, AServerThatIsNotThereIsUnreachable) {
   Endpoint gone;
   {

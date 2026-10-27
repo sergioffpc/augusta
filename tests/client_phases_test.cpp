@@ -193,7 +193,7 @@ TEST(ClientPhasesTest, ARunReenactsThePlayerOfTheCaptureItNames) {
   std::filesystem::remove(capture);
 }
 
-// Requirements: US-21
+// Requirements: US-21, NFR-18
 TEST(ClientPhasesTest, ACaptureThatDoesNotLoadOrLacksThePlayerIsAConfigurationFailure) {
   const std::filesystem::path capture = WriteCapture("augusta_client_reenact_two");
   const std::filesystem::path missing =
