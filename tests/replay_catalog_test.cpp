@@ -144,6 +144,7 @@ TEST_F(ReplayCatalogTest, LeavesOutCapturesOfAnotherPackRateOrScenario) {
 
 // A list request costs a look at the directory: a capture already read is
 // not read again while its size and last write stay as they were.
+// Requirements: US-21
 TEST_F(ReplayCatalogTest, ListingAgainReadsOnlyTheCapturesThatChanged) {
   const std::string kept = Write();
   const std::string changed = Write(1, kTickRate, {"sniper"}, 9);
@@ -164,6 +165,7 @@ TEST_F(ReplayCatalogTest, ListingAgainReadsOnlyTheCapturesThatChanged) {
   EXPECT_EQ(listed[0].name, kept);
 }
 
+// Requirements: US-21
 TEST_F(ReplayCatalogTest, LeavesOutWhatIsNoCapture) {
   const std::string replayable = Write();
   std::ofstream(directory_ / CaptureNamed("notes")) << "not a capture";
@@ -179,6 +181,7 @@ TEST_F(ReplayCatalogTest, LeavesOutWhatIsNoCapture) {
   EXPECT_EQ(listed[0].name, replayable);
 }
 
+// Requirements: US-21
 TEST_F(ReplayCatalogTest, ADirectoryThatIsGoneListsNothing) {
   ReplayCatalog catalog(root_ / "missing", Terms());
   EXPECT_TRUE(catalog.List().empty());
@@ -248,6 +251,7 @@ TEST(ReplayListingTest, ACapturesLengthRunsToItsLastTick) {
   EXPECT_EQ(listing->name, CaptureNamed("a"));
 }
 
+// Requirements: US-21
 TEST(ReplayListingTest, ACaptureWithNoPlayerIsNotReplayed) {
   capture::Capture capture;
   capture.header.server_pack = PackOf(1);
