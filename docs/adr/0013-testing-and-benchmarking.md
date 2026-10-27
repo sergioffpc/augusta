@@ -268,8 +268,9 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
   run them; the allocators come from the vcpkg manifest's `allocators` feature,
   which only that configure asks for and the next one drops; and a sanitizer
   preset never builds them, since a sanitizer brings its own allocator. They
-  answer whether to replace the platform's allocator, not whether a change
-  regressed, so they keep no history.
+  answer whether mimalloc, which replaces the platform's allocator (ADR-0078),
+  is still the right choice, not whether a change regressed, so they keep no
+  history.
 
 ## Out of scope
 

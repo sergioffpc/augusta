@@ -1,8 +1,22 @@
 #include <atomic>
 #include <csignal>
+#include <optional>
 #include <print>
 #include <string_view>
 #include <utility>
+
+#if AUGUSTA_MIMALLOC
+#include <cstdio>
+#include <cstdlib>
+
+#include <mimalloc.h>
+#ifdef _WIN32
+// operator new and delete as mimalloc's own, in this one file of the
+// executable, as mimalloc asks of a program its DLL redirects malloc for. Its
+// static library, on Linux and macOS, defines them itself.
+#include <mimalloc-new-delete.h>  // IWYU pragma: keep
+#endif
+#endif
 
 #include "augusta/application.h"
 #include "augusta/config.h"
@@ -49,11 +63,44 @@ class SignalTarget {
   SignalTarget& operator=(SignalTarget&&) = delete;
 };
 
+#if AUGUSTA_MIMALLOC
+// What mimalloc says of this process (ADR-0078): whether it redirected the
+// CRT's malloc (Windows; the link replaced it elsewhere), whether a block malloc
+// hands out now is in its heap, and its version.
+augusta::application::MimallocFacts ReadMimallocFacts() {
+  void* const block = std::malloc(1);  // NOLINT(cppcoreguidelines-no-malloc): malloc itself is what is checked
+  const augusta::application::MimallocFacts facts{
+#ifdef _WIN32
+      .redirected = mi_is_redirected(),
+#else
+      .redirected = true,
+#endif
+      .block_in_heap = mi_is_in_heap_region(block),
+      .version = mi_version(),
+  };
+  std::free(block);  // NOLINT(cppcoreguidelines-no-malloc)
+  return facts;
+}
+#endif
+
 }  // namespace
 
 int main(int argc, char** argv) {
-  // First, so a crash anywhere after it - startup included - is logged and
-  // leaves a core dump (ADR-0047).
+  // Before anything else, the command line included, so --version fails too:
+  // augustad refuses to run on any allocator but mimalloc, saying why in one
+  // line, as there is no log yet (ADR-0078). A sanitizer build runs its
+  // sanitizer's allocator, and checks nothing.
+  std::optional<augusta::application::MimallocFacts> mimalloc;
+#if AUGUSTA_MIMALLOC
+  mimalloc = ReadMimallocFacts();
+  if (const auto served = augusta::application::CheckMimalloc("augustad", *mimalloc); !served) {
+    std::println(stderr, "{}", served.error());
+    return augusta::application::kFailedExitStatus;
+  }
+#endif
+
+  // First of the rest, so a crash anywhere after it - startup included - is
+  // logged and leaves a core dump (ADR-0047).
   augusta::crash::Install(argv[0], kSubsystem);
   augusta::logging::Init();
 
@@ -74,7 +121,7 @@ int main(int argc, char** argv) {
   augusta::logging::SetLogLevel(*augusta::logging::ParseSeverity(file_config->log_level));
   LOG_INFO("subsystem=server event=starting version={}", augusta::EngineVersion());
 
-  auto program = augusta::server::ServerProgram(*file_config);
+  auto program = augusta::server::ServerProgram(*file_config, mimalloc);
   program.run = [run = std::move(program.run)](augusta::server::ServerRuntime& runtime) {
     const SignalTarget target(runtime);
     return run(runtime);

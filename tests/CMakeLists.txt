@@ -721,6 +721,15 @@ target_compile_definitions(
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_server_application_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS server)
 
+# augustad as built runs on mimalloc (ADR-0078): it checks the allocator before
+# it reads its command line, so its --version exits 0 only when mimalloc serves
+# it, a broken link or redirect failing it. Not under a sanitizer, whose own
+# allocator serves.
+if(NOT AUGUSTA_SANITIZER_ALLOCATOR)
+  add_test(NAME augustad_version COMMAND augustad --version)
+  set_tests_properties(augustad_version PROPERTIES LABELS server)
+endif()
+
 # A Match capture's file (ADR-0050) through the capture module alone: written,
 # read back and refused, with no server; its framing reached through frame.h,
 # and the protocol linked only to build malformed files.

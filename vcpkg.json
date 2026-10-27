@@ -18,6 +18,12 @@
     "gtest",
     "libsodium",
     "lua",
+    {
+      "name": "mimalloc",
+      "features": [
+        "override"
+      ]
+    },
     "ozz-animation",
     "physx",
     "protobuf",
@@ -38,7 +44,7 @@
       ]
     },
     "allocators": {
-      "description": "The general-purpose allocators the allocator benchmarks measure against the platform's own (tests/CMakeLists.txt), which the root CMakeLists.txt turns on with AUGUSTA_ALLOCATOR_BENCHMARKS, for one configure alone: mimalloc with its malloc override everywhere; snmalloc, jemalloc and gperftools' TCMalloc where they can replace malloc, not on Windows; oneTBB's scalable allocator, without hwloc, where its proxy can, not on macOS",
+      "description": "The general-purpose allocators the allocator benchmarks measure against the platform's own (tests/CMakeLists.txt), which the root CMakeLists.txt turns on with AUGUSTA_ALLOCATOR_BENCHMARKS, for one configure alone, beside mimalloc, a base dependency since it replaces malloc in augustac and augustad (ADR-0078): snmalloc, jemalloc and gperftools' TCMalloc where they can replace malloc, not on Windows; oneTBB's scalable allocator, without hwloc, where its proxy can, not on macOS",
       "dependencies": [
         {
           "name": "gperftools",
@@ -47,12 +53,6 @@
         {
           "name": "jemalloc",
           "platform": "!windows"
-        },
-        {
-          "name": "mimalloc",
-          "features": [
-            "override"
-          ]
         },
         {
           "name": "snmalloc",

@@ -20,8 +20,10 @@
 // runtime fails with, and however, it ends as one classified Outcome.
 namespace {
 
+using augusta::application::CheckMimalloc;
 using augusta::application::Conclude;
 using augusta::application::Execute;
+using augusta::application::MimallocFacts;
 using augusta::application::Outcome;
 using augusta::application::Program;
 using augusta::failure::ClassifiedFailure;
@@ -289,6 +291,38 @@ TEST(ApplicationTest, AStopAsAskedExitsZeroWithoutAnErrorLine) {
   EXPECT_EQ(Occurrences(written, "CRITICAL"), 0U) << written;
   EXPECT_EQ(Occurrences(written, "ERROR"), 0U) << written;
   EXPECT_EQ(Occurrences(written, "subsystem=server event=exiting exit_status=0"), 1U) << written;
+}
+
+// mimalloc serves the process (ADR-0078): it redirected the CRT's malloc where
+// it has to, and the block malloc handed out is in its heap.
+// Requirements: NFR-01
+TEST(ApplicationTest, MimallocServesAProcessItRedirectedAndAllocatesFor) {
+  const MimallocFacts facts{.redirected = true, .block_in_heap = true, .version = 217};
+
+  EXPECT_TRUE(CheckMimalloc("augustad", facts).has_value());
+}
+
+// Requirements: NFR-01
+TEST(ApplicationTest, AProcessMimallocDidNotRedirectIsRefusedWithOneLineSayingSo) {
+  const MimallocFacts facts{.redirected = false, .block_in_heap = false, .version = 217};
+
+  const auto checked = CheckMimalloc("augustad", facts);
+
+  ASSERT_FALSE(checked.has_value());
+  EXPECT_EQ(checked.error(),
+            "augustad: mimalloc does not serve this process: malloc is not redirected to it "
+            "(mimalloc.dll must be the first DLL it loads, with mimalloc-redirect.dll beside it)");
+}
+
+// Requirements: NFR-01
+TEST(ApplicationTest, AProcessWhoseBlockIsOutsideMimallocsHeapIsRefusedWithOneLineSayingSo) {
+  const MimallocFacts facts{.redirected = true, .block_in_heap = false, .version = 217};
+
+  const auto checked = CheckMimalloc("augustac", facts);
+
+  ASSERT_FALSE(checked.has_value());
+  EXPECT_EQ(checked.error(),
+            "augustac: mimalloc does not serve this process: a block malloc handed out is outside mimalloc's heap");
 }
 
 }  // namespace

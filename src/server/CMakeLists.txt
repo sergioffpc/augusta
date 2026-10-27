@@ -87,6 +87,9 @@ augusta_set_module_scope(augusta_server_application SERVER_ONLY)
 # augustad's entry point: it runs the server Runtime above behind the
 # application boundary (ADR-0033, ADR-0060).
 add_executable(augustad main.cpp)
+# mimalloc serves its malloc, linked first so that on Windows its DLL loads
+# first (ADR-0078, cmake/Mimalloc.cmake).
+augusta_link_mimalloc(augustad)
 target_link_libraries(
   augustad
   PRIVATE augusta_application augusta_server_application augusta_crash augusta_version augusta_logging augusta_server
@@ -110,7 +113,9 @@ endif()
 # honoured), which is how the Dockerfile's image gets it. On Windows the vcpkg
 # DLLs it loads go beside it, as the build tree has them; CMake resolves them
 # itself, rather than vcpkg's applocal helper, so they are in the install
-# manifest `make uninstall` removes. On Linux vcpkg links them statically.
+# manifest `make uninstall` removes; mimalloc's DLL (mimalloc-debug.dll in a
+# Debug build) and the mimalloc-redirect.dll it imports among them (ADR-0078).
+# On Linux vcpkg links them statically.
 if(WIN32)
   install(TARGETS augustad RUNTIME_DEPENDENCY_SET augustad_dlls RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
   install(

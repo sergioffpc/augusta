@@ -1,5 +1,6 @@
 #include "augusta/application.h"
 
+#include <expected>
 #include <filesystem>
 #include <format>
 #include <optional>
@@ -49,6 +50,20 @@ TimerResolution::TimerResolution() = default;
 
 TimerResolution::~TimerResolution() = default;
 #endif
+
+std::expected<void, std::string> CheckMimalloc(std::string_view executable, const MimallocFacts& facts) {
+  if (!facts.redirected) {
+    return std::unexpected(
+        std::format("{}: mimalloc does not serve this process: malloc is not redirected to it "
+                    "(mimalloc.dll must be the first DLL it loads, with mimalloc-redirect.dll beside it)",
+                    executable));
+  }
+  if (!facts.block_in_heap) {
+    return std::unexpected(std::format(
+        "{}: mimalloc does not serve this process: a block malloc handed out is outside mimalloc's heap", executable));
+  }
+  return {};
+}
 
 int Conclude(std::string_view executable, const Outcome& outcome, const std::optional<std::filesystem::path>& run_log) {
   if (!outcome.has_value()) {

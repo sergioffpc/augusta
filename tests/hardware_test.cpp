@@ -84,6 +84,20 @@ TEST(DescribeMachine, SaysUnknownForWhatTheOsDidNotTell) {
       "memory_limit_mib=none");
 }
 
+// The allocator a bug ran on (ADR-0078): mimalloc, with its version as
+// mi_version() gives it.
+// Requirements: NFR-19
+TEST(DescribeAllocator, NamesMimallocAndItsVersion) {
+  EXPECT_EQ(DescribeAllocator(353), "allocator=mimalloc/3.5.3");
+  EXPECT_EQ(DescribeAllocator(217), "allocator=mimalloc/2.1.7");
+}
+
+// A sanitizer build reads no mimalloc version: its sanitizer's allocator serves.
+// Requirements: NFR-19
+TEST(DescribeAllocator, NamesThePlatformsWithoutMimalloc) {
+  EXPECT_EQ(DescribeAllocator(std::nullopt), "allocator=platform");
+}
+
 // The machine running the test reports the fields every supported OS has.
 // Requirements: NFR-19
 TEST(QueryMachine, FindsTheOsCoresAndMemory) {
