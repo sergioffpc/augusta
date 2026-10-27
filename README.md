@@ -268,6 +268,16 @@ make test PRESET=windows-debug
 make test PRESET=linux-san
 ```
 
+`TAGS` runs only the tests with any of the given ctest labels, and `make labels`
+lists the labels the build knows (the GoogleTest ones once `make test` has built
+them):
+
+```bash
+make labels
+make test TAGS="property"
+make test TAGS="property check"
+```
+
 Every preset makes a Development build, which carries the debug tools, except
 `windows-shipping` and `linux-shipping`: they inherit `windows` and `linux` and
 make a Shipping build, what players get, without them (ADR-0074). A Development
