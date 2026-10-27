@@ -109,8 +109,8 @@ simulation:
   tick_rate_hz: {{ .root.Values.server.tickRateHz }}
   {{- if .root.Values.captures.hostPath }}
   capture: {{ include "augustad.captureFolder" . }}
-  {{- end }}
-{{- with (.root.Values.captures).retention }}
+{{- /* Only with capture: augustad refuses a retention for no directory. */}}
+{{- with .root.Values.captures.retention }}
 {{- if or .maxFiles .maxMiB }}
   capture_retention:
 {{- with .maxFiles }}
@@ -121,6 +121,7 @@ simulation:
 {{- end }}
 {{- end }}
 {{- end }}
+  {{- end }}
 network:
   listen_address: 0.0.0.0:{{ .root.Values.service.port }}
 metrics:
