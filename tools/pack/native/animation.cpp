@@ -40,8 +40,9 @@ constexpr std::size_t kSoaWidth = 4;
 using Lanes = std::array<float, kSoaWidth>;
 
 // Each lane of value. Floats, never a standard container of the SIMD values
-// themselves: clang-cl aligns one of those to 8 bytes only, and the aligned
-// loads of its elements crash (tests/animation_ozz_jobs_test.cpp).
+// themselves: clang-cl aligns one of those to 8 bytes only, the #pragma pack(8)
+// MSVC's standard library declares it under, and the aligned loads of its
+// elements crash.
 Lanes LanesOf(ozz::math::_SimdFloat4 value) {
   Lanes lanes{};
   ozz::math::StorePtrU(value, lanes.data());

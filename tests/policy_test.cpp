@@ -157,6 +157,7 @@ class PolicyTest : public ::testing::Test {
   }
 };
 
+// Requirements: US-22
 TEST_F(PolicyTest, AHookTheRulesDefineIsCalledEveryTickWithTheTick) {
   World world = WithAlice(WithRules(R"(
     local calls = 0
@@ -174,6 +175,7 @@ TEST_F(PolicyTest, AHookTheRulesDefineIsCalledEveryTickWithTheTick) {
   EXPECT_NE(log.find("script=rules.lua hook=on_tick"), std::string::npos) << log;
 }
 
+// Requirements: US-22
 TEST_F(PolicyTest, AHookTheRulesDoNotDefineIsANoOp) {
   for (const char* rules : {"", "local unused = 1", "function some_other_hook() error('not me') end"}) {
     World world = WithAlice(WithRules(rules));
@@ -191,6 +193,7 @@ struct FailingHook {
   const char* logged;
 };
 
+// Requirements: US-22
 TEST_F(PolicyTest, AFailingHookIsLoggedDecidesNothingAndTheTickGoesOn) {
   for (const FailingHook& hook : {
            FailingHook{.rules = "function on_tick() error('boom') end", .logged = "boom"},
@@ -244,6 +247,7 @@ TEST_F(PolicyTest, AFailingHookIsLoggedDecidesNothingAndTheTickGoesOn) {
 
 // The instruction limit bounds one call, not the hook's whole life: a hook
 // well within it on every call is never stopped, however long the Match.
+// Requirements: US-22
 TEST_F(PolicyTest, TheInstructionLimitStartsOverEveryCall) {
   World world = WithAlice(WithRules(R"(
     function on_tick()
@@ -257,6 +261,7 @@ TEST_F(PolicyTest, TheInstructionLimitStartsOverEveryCall) {
 
 // What a hook reaches for that the sandbox leaves out fails the call, as any
 // error does.
+// Requirements: US-22
 TEST_F(PolicyTest, TheSandboxRefusesAHookTheMachineAndRandomness) {
   for (const char* call : {"io.open('policy.txt')", "os.time()", "os.execute('echo')", "require('other')",
                            "math.random()", "package.loadlib('x', 'y')", "dofile('other.lua')", "load('return 1')()",
@@ -269,6 +274,7 @@ TEST_F(PolicyTest, TheSandboxRefusesAHookTheMachineAndRandomness) {
   }
 }
 
+// Requirements: US-22
 TEST_F(PolicyTest, AScriptThatUsesWhatTheSandboxLeavesOutAtItsTopLevelDoesNotLoad) {
   for (const char* use :
        {"io.open('policy.txt')", "os.time()", "require('other')", "math.random()", "package.loadlib('x', 'y')"}) {
@@ -281,6 +287,7 @@ TEST_F(PolicyTest, AScriptThatUsesWhatTheSandboxLeavesOutAtItsTopLevelDoesNotLoa
 
 // Memory is bounded per Lua state, as instructions are per call: an allocation
 // past the bound is refused, which fails the call as any error does.
+// Requirements: US-22
 TEST_F(PolicyTest, AScriptWhoseTopLevelAllocatesPastTheMemoryLimitDoesNotLoad) {
   const auto engine = Policy::Load("local huge = string.rep('x', 1 << 30)");
 
@@ -292,6 +299,7 @@ TEST_F(PolicyTest, AScriptWhoseTopLevelAllocatesPastTheMemoryLimitDoesNotLoad) {
 // its Lua state over the calls. Each call stops well short of the instruction
 // limit, so what stops it once the state is full is the memory limit: the call
 // fails as any error does, the next still gets its view, and the Match goes on.
+// Requirements: US-22
 TEST_F(PolicyTest, AHookThatHoardsMemoryFailsOnceItsStateIsFullAndTheTicksGoOn) {
   World world = WithAlice(WithRules(R"(
     local views, chunks, crumbs = nil, nil, nil
@@ -320,6 +328,7 @@ TEST_F(PolicyTest, AHookThatHoardsMemoryFailsOnceItsStateIsFullAndTheTicksGoOn) 
 // Lua's warn writes to stderr, outside the server's log (ADR-0029), once a
 // script turns it on: the sandbox has none, so a script that calls it fails as
 // it does for anything else the sandbox leaves out, and writes nothing.
+// Requirements: US-22
 TEST_F(PolicyTest, TheSandboxHasNoWarnSoAScriptWritesNothingToStderr) {
   constexpr std::string_view kWarns = "warn('@on') warn('x')";
 
@@ -342,6 +351,7 @@ constexpr std::string_view kLoopingFinalizer = "setmetatable({}, {__gc = functio
 // Enough allocation for Lua to run a GC step, and so a pending finalizer.
 constexpr std::string_view kAllocates = "for i = 1, 20000 do local t = {i} end";
 
+// Requirements: US-22
 TEST_F(PolicyTest, AHookThatSetsAFinalizerFailsAndTheTicksGoOn) {
   const std::string rules =
       "function on_tick() " + std::string(kLoopingFinalizer) + " " + std::string(kAllocates) + " end";
@@ -359,6 +369,7 @@ TEST_F(PolicyTest, AHookThatSetsAFinalizerFailsAndTheTicksGoOn) {
   EXPECT_EQ(second.state.tick, 2U);
 }
 
+// Requirements: US-22
 TEST_F(PolicyTest, AScriptThatSetsAFinalizerAtItsTopLevelDoesNotLoad) {
   const std::string rules = std::string(kLoopingFinalizer) + " " + std::string(kAllocates);
 
@@ -369,6 +380,7 @@ TEST_F(PolicyTest, AScriptThatSetsAFinalizerAtItsTopLevelDoesNotLoad) {
 }
 
 // A finalizer still pending when the Policy goes would run in lua_close.
+// Requirements: US-22
 TEST_F(PolicyTest, APolicyWhoseScriptTriedToSetAFinalizerIsDestroyed) {
   const std::string rules = "function on_tick() held = " + std::string(kLoopingFinalizer) + " end";
 
@@ -380,6 +392,7 @@ TEST_F(PolicyTest, APolicyWhoseScriptTriedToSetAFinalizerIsDestroyed) {
   EXPECT_NE(log.find("event=policy_hook_failed"), std::string::npos) << log;
 }
 
+// Requirements: US-22
 TEST_F(PolicyTest, AHookStillSetsAMetatableWithoutAFinalizer) {
   World world = WithAlice(WithRules(R"(
     function on_tick()
@@ -394,6 +407,7 @@ TEST_F(PolicyTest, AHookStillSetsAMetatableWithoutAFinalizer) {
 
 // Lua marks an object for finalization only as its metatable is set, so a
 // __gc added to the metatable afterwards never runs.
+// Requirements: US-22
 TEST_F(PolicyTest, AFinalizerAddedAfterTheMetatableIsSetNeverRuns) {
   const std::string rules =
       "function on_tick() local mt = {} held = setmetatable({}, mt) "
@@ -409,6 +423,7 @@ TEST_F(PolicyTest, AFinalizerAddedAfterTheMetatableIsSetNeverRuns) {
 }
 
 // What setmetatable refuses for its arguments still names it.
+// Requirements: US-22
 TEST_F(PolicyTest, ASetmetatableOfTheWrongArgumentsFailsNamingIt) {
   for (const char* call : {"setmetatable(1, {})", "setmetatable({}, 1)"}) {
     World world = WithAlice(WithRules(std::string("function on_tick() ") + call + " end"));
@@ -419,6 +434,7 @@ TEST_F(PolicyTest, ASetmetatableOfTheWrongArgumentsFailsNamingIt) {
   }
 }
 
+// Requirements: US-22
 TEST_F(PolicyTest, AScriptWithASyntaxErrorDoesNotLoad) {
   const auto engine = Policy::Load("function assign_spawns(");
 
@@ -426,6 +442,7 @@ TEST_F(PolicyTest, AScriptWithASyntaxErrorDoesNotLoad) {
   EXPECT_NE(augusta::policy::DescribeLoadError(engine.error()).find("rules.lua"), std::string::npos);
 }
 
+// Requirements: US-22
 TEST_F(PolicyTest, AScriptWhoseTopLevelNeverFinishesDoesNotLoad) {
   const auto engine = Policy::Load("while true do end");
 

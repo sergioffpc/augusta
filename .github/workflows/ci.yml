@@ -137,9 +137,10 @@ jobs:
       - name: Check C++ formatting
         if: needs.changes.outputs.run_build == 'true'
         run: make format-check/clang-format
-      - name: Check the tests' requirement markers
-        # Every requirement a test names is one docs/REQUIREMENTS.md has, and
-        # every marker is directly above a test (ADR-0013).
+      - name: Check the tests' and jobs' requirement markers
+        # Every requirement a test or a CI job names is one
+        # docs/REQUIREMENTS.md has, and every marker is directly above a test
+        # or a job (ADR-0013).
         if: needs.changes.outputs.run_build == 'true' || needs.changes.outputs.run_lint == 'true'
         run: python3 scripts/requirements-matrix.py --check
       - name: Check YAML formatting and lint
@@ -171,6 +172,7 @@ jobs:
       - name: Check Protocol Buffers formatting and lint
         if: needs.changes.outputs.run_lint == 'true'
         run: make format-check/buf
+  # Requirements: NFR-04
   client-x64-windows:
     needs: [changes, format]
     if: needs.changes.outputs.run_build == 'true'
@@ -295,6 +297,7 @@ jobs:
         # packs ctest loads, byte for byte, on either platform.
         working-directory: tools/pack
         run: uv run --locked --no-default-groups --group agent --group pack pytest
+  # Requirements: NFR-04
   server-x64-linux:
     needs: [changes, format]
     if: needs.changes.outputs.run_build == 'true'
@@ -507,6 +510,7 @@ jobs:
           name: fuzz-crashes
           path: fuzz-crashes/
           if-no-files-found: ignore
+  # Requirements: NFR-11, NFR-15
   manifests:
     # What Flux applies, against the schemas of the Kubernetes version the
     # cluster runs (k3s, bumped with it): helm lint checks the chart's
@@ -797,6 +801,7 @@ jobs:
               echo "$fixture: refused by $name"
             done
           done
+  # Requirements: NFR-11
   container-verify:
     needs: changes
     # Needs nothing but changes, so on a pull request the image builds and is
@@ -895,6 +900,7 @@ jobs:
   # both the image and the Agents were built, which every change to the
   # server's sources, the image, the profile or its script asks for
   # (changes above): an image it skips is built from what it last checked.
+  # Requirements: NFR-15
   confinement:
     needs: [server-x64-linux, container-verify]
     if: needs.server-x64-linux.result == 'success' && needs.container-verify.result == 'success'

@@ -14,6 +14,7 @@ namespace {
 // in, its padding, and one line of text.
 constexpr std::uint32_t kHudBottom = 48;
 
+// Requirements: US-29
 TEST_F(RendererSmokeTest, ClearsEveryPixelBelowTheDebugHudToTheClearColor) {
   renderer_->SetTextLines({"FPS: 144 (6.9ms) | RTT: --"});
   RenderFrames();
@@ -26,6 +27,7 @@ TEST_F(RendererSmokeTest, ClearsEveryPixelBelowTheDebugHudToTheClearColor) {
   EXPECT_EQ(CountOtherPixels(frame, kHudBottom, kHeight), 0U);
 }
 
+// Requirements: US-29
 TEST_F(RendererSmokeTest, DrawsNoDebugHudBeforeItHasLines) {
   const CapturedFrame frame = RenderFrames();
 
@@ -33,6 +35,7 @@ TEST_F(RendererSmokeTest, DrawsNoDebugHudBeforeItHasLines) {
   EXPECT_EQ(CountOtherPixels(frame, 0, kHeight), 0U);
 }
 
+// Requirements: US-29
 TEST_F(RendererSmokeTest, DrawsTheDebugHudsLinesInItsRegion) {
   renderer_->SetTextLines({"FPS: --"});
   const std::size_t short_line = CountOtherPixels(RenderFrames(), 0, kHudBottom);

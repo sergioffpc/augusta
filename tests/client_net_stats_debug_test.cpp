@@ -16,12 +16,14 @@ using std::chrono::milliseconds;
 
 constexpr float kTolerance = 1e-4F;
 
+// Requirements: US-29
 TEST(HudNetStatsTest, ShowsNothingWithoutAConnection) {
   HudNetStats hud;
 
   EXPECT_FALSE(hud.Update(std::nullopt, std::chrono::steady_clock::time_point{}).has_value());
 }
 
+// Requirements: US-29
 TEST(HudNetStatsTest, ShowsTheConnectionsNumbers) {
   HudNetStats hud;
 
@@ -35,6 +37,7 @@ TEST(HudNetStatsTest, ShowsTheConnectionsNumbers) {
   EXPECT_FLOAT_EQ(shown->in_bytes_per_sec, 100.0F);
 }
 
+// Requirements: US-29
 TEST(HudNetStatsTest, ShowsThePeakJitterOfTheLastFullWindow) {
   HudNetStats hud;
   const std::chrono::steady_clock::time_point start{};
@@ -50,6 +53,7 @@ TEST(HudNetStatsTest, ShowsThePeakJitterOfTheLastFullWindow) {
   EXPECT_NEAR(*after_window->jitter_ms, 7.0F, kTolerance);
 }
 
+// Requirements: US-29
 TEST(HudNetStatsTest, ForgetsTheJitterWhenTheConnectionGoes) {
   HudNetStats hud;
   const std::chrono::steady_clock::time_point start{};

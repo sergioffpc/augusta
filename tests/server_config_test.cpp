@@ -177,6 +177,7 @@ TEST(ParseServerConfigTest, RejectsCapturingOnAReplayServer) {
   EXPECT_EQ(config.error().subject, "simulation.capture");
 }
 
+// Requirements: US-21
 TEST(ParseServerConfigTest, RejectsACaptureRetentionOnAReplayServer) {
   const auto config =
       ParseServerConfig(std::string(kServerConfigWithoutTickRate) +
@@ -189,6 +190,7 @@ TEST(ParseServerConfigTest, RejectsACaptureRetentionOnAReplayServer) {
   EXPECT_EQ(config.error().subject, "simulation.capture_retention.max_files");
 }
 
+// Requirements: US-21
 TEST(ParseServerConfigTest, CapturesOptionallyByDefault) {
   const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
 
@@ -196,6 +198,7 @@ TEST(ParseServerConfigTest, CapturesOptionallyByDefault) {
   EXPECT_FALSE(config->strict_capture);
 }
 
+// Requirements: US-21
 TEST(ParseServerConfigTest, ReadsEitherCaptureMode) {
   const auto strict = ParseServerConfig(
       std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  capture_mode: strict\n",
@@ -210,6 +213,7 @@ TEST(ParseServerConfigTest, ReadsEitherCaptureMode) {
   EXPECT_FALSE(optional->strict_capture);
 }
 
+// Requirements: US-21
 TEST(ParseServerConfigTest, RejectsACaptureModeThatIsNeitherOptionalNorStrict) {
   const auto config = ParseServerConfig(
       std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  capture_mode: required\n",
@@ -221,6 +225,7 @@ TEST(ParseServerConfigTest, RejectsACaptureModeThatIsNeitherOptionalNorStrict) {
   EXPECT_EQ(DescribeServerConfigError(config.error()), "'simulation.capture_mode' must be optional or strict");
 }
 
+// Requirements: US-21
 TEST(ParseServerConfigTest, KeepsEveryCaptureByDefault) {
   const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
 
@@ -239,6 +244,7 @@ TEST(ParseServerConfigTest, ReadsTheCaptureRetention) {
   EXPECT_EQ(config->capture_max_mib, 2048U);
 }
 
+// Requirements: US-21
 TEST(ParseServerConfigTest, ReadsEitherCaptureRetentionLimitAlone) {
   const auto files = ParseServerConfig(ServerConfigWith("  capture_retention:\n    max_files: 1\n"), kFileDir);
   const auto mib = ParseServerConfig(ServerConfigWith("  capture_retention:\n    max_mib: 1\n"), kFileDir);
@@ -264,6 +270,7 @@ TEST(ParseServerConfigTest, RejectsACaptureRetentionLimitThatIsNotAWholeNumberAb
   }
 }
 
+// Requirements: US-21
 TEST(DescribeServerConfigErrorTest, SaysWhatACaptureRetentionLimitMustBe) {
   const auto message = DescribeServerConfigError({.code = ConfigErrorCode::kInvalidNumber,
                                                   .subject = "simulation.capture_retention.max_mib",
@@ -273,6 +280,7 @@ TEST(DescribeServerConfigErrorTest, SaysWhatACaptureRetentionLimitMustBe) {
   EXPECT_EQ(message, "'simulation.capture_retention.max_mib' must be an integer from 1 to 4294967295");
 }
 
+// Requirements: NFR-19
 TEST(ParseServerConfigTest, DefaultsTheLogLevel) {
   const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
 
@@ -280,6 +288,7 @@ TEST(ParseServerConfigTest, DefaultsTheLogLevel) {
   EXPECT_EQ(config->log_level, augusta::config::kDefaultLogLevel);
 }
 
+// Requirements: NFR-19
 TEST(ParseServerConfigTest, ReadsALogLevel) {
   const auto config = ParseServerConfig(ServerConfigWith("logging:\n  level: trace\n"), kFileDir);
 
@@ -287,7 +296,7 @@ TEST(ParseServerConfigTest, ReadsALogLevel) {
   EXPECT_EQ(config->log_level, "trace");
 }
 
-// Requirements: US-28
+// Requirements: US-28, NFR-19
 TEST(ParseServerConfigTest, RejectsAnInvalidLogLevel) {
   const auto config = ParseServerConfig(ServerConfigWith("logging:\n  level: verbose\n"), kFileDir);
 

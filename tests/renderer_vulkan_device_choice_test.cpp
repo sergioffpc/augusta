@@ -15,6 +15,7 @@ DeviceCandidate UsableCandidate(DeviceType type) {
   return {.type = type, .supports_vulkan_1_3 = true, .presents = true};
 }
 
+// Requirements: NFR-04
 TEST(DeviceChoiceTest, UsableNeedsVulkan13AndPresenting) {
   EXPECT_TRUE(Usable(UsableCandidate(DeviceType::kDiscreteGpu)));
   EXPECT_FALSE(
@@ -23,6 +24,7 @@ TEST(DeviceChoiceTest, UsableNeedsVulkan13AndPresenting) {
       Usable(DeviceCandidate{.type = DeviceType::kDiscreteGpu, .supports_vulkan_1_3 = true, .presents = false}));
 }
 
+// Requirements: NFR-04
 TEST(DeviceChoiceTest, HardwarePrefersADiscreteGpuOverAnIntegratedOne) {
   const std::vector<DeviceCandidate> candidates{UsableCandidate(DeviceType::kIntegratedGpu),
                                                 UsableCandidate(DeviceType::kDiscreteGpu)};
@@ -30,6 +32,7 @@ TEST(DeviceChoiceTest, HardwarePrefersADiscreteGpuOverAnIntegratedOne) {
   EXPECT_EQ(ChooseDevice(candidates, Adapter::kHardware), std::optional<std::size_t>{1});
 }
 
+// Requirements: NFR-04
 TEST(DeviceChoiceTest, HardwareTakesAnIntegratedGpuWithoutADiscreteOne) {
   const std::vector<DeviceCandidate> candidates{UsableCandidate(DeviceType::kCpu),
                                                 UsableCandidate(DeviceType::kIntegratedGpu)};
@@ -37,12 +40,14 @@ TEST(DeviceChoiceTest, HardwareTakesAnIntegratedGpuWithoutADiscreteOne) {
   EXPECT_EQ(ChooseDevice(candidates, Adapter::kHardware), std::optional<std::size_t>{1});
 }
 
+// Requirements: NFR-04
 TEST(DeviceChoiceTest, HardwareNeverTakesACpuDevice) {
   const std::vector<DeviceCandidate> candidates{UsableCandidate(DeviceType::kCpu), UsableCandidate(DeviceType::kOther)};
 
   EXPECT_EQ(ChooseDevice(candidates, Adapter::kHardware), std::nullopt);
 }
 
+// Requirements: NFR-04
 TEST(DeviceChoiceTest, SoftwareTakesTheFirstCpuDevice) {
   const std::vector<DeviceCandidate> candidates{UsableCandidate(DeviceType::kDiscreteGpu),
                                                 UsableCandidate(DeviceType::kCpu), UsableCandidate(DeviceType::kCpu)};
@@ -50,6 +55,7 @@ TEST(DeviceChoiceTest, SoftwareTakesTheFirstCpuDevice) {
   EXPECT_EQ(ChooseDevice(candidates, Adapter::kSoftware), std::optional<std::size_t>{1});
 }
 
+// Requirements: NFR-04
 TEST(DeviceChoiceTest, SoftwareNeverFallsBackToAGpu) {
   const std::vector<DeviceCandidate> candidates{UsableCandidate(DeviceType::kDiscreteGpu),
                                                 UsableCandidate(DeviceType::kIntegratedGpu)};
@@ -57,6 +63,7 @@ TEST(DeviceChoiceTest, SoftwareNeverFallsBackToAGpu) {
   EXPECT_EQ(ChooseDevice(candidates, Adapter::kSoftware), std::nullopt);
 }
 
+// Requirements: NFR-04
 TEST(DeviceChoiceTest, PassesOverADeviceWithoutVulkan13) {
   DeviceCandidate old_discrete = UsableCandidate(DeviceType::kDiscreteGpu);
   old_discrete.supports_vulkan_1_3 = false;
@@ -65,6 +72,7 @@ TEST(DeviceChoiceTest, PassesOverADeviceWithoutVulkan13) {
   EXPECT_EQ(ChooseDevice(candidates, Adapter::kHardware), std::optional<std::size_t>{1});
 }
 
+// Requirements: NFR-04
 TEST(DeviceChoiceTest, PassesOverADeviceThatCannotPresentToTheWindow) {
   DeviceCandidate headless = UsableCandidate(DeviceType::kCpu);
   headless.presents = false;
@@ -73,6 +81,7 @@ TEST(DeviceChoiceTest, PassesOverADeviceThatCannotPresentToTheWindow) {
   EXPECT_EQ(ChooseDevice(candidates, Adapter::kSoftware), std::optional<std::size_t>{1});
 }
 
+// Requirements: NFR-04
 TEST(DeviceChoiceTest, ChoosesNothingFromNoDevices) {
   EXPECT_EQ(ChooseDevice({}, Adapter::kHardware), std::nullopt);
   EXPECT_EQ(ChooseDevice({}, Adapter::kSoftware), std::nullopt);
@@ -89,12 +98,14 @@ std::vector<std::string_view> Names(const std::vector<const char*>& extensions) 
   return {extensions.begin(), extensions.end()};
 }
 
+// Requirements: NFR-04
 TEST(DeviceExtensionsTest, WithoutGpuCrashDumpsAsksForTheSwapchainAlone) {
   const std::vector<std::string_view> available{kSwapchain, kDiagnosticsConfig, kDiagnosticCheckpoints};
 
   EXPECT_EQ(Names(DeviceExtensions(false, available)), std::vector<std::string_view>{kSwapchain});
 }
 
+// Requirements: NFR-10
 TEST(DeviceExtensionsTest, WithGpuCrashDumpsAlsoAsksForWhatAftermathReads) {
   const std::vector<std::string_view> available{kDiagnosticCheckpoints, kSwapchain, kDiagnosticsConfig};
 
@@ -104,6 +115,7 @@ TEST(DeviceExtensionsTest, WithGpuCrashDumpsAlsoAsksForWhatAftermathReads) {
 
 // lavapipe, or a GPU that is not NVIDIA's: Aftermath may watch, but the device
 // is made as without it.
+// Requirements: NFR-04, NFR-10
 TEST(DeviceExtensionsTest, WithGpuCrashDumpsAsksForNoExtensionTheDeviceLacks) {
   const std::vector<std::string_view> available{kSwapchain};
 
@@ -112,6 +124,7 @@ TEST(DeviceExtensionsTest, WithGpuCrashDumpsAsksForNoExtensionTheDeviceLacks) {
 
 // MoltenVK's device, on macOS: Vulkan requires the subset turned on wherever a
 // device has it.
+// Requirements: NFR-04
 TEST(DeviceExtensionsTest, AsksForThePortabilitySubsetTheDeviceHas) {
   const std::vector<std::string_view> available{kPortabilitySubset, kSwapchain};
 

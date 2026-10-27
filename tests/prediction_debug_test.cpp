@@ -48,6 +48,7 @@ Visualization Collision() {
   return visualization;
 }
 
+// Requirements: US-30
 TEST(PredictionCollisionTest, WithCollisionOnTheStateCarriesLinesAfterATick) {
   World world(augusta::clips_fixture::TestClips());
   ASSERT_TRUE(world.AddCollisionMesh(Floor()).has_value());
@@ -60,6 +61,7 @@ TEST(PredictionCollisionTest, WithCollisionOnTheStateCarriesLinesAfterATick) {
   EXPECT_FALSE(state.collision_lines->empty());
 }
 
+// Requirements: US-30
 TEST(PredictionCollisionTest, WithCollisionOffTheStateCarriesNoLines) {
   World world(augusta::clips_fixture::TestClips());
   ASSERT_TRUE(world.AddCollisionMesh(Floor()).has_value());
@@ -70,6 +72,7 @@ TEST(PredictionCollisionTest, WithCollisionOffTheStateCarriesNoLines) {
   EXPECT_EQ(state.collision_lines, nullptr);
 }
 
+// Requirements: US-30
 TEST(PredictionCollisionTest, TurnedOffAgainTheStateCarriesNoLines) {
   World world(augusta::clips_fixture::TestClips());
   ASSERT_TRUE(world.AddCollisionMesh(Floor()).has_value());
@@ -107,6 +110,7 @@ std::vector<BodyState> PredictedWithReplays(bool collision) {
   return bodies;
 }
 
+// Requirements: US-30
 TEST(PredictionCollisionTest, AReplayWithCollisionOnPredictsTheSameBodyAsWithItOff) {
   const std::vector<BodyState> off = PredictedWithReplays(false);
   const std::vector<BodyState> on = PredictedWithReplays(true);

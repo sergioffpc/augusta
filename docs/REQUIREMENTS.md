@@ -39,6 +39,8 @@ version only when it is cut (ENGINEERING.md, Milestones).
     - [US-26: Play on a Team](#us-26-play-on-a-team)
     - [US-27: Talk to my Team](#us-27-talk-to-my-team)
     - [US-28: Start Only on a Valid Configuration](#us-28-start-only-on-a-valid-configuration)
+    - [US-29: Debug HUD and Panels](#us-29-debug-hud-and-panels)
+    - [US-30: Physics and Shot Judgement Overlays](#us-30-physics-and-shot-judgement-overlays)
 - [Non-Functional Requirements](#non-functional-requirements)
     - [NFR-01: Server Tick Rate (Performance)](#nfr-01-server-tick-rate-performance)
     - [NFR-02: Network Latency Tolerance](#nfr-02-network-latency-tolerance)
@@ -57,6 +59,9 @@ version only when it is cut (ENGINEERING.md, Milestones).
     - [NFR-15: Cluster Hardening (Security)](#nfr-15-cluster-hardening-security)
     - [NFR-16: VR Frame Rate](#nfr-16-vr-frame-rate)
     - [NFR-17: Desktop Frame Rate](#nfr-17-desktop-frame-rate)
+    - [NFR-18: Failure Containment](#nfr-18-failure-containment)
+    - [NFR-19: Diagnosable Runs](#nfr-19-diagnosable-runs)
+    - [NFR-20: Wire Fidelity](#nfr-20-wire-fidelity)
 
 ---
 
@@ -150,6 +155,16 @@ accuracy for speed.
 Given I have a weapon equipped
 When I toggle aim down sights (ADS)
 Then my view zooms and the weapon's accuracy/recoil model changes accordingly
+
+Given I am playing with the cursor captured
+When I move the mouse
+Then my view turns by how far it moved at augustac.yaml's input.mouse_sensitivity,
+     right turning right and up looking up; pitch stops short of straight up and
+     straight down, and yaw wraps, so turning on and on stays within one turn
+
+Given I am aiming from the hip
+When a frame is drawn, whatever the window's size
+Then the crosshair shows at the frame's centre, the same size in pixels
 ```
 
 In VR (US-25), I aim by bringing the rifle's sight to my eye: there is no ADS
@@ -357,6 +372,11 @@ When I fire, another player's Shot is announced, the server confirms my hit,
 Then I hear my own gunshot on the frame I fire, other gunshots and deaths from where
      they happened, and a hit marker, hit-taken or Match end stinger (won if I am the
      Winner, lost otherwise, a Draw included) as my own, each once
+
+Given a cue whose sound has one or more variants
+When it plays
+Then I hear one of them at random, never the one it played last unless it has only
+     one, and each of them over enough plays
 ```
 
 Spatialization itself (Steam Audio, ADR-0010, ADR-0028) is heard, not tested.
@@ -427,11 +447,23 @@ Given a Development server with debug.reenactments on, on the capture's packs
 When I run augustac --reenact with the capture, once per player, all at once
 Then each player spawns where the capture has it and its Commands reach the
      server on their ticks, each Seen time keeping its captured delay
+
+Given augustad.yaml sets max_files, max_mib or both under
+      simulation.capture_retention
+When a Match starts, and while it is captured
+Then the oldest captures in the directory are deleted until the rest stay
+     within both limits; the Match in progress is never deleted, and if it
+     alone passes max_mib its capture stops
+
+Given augustad.yaml sets simulation.capture_mode to strict
+When the capture loses a record
+Then the server stops with that failure, naming the Match and what was lost
 ```
 
 A capture that stops early, because its disk fell behind or a write failed,
-keeps every whole record before that point and never holds the tick up
-(ADR-0050, ADR-0051).
+keeps every whole record before that point and never holds the tick up. In the
+default, optional mode a lost record leaves the server running and the next
+Match is captured afresh (ADR-0050, ADR-0051).
 
 ### US-22: Compose and Tune a Scenario
 
@@ -449,6 +481,19 @@ Then a manifest with an unknown or missing entry is refused when cooked; a Param
      script with an unknown, missing, mistyped or out-of-range value, or that reaches
      outside its sandbox, stops the server at startup naming the field; otherwise every
      client is admitted with the server's tick rate and Parameters and plays by them
+
+Given a scenario's cooked packs
+When a server or client starts on them
+Then its content loads whole or is refused naming the part: the Map's colliders and
+     spawn points; each Character's eye, mesh, Hitboxes, Skeleton, weapon socket and
+     animation; the rifle's markers; the scripts and the cue sounds. Anything missing
+     or malformed stops startup, naming the Character, node or asset, and the cooker
+     refuses to write it
+
+Given Rules whose hook fails, goes over its instruction or memory limit, or sets a
+      finalizer
+When the server calls it
+Then the failure is logged, the hook decides nothing, and the tick goes on
 ```
 
 The Parameters set the rifle, its ammo, starting health, stamina and the Player
@@ -596,6 +641,90 @@ Then it refuses the command line and prints its usage
 A key that sets another requirement's behaviour, such as `--replay` or
 `metrics.port`, is checked under that requirement too (ADR-0034).
 
+### US-29: Debug HUD and Panels
+
+Version: v7
+
+As a developer, I want a Development client to show how its frames and its
+connection to the server are doing, and to impair that connection on purpose, so
+that I can see where the game struggles and play it on a bad network without
+having one.
+
+```text
+Given a Development client with debug.hud on, as it is by default
+When it draws a frame
+Then the Debug HUD shows the frame rate and frame time, and the connection's RTT, loss,
+     jitter and bytes in and out each second, with a dash for anything not measured yet
+
+Given a Development client with debug.network_panel on
+When I open the network panel
+Then it shows each message type's traffic rates, the Authoritative State updates'
+     sizes and arrivals, the ticks missing and out of order, the corrections and the
+     interpolation slack, each peak kept until I reset the peaks
+
+Given a Development client with the cursor captured
+When I press F1
+Then I enter Debug interaction: the Debug panels take the mouse and keyboard and the
+     game gets neither, until F1 again or Escape leaves it
+
+Given latency, jitter, loss or reordering injected from the network panel
+When messages travel between the client and the server
+Then each applies once to what the client sends and once to what it receives, and the
+     Debug HUD marks the connection impaired until every value is back at zero
+```
+
+The network panel plots its connection numbers and corrections over the last ten
+seconds, and sets the impairment by sliders within their ranges or by the
+impaired-link tests' profiles. The Debug index lists the debug tools the client
+carries, each switched on or off from it and starting as `augustac.yaml`
+configures it. The profiling panel opens a capture window of a chosen number of
+frames, which Nsight Systems records alone, and says whether Aftermath watches
+the GPU and where a dump would land.
+
+### US-30: Physics and Shot Judgement Overlays
+
+Version: v7
+
+As a developer, I want a Development client to draw the bodies, Hitboxes and
+rounds the simulation works with over the game, so that I can see where the
+server put a body or a Hitbox and why a round hit or missed.
+
+```text
+Given a Development client with a physics overlay on, by its debug.physics key or
+      from the Physics panel
+When it draws a frame
+Then it draws each body's capsule, the server's beside my predicted one; the Hitboxes
+     where the server posed them, coloured by Body part; and the physics engine's
+     collision shapes within the chosen radius of the camera; each hidden behind the
+     world until its through walls toggle is on, and none changing how any body moves
+
+Given a Development client with the Shot judgement overlay on
+When one of my rounds is judged
+Then it draws the round's flight from its Shot to the point struck, the struck Hitbox
+     filled, and the Hitboxes the server judged beside those I saw when I fired, for
+     5 seconds and at most 8 rounds; the Physics panel says when a round is still
+     unjudged after 2 seconds
+
+Given a Development server with debug.shot_judgements on
+When clients ask for Shot judgements
+Then only the shooter receives its rounds' Shot judgements, and only while it asks;
+     asking is never refused or held against a client, and a stream the server does
+     not serve is logged once per client
+
+Given a Development client or server with debug.physics_recording on
+When it starts
+Then it records its physics to a file the physics debugger reads, or warns that it
+     cannot and runs on
+
+Given a Shipping build
+When its config sets any debug.* key
+Then it refuses to start, naming the debug section as an unknown key
+```
+
+The overlays and the Physics panel are values the client builds each frame
+(ADR-0075); the collision shapes are PhysX's own and the recording is OmniPVD's.
+A Shipping build compiles every debug tool out (ADR-0074).
+
 ---
 
 ## Non-Functional Requirements
@@ -622,11 +751,17 @@ Version: v1
 
 ```text
 Source:      Player client
-Stimulus:    Network latency up to 100 ms
+Stimulus:    Network latency up to 100 ms, with packets lost or reordered; a
+             peer that closes its connection, times out or is dropped
 Environment: Typical broadband connection
-Artifact:    State synchronization system
-Response:    Bullet and player state remain visually consistent
-Measure:     Desync correction completes within 150 ms in 95% of cases
+Artifact:    State synchronization system and transport
+Response:    Bullet and player state remain visually consistent; reliable
+             messages arrive once and in order, while a tick's Commands and
+             Authoritative State updates travel unreliably; a peer that leaves
+             is reported, and its Session ends without stopping the server
+Measure:     Desync correction completes within 150 ms in 95% of cases; no
+             reliable message is lost, repeated or reordered; every peer that
+             closes, times out or is dropped is reported once
 ```
 
 ### NFR-03: Ballistics Determinism
@@ -687,6 +822,25 @@ silicon Mac, `scripts/dev-container.sh`) builds it natively too.
 `cmake/AugustaPlatform.cmake` holds this contract, and the configure stops on
 any other OS, architecture or 32-bit toolchain rather than compiling for it.
 
+On each client platform, the client runs on the machine's own Vulkan device:
+
+```text
+Source:      Player
+Stimulus:    Client startup
+Environment: A Windows x64 or Linux x86-64 machine with one or more Vulkan
+             devices
+Artifact:    Client (renderer)
+Response:    The client picks a Vulkan 1.3 device that can present to its
+             window, a discrete GPU over an integrated one, and a software
+             (CPU) device only when asked for one; it draws the Map as
+             authored
+Measure:     A device without Vulkan 1.3 or that cannot present is never
+             picked; a GPU is never picked when a software device is asked
+             for, nor a software device otherwise; each of the Map's meshes
+             is drawn where its node and their parents place it, in its
+             node's base colour
+```
+
 ### NFR-05: Server Authority / Cheat Resistance
 
 Version: v1
@@ -739,13 +893,17 @@ Source:      Anyone who can change a pack file on disk or on the node
 Stimulus:    A client or server pack that is corrupted, truncated, tampered with,
              unsigned or signed by another key; or a client whose pack was not
              cooked with the server's
-Environment: Client or server startup; a client joining
-Artifact:    Pack loading and Join admission
+Environment: Client or server startup; a client joining; augusta-inspect or
+             augusta-verify reading the pack
+Artifact:    Pack loading, Join admission and the pack's layout read
 Response:    The process refuses the pack and exits before anything else starts;
-             the server refuses the Join as a pack mismatch
+             the server refuses the Join as a pack mismatch; augusta-inspect
+             still shows the pack's layout, and augusta-verify names the
+             entries, format version and size it verified
 Measure:     No byte of a pack is trusted before its BLAKE3 hash and Ed25519
              signature verify against the key the process was given; every
-             refused pack names why
+             refused pack names why; the layout read, with no key, returns
+             every field of the header, index and trailer as written
 ```
 
 ADR-0018 and ADR-0031 define the hash, the signature and the header's client
@@ -778,34 +936,41 @@ Version: v3
 Source:      A defect in the dedicated server or the client
 Stimulus:    A fatal signal (SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT) in a
              published Linux build; an unhandled exception or an abort in a
-             published Windows client
+             published Windows client; a device fault (a GPU crash or TDR)
+             in a client on an NVIDIA GPU
 Environment: The server: a k3s node whose kernel.core_pattern is
              systemd-coredump's. The Linux client: a player's machine whose
              kernel.core_pattern is systemd-coredump's. The Windows client: a
              player's machine as installed, no registry key or Windows Error
              Reporting set up
-Artifact:    The shared crash handler, the server's image, the client's
-             tarball or zip and the build's debug info or PDB
+Artifact:    The shared crash handler, the Renderer's Aftermath hook, the
+             server's image, the client's tarball or zip and the build's
+             debug info or PDB
 Response:    The process logs the crash and the crashing thread's stack, then
              dies. On Linux the stack is symbolized and the kernel keeps its
              core; the Windows client names each frame's module and offset and
              writes its own minidump. The client's lines also reach the Run's
-             log, under its Run ID
+             log, under its Run ID. A device fault on an NVIDIA GPU writes
+             Aftermath's GPU crash dump
 Measure:     Every such crash leaves a crash line and one line per frame in
              ADR-0029's format, a core or minidump, and debug info whose build
              ID, or PDB whose GUID and age, matches the binary, kept as long as
-             the image or the release. The client's lines end in the Run's
-             run= and, while set, its session= and match=, end the Run's log
-             file; the Linux crash line names
+             the image or the release. The client's crash lines end in the
+             Run's run= and, while set, its session= and match=, and end the
+             Run's log file; the Linux crash line names
              coredumpctl as where the core is, and the Windows client's
              minidump is dumps/augustac-<run-id>.dmp, holding the Run ID in a
-             user stream
+             user stream. Each GPU crash dump is
+             dumps/augustac-<run-id>-<n>.nv-gpudmp, numbered from 1, and a
+             Development client's Profiling panel says whether Aftermath is
+             attached to the device and where the dumps land
 ```
 
 A stack overflow, or a crash in another thread or in the report itself, leaves
 no logged stack; a corrupted Windows client may fail to write its minidump; and
 the development-only Windows server build writes no core or minidump (ADR-0047,
-ADR-0055).
+ADR-0055). GPU crash dumps were first met in v6; a GPU of another vendor gets
+none.
 
 ### NFR-11: Deployability
 
@@ -832,15 +997,20 @@ Version: v1
 ```text
 Source:      A peer, or a file from outside (pack, Match capture)
 Stimulus:    Arbitrary bytes: empty, truncated, oversized, out of range or with
-             bytes left over
+             bytes left over; more messages than are taken in
 Environment: Client or server at any time; the fuzzer under ASan
-Artifact:    Protocol decoding, pack loading and Match capture reading
+Artifact:    Protocol decoding, pack loading, Match capture reading and the
+             queues messages wait in
 Response:    The input is refused with a typed error, nothing is allocated from
-             a length that was not checked, and the process keeps running
+             a length that was not checked, and the process keeps running; a
+             queue a peer fills is bounded and keeps only the newest: the
+             server's queue of each client's Commands, and a client's queues
+             of the Authoritative State updates, Shots and Hit confirmations
+             it is sent
 Measure:     No crash, hang (5 s per input) or sanitizer report across every
              fuzz run (about 60 s per target per pull request, 30 min nightly);
              every payload decoding accepts encodes again and decodes to the
-             same value
+             same value; no queue holds more than its bound
 ```
 
 The fuzz targets' seeds and regressions replay under ctest on every preset
@@ -960,3 +1130,94 @@ Measure:     144 frames a second or more for the whole Match
 Lighting has no quality setting to trade for frame rate (ADR-0067): the frame
 rate is met with every player's shadows, reflections and indirect light as
 everyone else sees them.
+
+### NFR-18: Failure Containment
+
+Version: v3
+
+```text
+Source:      A dependency, the local transport, a worker thread or a broken
+             invariant of the client or the dedicated server; or a peer
+Stimulus:    A failure at startup (configuration or content that does not
+             load, a dependency that does not start) or at runtime (a send or
+             receive the local transport refuses, a worker that throws or
+             cannot be created, a message the protocol cannot carry); a stop
+             asked for; a peer that leaves or misbehaves
+Environment: Client or server, from startup to exit
+Artifact:    The application boundary, the runtime supervisor and its workers,
+             and the shared error model's codes and dispositions
+Response:    The process ends on the first failure, classified by its code: the
+             runtime that met it sends nothing more, and every worker stops; a
+             peer's outcome stays that peer's
+Measure:     Any startup or runtime failure ends the process with one terminal
+             event naming its classified cause, and a non-zero exit; a stop
+             that was asked for exits 0; the first failure stops every worker
+             and is kept; every thread is joined; a local transport failure is
+             the runtime's failure, but a peer that leaves or misbehaves is not
+```
+
+ADR-0033 classifies each failure into the scope it is recovered at, and ADR-0005
+has the supervisor stop and join the workers. A crash is NFR-10's: it ends the
+process with its crash line, not a terminal event.
+
+### NFR-19: Diagnosable Runs
+
+Version: v6
+
+```text
+Source:      A developer or operator reading what a client or the dedicated
+             server did
+Stimulus:    A client's Run or the server's life; a Session or a Match; a
+             warning repeated faster than it can be read; a launch after a
+             Run that crashed
+Environment: Client or server, from startup to exit, at the log level its
+             configuration names
+Artifact:    The shared logger, the client's Run files and the hardware probe
+Response:    Each line at or above the configured level reaches the console
+             and, for a client Run, its log file; a log file that cannot be
+             opened is reported, and the Run logs to the console alone; each
+             Run, Session and Match is named, and the server's log ties them
+             together
+Measure:     Every line is a UTC timestamp, the level and the message; only a
+             line at or above the configured level is written, and one below
+             it evaluates nothing; a throttled warning counts what it
+             suppressed; each Run, Session
+             and Match is named by a UUIDv7, the server logging a client's
+             Run ID with its Session ID at admission and each Match ID on
+             its Match's lines; the Match start line names every player's
+             Session; a launch after a crashed Run warns once and names that
+             Run's files; only the newest Runs' files are kept; the host's
+             OS, CPU, memory, container limits and GPU are logged at startup
+```
+
+ADR-0027 and ADR-0029 define the logger, the line and its levels; ADR-0038 the
+Run ID a client sends with its join. What a crash leaves in the log, and the
+`run=`, `session=` and `match=` that end a client's lines, are NFR-10's.
+
+### NFR-20: Wire Fidelity
+
+Version: v5
+
+```text
+Source:      A client, server or Agent sending a message, or a server writing
+             a Match capture
+Stimulus:    Any message or capture record the protocol has, with any values
+Environment: Peers of one build, however long the server has run
+Artifact:    The protocol's codec and the Link's conversions
+Response:    The receiver reads what was sent: each number on its grid, every
+             other value exactly; a value the wire cannot carry is never sent
+Measure:     Every message and capture record decodes to what was encoded;
+             positions travel in 1/1024 m steps (about a millimetre) and
+             angles in 2^-21 rad steps, as ADR-0038's grids say, each rounded
+             by at most half a step, a number past its grid as the grid's
+             bound and a NaN as zero; the encoder refuses a message holding a
+             value its fields cannot (text too long or not UTF-8, a list past
+             its bound, a flag or enumerator the protocol lacks); a tick and a
+             command sequence are 64 bits and never wrap; a number a field or
+             enumerator was given is never given to another
+```
+
+Met by v5, when the messages moved to Protocol Buffers: each value travels in
+the narrowest type that carries it, its flags and stance packed into one
+bitfield (ADR-0007, #940). What a receiver does with bytes no sender writes is
+NFR-12's.

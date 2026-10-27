@@ -78,6 +78,7 @@ TEST(PlayMatchesTest, ARefusedAgentFailsTheRunWithTheRefusal) {
 
 // Every Agent is a Run of its own (ADR-0038): its join carries a Run ID no
 // other Agent's does, which the server logs at admission.
+// Requirements: NFR-19
 TEST(AgentJoinTest, EachAgentJoinsWithARunIdOfItsOwn) {
   augusta::logging::Init();
   const Server server((ExamplePacks() / "server").replace_extension(augusta::assets::kPackExtension),

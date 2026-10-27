@@ -359,7 +359,7 @@ TEST(ParseClientConfigTest, WithoutKeysOrSensitivityTheInputDefaultsApply) {
   EXPECT_FLOAT_EQ(config->input.mouse_sensitivity, augusta::input::kDefaultMouseSensitivity);
 }
 
-// Requirements: US-28
+// Requirements: US-06, US-28
 TEST(ParseClientConfigTest, ReadsTheMouseSensitivity) {
   const auto config = ParseClient("input:\n  mouse_sensitivity: 0.004\n");
 

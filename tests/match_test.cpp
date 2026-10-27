@@ -375,6 +375,7 @@ TEST(MatchTest, AMatchStartsOnceTheLobbyHoldsThePlayerCount) {
 // The Match ID (GLOSSARY.md) is a UUIDv7 Match takes at the start, from the
 // generator its Session IDs come from: later than its players' Session IDs,
 // and each Match's later than the one before.
+// Requirements: NFR-19
 TEST(MatchTest, EachMatchStartNamesANewMatchIdLaterThanEveryIdBefore) {
   Match match(Config(1));
   JoinPeers(match, 1, 1);

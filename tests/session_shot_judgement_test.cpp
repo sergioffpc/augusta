@@ -239,6 +239,7 @@ class ShotJudgementsOffTest : public ShotJudgementMatchTest {
   ShotJudgementsOffTest() : ShotJudgementMatchTest(false) {}
 };
 
+// Requirements: US-30
 TEST_F(ShotJudgementMatchTest, ASubscribedShooterIsHandedTheJudgementOfItsRoundWithItsShotsTickAndTheTargetsPose) {
   Session& shooter = Standing(0);
   Session& target = Standing(1);
@@ -263,6 +264,7 @@ TEST_F(ShotJudgementMatchTest, ASubscribedShooterIsHandedTheJudgementOfItsRoundW
   EXPECT_TRUE(JudgementsOf(shooter).empty());
 }
 
+// Requirements: US-30
 TEST_F(ShotJudgementMatchTest, OnlyTheShooterIsHandedItsRoundsJudgement) {
   Session& shooter = Standing(0);
   Session& target = Standing(1);
@@ -275,6 +277,7 @@ TEST_F(ShotJudgementMatchTest, OnlyTheShooterIsHandedItsRoundsJudgement) {
   EXPECT_TRUE(JudgementsOf(target).empty());
 }
 
+// Requirements: US-30
 TEST_F(ShotJudgementMatchTest, AShooterThatNeverSubscribedIsHandedNone) {
   Session& shooter = Standing(0);
 
@@ -284,6 +287,7 @@ TEST_F(ShotJudgementMatchTest, AShooterThatNeverSubscribedIsHandedNone) {
   EXPECT_TRUE(JudgementsOf(shooter).empty());
 }
 
+// Requirements: US-30
 TEST_F(ShotJudgementMatchTest, AShooterThatSubscribedThenClearedTheBitIsHandedNone) {
   Session& shooter = Standing(0);
   Subscribe(shooter, DebugSubscribe::kShotJudgements);
@@ -296,6 +300,7 @@ TEST_F(ShotJudgementMatchTest, AShooterThatSubscribedThenClearedTheBitIsHandedNo
   EXPECT_TRUE(JudgementsOf(shooter).empty());
 }
 
+// Requirements: US-30
 TEST_F(ShotJudgementsOffTest, ASubscribedShooterIsHandedNoneAndStaysConnected) {
   Session& shooter = Standing(0);
   Subscribe(shooter, DebugSubscribe::kShotJudgements);
@@ -343,6 +348,7 @@ class ScriptedShotJudgementTest : public ::testing::Test {
   Session session_;
 };
 
+// Requirements: US-30
 TEST_F(ScriptedShotJudgementTest, AJudgementIsHandedOutOnceAsItWasSent) {
   server_.Send(JudgementOf(7));
   Settle();
@@ -359,6 +365,7 @@ TEST_F(ScriptedShotJudgementTest, AJudgementIsHandedOutOnceAsItWasSent) {
   EXPECT_TRUE(Taken().empty());
 }
 
+// Requirements: US-30
 TEST_F(ScriptedShotJudgementTest, AJudgementThatArrivesAfterMatchEndIsDropped) {
   server_.Send(augusta::protocol::MatchEndWire{});
   server_.Send(JudgementOf(7));
@@ -367,6 +374,7 @@ TEST_F(ScriptedShotJudgementTest, AJudgementThatArrivesAfterMatchEndIsDropped) {
   EXPECT_TRUE(Taken().empty());
 }
 
+// Requirements: US-30
 TEST_F(ScriptedShotJudgementTest, AJudgementOfAnEarlierMatchIsNotHandedOutInTheNextOne) {
   server_.Send(JudgementOf(7));
   server_.Send(augusta::protocol::MatchEndWire{});
@@ -378,6 +386,7 @@ TEST_F(ScriptedShotJudgementTest, AJudgementOfAnEarlierMatchIsNotHandedOutInTheN
 }
 
 // A client nobody asks keeps the newest Shot judgements, not all of them for ever.
+// Requirements: US-30
 TEST_F(ScriptedShotJudgementTest, AClientThatIsNeverAskedKeepsOnlyTheNewestJudgements) {
   const std::size_t sent = augusta::harness::kMaxPendingShotJudgements + 10;
   for (std::size_t i = 1; i <= sent; ++i) {

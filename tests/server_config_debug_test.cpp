@@ -140,6 +140,7 @@ TEST(ParseServerConfigTest, RejectsAnExistingPcapngDirectoryThatCannotBeWritten)
             "'debug.network.pcapng' must name a directory that can be written");
 }
 
+// Requirements: US-30
 TEST(ParseServerConfigTest, SendsNoShotJudgementsByDefault) {
   const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
 
@@ -147,6 +148,7 @@ TEST(ParseServerConfigTest, SendsNoShotJudgementsByDefault) {
   EXPECT_FALSE(config->shot_judgements);
 }
 
+// Requirements: US-30
 TEST(ParseServerConfigTest, ReadsWhetherShotJudgementsAreSent) {
   const auto on = ParseServerConfig(ServerConfigWith("debug:\n  shot_judgements: true\n"), kFileDir);
   const auto off = ParseServerConfig(ServerConfigWith("debug:\n  shot_judgements: false\n"), kFileDir);
@@ -157,6 +159,7 @@ TEST(ParseServerConfigTest, ReadsWhetherShotJudgementsAreSent) {
   EXPECT_FALSE(off->shot_judgements);
 }
 
+// Requirements: US-30
 TEST(ParseServerConfigTest, RejectsShotJudgementsThatAreNeitherTrueNorFalse) {
   const auto config = ParseServerConfig(ServerConfigWith("debug:\n  shot_judgements: 1\n"), kFileDir);
 
@@ -166,6 +169,7 @@ TEST(ParseServerConfigTest, RejectsShotJudgementsThatAreNeitherTrueNorFalse) {
 }
 
 // A replay server runs no Match, so no round of it is judged.
+// Requirements: US-30
 TEST(ParseServerConfigTest, RejectsShotJudgementsOnAReplayServer) {
   const auto config =
       ParseServerConfig(ServerConfigWith("debug:\n  shot_judgements: true\nreplay:\n  captures: captures\n"), kFileDir);
@@ -175,6 +179,7 @@ TEST(ParseServerConfigTest, RejectsShotJudgementsOnAReplayServer) {
   EXPECT_EQ(config.error().subject, "debug.shot_judgements");
 }
 
+// Requirements: US-30
 TEST(ParseServerConfigTest, RecordsNoPhysicsByDefault) {
   const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
 
@@ -182,6 +187,7 @@ TEST(ParseServerConfigTest, RecordsNoPhysicsByDefault) {
   EXPECT_FALSE(config->physics_recording);
 }
 
+// Requirements: US-30
 TEST(ParseServerConfigTest, ReadsWhetherPhysicsIsRecorded) {
   const auto on = ParseServerConfig(ServerConfigWith("debug:\n  physics_recording: true\n"), kFileDir);
   const auto off = ParseServerConfig(ServerConfigWith("debug:\n  physics_recording: false\n"), kFileDir);
@@ -192,6 +198,7 @@ TEST(ParseServerConfigTest, ReadsWhetherPhysicsIsRecorded) {
   EXPECT_FALSE(off->physics_recording);
 }
 
+// Requirements: US-30
 TEST(ParseServerConfigTest, RejectsAPhysicsRecordingThatIsNeitherTrueNorFalse) {
   const auto config = ParseServerConfig(ServerConfigWith("debug:\n  physics_recording: on\n"), kFileDir);
 

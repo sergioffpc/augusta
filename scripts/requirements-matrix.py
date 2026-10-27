@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-r"""Which tests exercise each requirement, and how they did (ADR-0013).
+r"""Which tests and CI jobs check each requirement and how tests did (ADR-0013).
 
 A test names the requirements it exercises (docs/REQUIREMENTS.md's US-nn and
 NFR-nn) on a comment line directly above it, in the comment block that
@@ -8,11 +8,19 @@ describes it, if any:
   // Requirements: US-07, US-08
   TEST_F(FireTest, HoldingFireFiresAtTheFireRateUntilTheMagazineIsEmpty) {
 
+A CI job that checks a requirement no test can (a build, a render, a policy
+fixture) names it the same way, directly above its key in a GitHub workflow:
+
+  # Requirements: NFR-11, NFR-15
+  manifests:
+
 --check reads those lines in every C++ test under tests/ and tools/*/tests/
-and fails on one that names a requirement the document doesn't have, or that
-is not directly above a test. Given ctest's JUnit XML (--junit), it writes
-instead an HTML matrix of every requirement, the tests that name it and each
-one's results (--output), and prints a one-line summary of it.
+and in every workflow under .github/workflows/, and fails on one that names a
+requirement the document doesn't have, or that is not directly above a test or
+a job. Given ctest's JUnit XML (--junit), it writes instead an HTML matrix of
+every requirement, the tests and CI jobs that name it and each test's results
+(--output), and prints a one-line summary of it. A job's outcome is not read:
+the matrix shows it as checked in CI.
 
   scripts/requirements-matrix.py --check
   scripts/requirements-matrix.py --junit <junit-dir> --output requirements.html
@@ -30,6 +38,11 @@ _ROOT = pathlib.Path(__file__).resolve().parent.parent
 _REQUIREMENT = re.compile(r"^### ((?:US|NFR)-\d+): (.+)$", re.MULTILINE)
 _MARKER = re.compile(r"^\s*//\s*Requirements:(.*)$")
 _COMMENT = re.compile(r"^\s*//")
+_YAML_MARKER = re.compile(r"^\s*#\s*Requirements:(.*)$")
+_YAML_COMMENT = re.compile(r"^\s*#")
+# A workflow's top-level jobs key, and a key in a YAML mapping.
+_JOBS = re.compile(r"^jobs:\s*(?:#.*)?$")
+_KEY = re.compile(r"^( *)([\w-]+):\s*(?:#.*)?$")
 # GoogleTest's and RapidCheck's test macros, whose first two arguments are the
 # suite and the test, the name ctest gives it as <suite>.<test>.
 _TEST = re.compile(
@@ -37,8 +50,10 @@ _TEST = re.compile(
     r"|RC_GTEST_FIXTURE_PROP)\(\s*(\w+)\s*,\s*(\w+)",
     re.MULTILINE,
 )
-# How a requirement or a test did, worst first.
-_OUTCOMES = ("failed", "passed", "not run", "untested")
+# How a requirement, a test or a CI job did, worst first: a requirement takes
+# its tests' outcome when it has any, and is checked in CI when only jobs name
+# it.
+_OUTCOMES = ("failed", "passed", "not run", "checked in CI", "untested")
 _STYLE = """
 body { font-family: system-ui, sans-serif; margin: 2rem; }
 table { border-collapse: collapse; }
@@ -49,6 +64,7 @@ ul { margin: 0; padding-left: 1rem; }
 .passed { color: #1a7f37; }
 .failed { color: #cf222e; }
 .not-run, .untested { color: #9a6700; }
+.checked-in-ci { color: #0969da; }
 """
 
 
@@ -61,13 +77,33 @@ class Test:
     line: int
     requirements: list[str]
 
+    @property
+    def label(self):
+        """How the test is named in errors."""
+        return self.name
+
+
+@dataclasses.dataclass
+class Job:
+    """A CI job that names requirements, where its key is and what it names."""
+
+    name: str
+    path: pathlib.Path
+    line: int
+    requirements: list[str]
+
+    @property
+    def label(self):
+        """How the job is named in errors."""
+        return f"CI job {self.name}"
+
 
 def _relative(path):
     return path.relative_to(_ROOT).as_posix()
 
 
 def _css_class(outcome):
-    return outcome.replace(" ", "-")
+    return outcome.replace(" ", "-").lower()
 
 
 def requirements(document):
@@ -85,6 +121,36 @@ def sources():
     )
 
 
+def workflows():
+    """Every GitHub workflow, where the CI jobs are."""
+    return sorted((_ROOT / ".github" / "workflows").glob("*.y*ml"))
+
+
+def _ids_above(lines, line, comment, marker, claimed):
+    """The IDs a marker names in the comment block directly above line.
+
+    None when the block has no marker; a marker's line is added to claimed.
+    """
+    above = line - 1
+    ids = None
+    while above >= 0 and comment.match(lines[above]):
+        match = marker.match(lines[above])
+        if match:
+            ids = [part.strip() for part in match.group(1).split(",")]
+            claimed.add(above)
+        above -= 1
+    return ids
+
+
+def _strays(path, lines, marker, claimed, what, errors):
+    """Adds an error for each marker in lines that nothing claimed."""
+    for number, text_line in enumerate(lines):
+        if marker.match(text_line) and number not in claimed:
+            errors.append(
+                f"{_relative(path)}:{number + 1}: not directly above {what}"
+            )
+
+
 def marked_tests(path, errors):
     """The tests in path that name requirements; a stray marker is an error."""
     text = path.read_text(encoding="utf-8")
@@ -93,30 +159,54 @@ def marked_tests(path, errors):
     claimed = set()
     for match in _TEST.finditer(text):
         line = text.count("\n", 0, match.start())
-        above = line - 1
-        ids = None
-        while above >= 0 and _COMMENT.match(lines[above]):
-            marker = _MARKER.match(lines[above])
-            if marker:
-                ids = [part.strip() for part in marker.group(1).split(",")]
-                claimed.add(above)
-            above -= 1
+        ids = _ids_above(lines, line, _COMMENT, _MARKER, claimed)
         if ids is not None:
             name = f"{match.group(1)}.{match.group(2)}"
             tests.append(Test(name, path, line + 1, ids))
-    for number, text_line in enumerate(lines):
-        if _MARKER.match(text_line) and number not in claimed:
-            errors.append(
-                f"{_relative(path)}:{number + 1}: not directly above a test"
-            )
+    _strays(path, lines, _MARKER, claimed, "a test", errors)
     return tests
 
 
-def check(tests, known, errors):
-    """Adds an error for each requirement a test names that is not known."""
-    for test in tests:
-        where = f"{_relative(test.path)}:{test.line}: {test.name}"
-        for requirement in test.requirements:
+def job_keys(lines):
+    """Each job's key line in a workflow's lines, and the job's name.
+
+    A job key is a key of the top-level jobs mapping, indented as its first.
+    """
+    keys = []
+    indent = None
+    in_jobs = False
+    for number, text_line in enumerate(lines):
+        if not text_line.strip() or _YAML_COMMENT.match(text_line):
+            continue
+        if not text_line.startswith(" "):
+            in_jobs = bool(_JOBS.match(text_line))
+            continue
+        key = _KEY.match(text_line)
+        if in_jobs and key:
+            indent = key.group(1) if indent is None else indent
+            if key.group(1) == indent:
+                keys.append((number, key.group(2)))
+    return keys
+
+
+def marked_jobs(path, errors):
+    """The CI jobs in path naming requirements; a stray marker is an error."""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    jobs = []
+    claimed = set()
+    for line, name in job_keys(lines):
+        ids = _ids_above(lines, line, _YAML_COMMENT, _YAML_MARKER, claimed)
+        if ids is not None:
+            jobs.append(Job(name, path, line + 1, ids))
+    _strays(path, lines, _YAML_MARKER, claimed, "a job", errors)
+    return jobs
+
+
+def check(named, known, errors):
+    """Adds an error for each unknown requirement a test or a job names."""
+    for each in named:
+        where = f"{_relative(each.path)}:{each.line}: {each.label}"
+        for requirement in each.requirements:
             if requirement not in known:
                 errors.append(
                     f"{where} names {requirement!r}, which"
@@ -169,29 +259,44 @@ def _test_item(test, runs):
     ), outcome
 
 
-def render(known, tests, by_test):
+def _job_item(job):
+    outcome = "checked in CI"
+    return (
+        f'<li class="{_css_class(outcome)}">CI job'
+        f" <code>{html.escape(job.name)}</code>"
+        f' <span class="where">{html.escape(_relative(job.path))}:'
+        f"{job.line}</span>"
+        f' <span class="runs">{outcome}</span></li>'
+    ), outcome
+
+
+def render(known, tests, jobs, by_test):
     """The matrix's HTML page, and the one-line summary of it."""
     rows = []
     counts = dict.fromkeys(_OUTCOMES, 0)
     for requirement, title in known.items():
         named = [test for test in tests if requirement in test.requirements]
         items = [_test_item(test, runs_of(test, by_test)) for test in named]
+        items += [
+            _job_item(job) for job in jobs if requirement in job.requirements
+        ]
         outcome = _worst({each for _, each in items}, "untested")
         counts[outcome] += 1
         rows.append(
             f"<tr><td>{requirement}</td><td>{html.escape(title)}</td>"
             f'<td class="{_css_class(outcome)}">{outcome}</td>'
-            f"<td>{len(named)}</td>"
+            f"<td>{len(items)}</td>"
             f"<td><ul>{''.join(item for item, _ in items)}</ul></td></tr>"
         )
     summary = (
         f"{len(known)} requirements: {counts['passed']} passed,"
         f" {counts['failed']} failed, {counts['not run']} whose tests did not"
-        f" run, {counts['untested']} with no test"
+        f" run, {counts['checked in CI']} checked only in CI,"
+        f" {counts['untested']} named by no test or CI job"
     )
     header = "".join(
         f"<th>{each}</th>"
-        for each in ("Requirement", "Title", "Result", "Tests", "Each test")
+        for each in ("Requirement", "Title", "Result", "Checks", "Each check")
     )
     page = "\n".join(
         [
@@ -201,14 +306,16 @@ def render(known, tests, by_test):
             '<meta charset="utf-8">',
             '<meta name="viewport" content="width=device-width,'
             ' initial-scale=1">',
-            "<title>Requirements and their tests</title>",
+            "<title>Requirements and their checks</title>",
             f"<style>{_STYLE}</style>",
             "</head>",
             "<body>",
-            "<h1>Requirements and their tests</h1>",
+            "<h1>Requirements and their checks</h1>",
             f"<p>{html.escape(summary)}. A requirement fails when any test"
             " that names it failed, and passes when the others that ran all"
-            " passed (docs/REQUIREMENTS.md, ADR-0013).</p>",
+            " passed. One that only CI jobs name is checked in CI: the matrix"
+            " does not read the jobs' results (docs/REQUIREMENTS.md,"
+            " ADR-0013).</p>",
             f"<table><tr>{header}</tr>",
             *rows,
             "</table>",
@@ -233,13 +340,14 @@ def main():
     known = requirements(_ROOT / "docs" / "REQUIREMENTS.md")
     errors = []
     tests = [test for path in sources() for test in marked_tests(path, errors)]
-    check(tests, known, errors)
+    jobs = [job for path in workflows() for job in marked_jobs(path, errors)]
+    check([*tests, *jobs], known, errors)
     if args.check:
         for error in errors:
             print(error, file=sys.stderr)
         return 1 if errors else 0
 
-    page, summary = render(known, tests, results(args.junit))
+    page, summary = render(known, tests, jobs, results(args.junit))
     args.output.write_text(page, encoding="utf-8")
     print(summary)
     return 0
