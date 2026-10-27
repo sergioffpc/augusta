@@ -38,6 +38,7 @@ version only when it is cut (ENGINEERING.md, Milestones).
     - [US-25: Play in VR](#us-25-play-in-vr)
     - [US-26: Play on a Team](#us-26-play-on-a-team)
     - [US-27: Talk to my Team](#us-27-talk-to-my-team)
+    - [US-29: Debug HUD and Panels](#us-29-debug-hud-and-panels)
 - [Non-Functional Requirements](#non-functional-requirements)
     - [NFR-01: Server Tick Rate (Performance)](#nfr-01-server-tick-rate-performance)
     - [NFR-02: Network Latency Tolerance](#nfr-02-network-latency-tolerance)
@@ -554,6 +555,46 @@ Then only my dead teammates hear me, and I still hear my Team's radio
 ```
 
 Speech is never captured, and there is none in the Lobby (ADR-0069).
+
+### US-29: Debug HUD and Panels
+
+Version: v7
+
+As a developer, I want a Development client to show how its frames and its
+connection to the server are doing, and to impair that connection on purpose, so
+that I can see where the game struggles and play it on a bad network without
+having one.
+
+```text
+Given a Development client with debug.hud on, as it is by default
+When it draws a frame
+Then the Debug HUD shows the frame rate and frame time, and the connection's RTT, loss,
+     jitter and bytes in and out each second, with a dash for anything not measured yet
+
+Given a Development client with debug.network_panel on
+When I open the network panel
+Then it shows each message type's traffic rates, the Authoritative State updates'
+     sizes and arrivals, the ticks missing and out of order, the corrections and the
+     interpolation slack, each peak kept until I reset the peaks
+
+Given a Development client with the cursor captured
+When I press F1
+Then I enter Debug interaction: the Debug panels take the mouse and keyboard and the
+     game gets neither, until F1 again or Escape leaves it
+
+Given latency, jitter, loss or reordering injected from the network panel
+When messages travel between the client and the server
+Then each applies once to what the client sends and once to what it receives, and the
+     Debug HUD marks the connection impaired until every value is back at zero
+```
+
+The network panel plots its connection numbers and corrections over the last ten
+seconds, and sets the impairment by sliders within their ranges or by the
+impaired-link tests' profiles. The Debug index lists the debug tools the client
+carries, each switched on or off from it and starting as `augustac.yaml`
+configures it. The profiling panel opens a capture window of a chosen number of
+frames, which Nsight Systems records alone, and says whether Aftermath watches
+the GPU and where a dump would land.
 
 ---
 

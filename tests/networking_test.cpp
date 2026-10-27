@@ -455,6 +455,7 @@ TEST_F(ConnectedNetworkingTest, ServerSendAndBroadcastHonorReliabilityToo) {
   EXPECT_EQ(ReceiveOnClient(expected.size()), expected);
 }
 
+// Requirements: US-29
 TEST_F(ConnectedNetworkingTest, InjectedLatencyDelaysDelivery) {
   constexpr int kLatencyMs = 100;
   SimulateNetworkConditions({.latency_ms = kLatencyMs});
@@ -474,6 +475,7 @@ TEST_F(ConnectedNetworkingTest, InjectedLatencyDelaysDelivery) {
 // Both ends live in this one process, so a packet is sent and received by it:
 // conditions on what it receives add to those on what it sends, and the
 // default must add only the latter.
+// Requirements: US-29
 TEST_F(ConnectedNetworkingTest, ByDefaultTheLatencyDelaysOnlyWhatTheProcessSends) {
   constexpr int kLatencyMs = 200;
   SimulateNetworkConditions({.latency_ms = kLatencyMs});
@@ -487,6 +489,7 @@ TEST_F(ConnectedNetworkingTest, ByDefaultTheLatencyDelaysOnlyWhatTheProcessSends
   EXPECT_LT(elapsed, std::chrono::milliseconds((2 * kLatencyMs) - 20));
 }
 
+// Requirements: US-29
 TEST_F(ConnectedNetworkingTest, ConditionsOnBothSidesDelayWhatTheProcessReceivesToo) {
   constexpr int kLatencyMs = 100;
   SimulateNetworkConditions({.latency_ms = kLatencyMs, .applies_to = SimulatedTraffic::kSentAndReceived});
@@ -501,6 +504,7 @@ TEST_F(ConnectedNetworkingTest, ConditionsOnBothSidesDelayWhatTheProcessReceives
   EXPECT_LT(elapsed, std::chrono::milliseconds((2 * kLatencyMs) + 400));
 }
 
+// Requirements: US-29
 TEST_F(ConnectedNetworkingTest, ConditionsOnBothSidesLoseWhatTheProcessReceivesToo) {
   // Half lost on the way out, and half of the rest on the way in: about a
   // quarter arrive, where losing on one side alone lets about half through.
@@ -520,6 +524,7 @@ TEST_F(ConnectedNetworkingTest, ConditionsOnBothSidesLoseWhatTheProcessReceivesT
   EXPECT_LT(received.size(), static_cast<std::size_t>(kSent * 3 / 8));
 }
 
+// Requirements: US-29
 TEST_F(ConnectedNetworkingTest, InjectedJitterDelaysSomeMessagesMoreThanOthers) {
   constexpr int kJitterMeanMs = 50;
   constexpr int kJitterMaxMs = 100;
@@ -564,6 +569,7 @@ class ReorderingNetworkingTest : public ConnectedNetworkingTest {
   }
 };
 
+// Requirements: US-29
 TEST_F(ReorderingNetworkingTest, InjectedJitterAloneKeepsMessagesInOrder) {
   SimulateNetworkConditions({.jitter_mean_ms = 20, .jitter_max_ms = 60});
 
@@ -573,6 +579,7 @@ TEST_F(ReorderingNetworkingTest, InjectedJitterAloneKeepsMessagesInOrder) {
   EXPECT_TRUE(std::ranges::is_sorted(positions));
 }
 
+// Requirements: US-29
 TEST_F(ReorderingNetworkingTest, InjectedReorderingDeliversUnreliableMessagesOutOfOrder) {
   SimulateNetworkConditions({.reorder_percent = 50.0F, .reorder_delay_ms = 50});
 
@@ -582,6 +589,7 @@ TEST_F(ReorderingNetworkingTest, InjectedReorderingDeliversUnreliableMessagesOut
   EXPECT_FALSE(std::ranges::is_sorted(positions));
 }
 
+// Requirements: US-29
 TEST_F(ReorderingNetworkingTest, ConditionsOnBothSidesReorderWhatTheProcessReceivesToo) {
   SimulateNetworkConditions(
       {.reorder_percent = 50.0F, .reorder_delay_ms = 50, .applies_to = SimulatedTraffic::kSentAndReceived});
