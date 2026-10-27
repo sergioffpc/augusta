@@ -6,7 +6,7 @@
 #include <utility>
 
 #if AUGUSTA_MIMALLOC
-#include <cstdio>
+#include <cstdio>  // IWYU pragma: keep - stderr, which include-cleaner traces to glibc's <stdio.h>
 #include <cstdlib>
 
 #include <mimalloc.h>
