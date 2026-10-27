@@ -163,6 +163,7 @@ TEST(ReadScriptTest, ACaptureWithoutThePlayerAskedForGivesNoScript) {
   }
 }
 
+// Requirements: NFR-12
 TEST(ReadScriptTest, ACaptureThatDoesNotReadGivesNoScriptForWhyItDoesNot) {
   EXPECT_EQ(ScriptOf("AUGPACK\r\n and the rest", 1).error(),
             ScriptError{.capture = ReadError{.code = ReadErrorCode::kNotACapture}});
@@ -172,6 +173,7 @@ TEST(ReadScriptTest, ACaptureThatDoesNotReadGivesNoScriptForWhyItDoesNot) {
   EXPECT_EQ(ReadScript(missing, 1).error(), ScriptError{.capture = ReadError{.code = ReadErrorCode::kUnreadable}});
 }
 
+// Requirements: US-21
 TEST(ReadScriptTest, ACaptureCutShortGivesTheScriptOfEveryWholeRecordAndSaysItIsTorn) {
   std::string file = Written(TheMatch());
   file.pop_back();
@@ -186,16 +188,19 @@ TEST(ReadScriptTest, ACaptureCutShortGivesTheScriptOfEveryWholeRecordAndSaysItIs
 
 // --- When a Command reaches the World ---
 
+// Requirements: US-21
 TEST(DueTickTest, ACommandBehindOthersIsHandedOneTickAfterEachOfThem) {
   EXPECT_EQ(DueTick(100, 1, 0), 101U);
   EXPECT_EQ(DueTick(100, 4, 2), 104U);
 }
 
+// Requirements: US-21
 TEST(DueTickTest, ACommandIsNeverHandedBeforeItCanReachTheServer) {
   EXPECT_EQ(DueTick(100, 1, 5), 106U);
   EXPECT_EQ(DueTick(100, 0, 0), 101U);
 }
 
+// Requirements: US-21
 TEST(RoundTripTicksTest, APingIsCountedInWholeTicksRoundedUp) {
   EXPECT_EQ(augusta::harness::RoundTripTicks(0, kTickRate), 0U);
   EXPECT_EQ(augusta::harness::RoundTripTicks(-1, kTickRate), 0U);

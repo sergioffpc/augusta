@@ -45,6 +45,7 @@ using augusta::networking::Reliability;
 
 // A newer one supersedes each of these, so none is retransmitted: a tick's
 // Commands and an Authoritative State.
+// Requirements: NFR-02
 TEST(ReliabilityOfTest, PerTickMessagesTravelUnreliably) {
   for (const MessageType type : {MessageType::kCommands, MessageType::kAuthoritativeState}) {
     EXPECT_EQ(ReliabilityOf(type), Reliability::kUnreliable) << static_cast<int>(type);
@@ -52,6 +53,7 @@ TEST(ReliabilityOfTest, PerTickMessagesTravelUnreliably) {
 }
 
 // Each of these must arrive, or the two sides disagree.
+// Requirements: NFR-02
 TEST(ReliabilityOfTest, EveryOtherMessageTravelsReliably) {
   for (const MessageType type : {
            MessageType::kJoinRequest,
@@ -75,6 +77,7 @@ TEST(ReliabilityOfTest, EveryOtherMessageTravelsReliably) {
 
 // Every number reaches the Link's own type as the transport measured it, the
 // "not measured yet" sentinels included.
+// Requirements: NFR-07
 TEST(FromTransportTest, KeepsEveryNumberTheTransportMeasured) {
   const ConnectionStats stats = FromTransport(augusta::networking::ConnectionStats{
       .ping_ms = 42,
@@ -98,6 +101,7 @@ constexpr augusta::link::PeerId kPeer{7};
 
 // A peer's payload that is no message at all is only its bytes, and the
 // decoder's words for why, which a server logs as it judges the peer.
+// Requirements: NFR-12
 TEST(ReadFromTest, APayloadThatDecodesToNoMessageSaysWhy) {
   const std::vector<std::byte> garbage{std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF}};
   const augusta::link::PeerMessage message = augusta::link::ReadFrom(kPeer, garbage);
@@ -110,6 +114,7 @@ TEST(ReadFromTest, APayloadThatDecodesToNoMessageSaysWhy) {
 
 // A message only a server sends still has its type, which a server counts,
 // but says nothing a server takes in.
+// Requirements: NFR-12
 TEST(ReadFromTest, AServersMessageHasItsTypeAndSaysNothing) {
   const auto payload = augusta::protocol::Encode(augusta::link::ToWire(augusta::link::Shot{})).value();
   const augusta::link::PeerMessage message = augusta::link::ReadFrom(kPeer, payload);
@@ -119,6 +124,7 @@ TEST(ReadFromTest, AServersMessageHasItsTypeAndSaysNothing) {
 }
 
 // A Reenact request is a join that names its spawn, counted as its own type.
+// Requirements: NFR-20
 TEST(ReadFromTest, AClientsMessageIsWhatItSaysUnderItsOwnType) {
   const augusta::link::JoinRequest join{.engine_version = "1.2.3",
                                         .client_pack = {},
@@ -133,6 +139,7 @@ TEST(ReadFromTest, AClientsMessageIsWhatItSaysUnderItsOwnType) {
 
 // A server's message is encoded once, as the protocol has it, under its type,
 // so it is counted and sent to as many peers as need it.
+// Requirements: NFR-20
 TEST(EncodeTest, AServersMessageIsItsProtocolBytesUnderItsType) {
   const augusta::link::Shot shot{.shooter = augusta::link::EntityId{4}, .tick = 90};
   const auto encoded = augusta::link::Encode(shot);
@@ -144,6 +151,7 @@ TEST(EncodeTest, AServersMessageIsItsProtocolBytesUnderItsType) {
 
 // A refusal no case names is no message the protocol carries: the broken
 // invariant, and nothing to send.
+// Requirements: NFR-18
 TEST(EncodeTest, AMessageTheProtocolCannotCarryIsABrokenInvariant) {
   constexpr auto kCorrupted = static_cast<augusta::link::JoinRefusal>(200);
   const auto encoded = augusta::link::Encode(kCorrupted);
@@ -154,6 +162,7 @@ TEST(EncodeTest, AMessageTheProtocolCannotCarryIsABrokenInvariant) {
 // A tick's Authoritative State, its bodies encoded once, readdressed to another
 // recipient is what encoding it for that recipient makes, byte for byte: every
 // recipient is sent the bytes it always was.
+// Requirements: NFR-20
 TEST(ReaddressedTest, IsTheStateEncodedForItsRecipient) {
   const augusta::link::AuthoritativeState first{
       .tick = 120,
@@ -180,6 +189,7 @@ TEST(ReaddressedTest, IsTheStateEncodedForItsRecipient) {
 }
 
 // Only an Authoritative State has a recipient's own fields to readdress.
+// Requirements: NFR-18
 TEST(ReaddressedTest, AnyOtherMessageIsABrokenInvariant) {
   const auto shot = augusta::link::Encode(augusta::link::Shot{});
   ASSERT_TRUE(shot.has_value());
@@ -289,6 +299,7 @@ void ExpectOnlyTypeCarried(const augusta::link::Traffic& traffic, MessageType ca
 
 // A message the client sent counts once, under its type, as sent, with the
 // bytes the server received.
+// Requirements: US-29
 TEST_F(ClientTrafficTest, ASentMessageCountsOnceUnderItsTypeAsSent) {
   ASSERT_EQ(client_.Send(augusta::link::Ready{.version = 3}), augusta::link::SendOutcome::kAccepted);
   const std::vector<augusta::link::RawPayload> arrived = ReceivedByServer(1);
@@ -303,6 +314,7 @@ TEST_F(ClientTrafficTest, ASentMessageCountsOnceUnderItsTypeAsSent) {
 
 // A message the client received counts once, under its type, as received,
 // with the bytes the server sent.
+// Requirements: US-29
 TEST_F(ClientTrafficTest, AReceivedMessageCountsOnceUnderItsTypeAsReceived) {
   const augusta::link::RawPayload shot =
       BytesOf(augusta::link::ToWire(augusta::link::Shot{.shooter = augusta::link::EntityId{4}, .tick = 90}));
@@ -316,6 +328,7 @@ TEST_F(ClientTrafficTest, AReceivedMessageCountsOnceUnderItsTypeAsReceived) {
 }
 
 // Each message counts on its own: two of a type are two, their bytes summed.
+// Requirements: US-29
 TEST_F(ClientTrafficTest, MessagesOfOneTypeAddUp) {
   const augusta::link::RawPayload first = BytesOf(augusta::link::ToWire(augusta::link::Shot{.tick = 1}));
   const augusta::link::RawPayload second =
@@ -329,6 +342,7 @@ TEST_F(ClientTrafficTest, MessagesOfOneTypeAddUp) {
 // A payload that is no message, and a message only a client sends, are dropped
 // by the client and count nowhere; the Lobby sent after them, which it takes
 // in, counts.
+// Requirements: US-29
 TEST_F(ClientTrafficTest, APayloadTheClientDropsCountsNowhere) {
   const augusta::link::RawPayload garbage{std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF}};
   const augusta::link::RawPayload ready = BytesOf(augusta::link::ToWire(augusta::link::Ready{.version = 1}));
@@ -344,6 +358,7 @@ TEST_F(ClientTrafficTest, APayloadTheClientDropsCountsNowhere) {
 }
 
 // A new connection counts from zero, whatever the last one carried.
+// Requirements: US-29
 TEST_F(ClientTrafficTest, ANewConnectionStartsFromZero) {
   ASSERT_EQ(client_.Send(augusta::link::Ready{.version = 3}), augusta::link::SendOutcome::kAccepted);
   ASSERT_TRUE(ServeUntilReceived({BytesOf(augusta::link::ToWire(augusta::link::Shot{}))}, 1));
@@ -369,6 +384,7 @@ augusta::link::RawPayload StateBytes(augusta::tick::Tick tick, std::uint32_t bod
 
 // Each update adds its bytes to the total; the last is the newest to arrive,
 // the largest the biggest so far, whichever came later.
+// Requirements: US-29
 TEST_F(ClientTrafficTest, AnAuthoritativeStateUpdateCountsItsSize) {
   const augusta::link::RawPayload large = StateBytes(1, 3);
   const augusta::link::RawPayload small = StateBytes(2);
@@ -384,6 +400,7 @@ TEST_F(ClientTrafficTest, AnAuthoritativeStateUpdateCountsItsSize) {
 
 // Ticks one after another miss nothing; a skip counts the ticks between, by
 // the gap: 10, 11, then 15 misses 12, 13 and 14.
+// Requirements: US-29
 TEST_F(ClientTrafficTest, ASkippedTickCountsAsMissingByTheGap) {
   ASSERT_TRUE(ServeUntilReceived({StateBytes(10), StateBytes(11), StateBytes(15)}, 3));
 
@@ -394,6 +411,7 @@ TEST_F(ClientTrafficTest, ASkippedTickCountsAsMissingByTheGap) {
 
 // A tick before the newest seen, and the newest again, are each out of order,
 // and neither moves the newest: 21 after them is one past 20, missing nothing.
+// Requirements: US-29
 TEST_F(ClientTrafficTest, AnOlderOrRepeatedTickCountsAsOutOfOrder) {
   ASSERT_TRUE(ServeUntilReceived({StateBytes(20), StateBytes(18), StateBytes(20), StateBytes(21)}, 4));
 
@@ -405,6 +423,7 @@ TEST_F(ClientTrafficTest, AnOlderOrRepeatedTickCountsAsOutOfOrder) {
 
 // A Match start begins a new tick sequence: neither a tick far past the last
 // Match's nor one before it counts, and the counts so far stay.
+// Requirements: US-29
 TEST_F(ClientTrafficTest, AMatchStartForgetsTheNewestTick) {
   const augusta::link::RawPayload start = BytesOf(augusta::link::ToWire(augusta::link::MatchStart{}));
   ASSERT_TRUE(ServeUntilReceived({StateBytes(100), StateBytes(102), start, StateBytes(500), StateBytes(501)}, 5));
@@ -417,6 +436,7 @@ TEST_F(ClientTrafficTest, AMatchStartForgetsTheNewestTick) {
 
 // A new connection forgets the newest tick with the rest of its counts, so
 // its first tick counts nothing, however far from the last connection's.
+// Requirements: US-29
 TEST_F(ClientTrafficTest, ANewConnectionForgetsTheNewestTick) {
   ASSERT_TRUE(ServeUntilReceived({StateBytes(40)}, 1));
   client_.Disconnect();

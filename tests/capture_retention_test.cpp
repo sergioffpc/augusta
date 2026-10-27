@@ -91,6 +91,7 @@ TEST(CaptureFileNameTest, NamesTheMatchsStartInUtcThenItsMatchId) {
             "20261009T101500123Z-0190a1b2-c3d5-7000-8000-000000000003" + std::string(kExtension));
 }
 
+// Requirements: US-21
 TEST(CaptureFileNameTest, OneServersNamesSortByWhenTheirMatchStarted) {
   const std::string first = CaptureFileName(kStarted, MatchId(9));
   const std::string second = CaptureFileName(kStarted + std::chrono::milliseconds{1}, MatchId(2));
@@ -99,6 +100,7 @@ TEST(CaptureFileNameTest, OneServersNamesSortByWhenTheirMatchStarted) {
 
 // The names captures are given, and those an engine before the Match ID gave
 // them, numbered in their run.
+// Requirements: US-21
 TEST(IsCaptureFileNameTest, AcceptsTheNamesCapturesAreGiven) {
   const std::string extension(kExtension);
   EXPECT_TRUE(IsCaptureFileName(CaptureFileName(kStarted, MatchId(1))));
@@ -106,6 +108,7 @@ TEST(IsCaptureFileNameTest, AcceptsTheNamesCapturesAreGiven) {
   EXPECT_TRUE(IsCaptureFileName("20261009T101500123Z-12345" + extension));
 }
 
+// Requirements: US-21
 TEST(IsCaptureFileNameTest, RefusesAnyOtherName) {
   const std::string extension(kExtension);
   for (const std::string& name :
@@ -122,11 +125,13 @@ TEST(IsCaptureFileNameTest, RefusesAnyOtherName) {
   }
 }
 
+// Requirements: US-21
 TEST(PlanRetentionTest, WithoutLimitsDeletesNothing) {
   EXPECT_EQ(PlanRetention(Sizes({100, 100}), 200, true, 1000, CaptureRetention{}),
             (RetentionPlan{.deletions = 0, .fits = true}));
 }
 
+// Requirements: US-21
 TEST(PlanRetentionTest, OpeningLeavesFewerThanMaxFilesCompleted) {
   const CaptureRetention retention{.max_files = 3, .max_bytes = std::nullopt};
 
@@ -135,12 +140,14 @@ TEST(PlanRetentionTest, OpeningLeavesFewerThanMaxFilesCompleted) {
   EXPECT_EQ(PlanRetention(Sizes({1, 1}), 2, true, 1, retention), (RetentionPlan{.deletions = 0, .fits = true}));
 }
 
+// Requirements: US-21
 TEST(PlanRetentionTest, WritingToTheCaptureOpenNeverCountsAFile) {
   const CaptureRetention retention{.max_files = 1, .max_bytes = std::nullopt};
 
   EXPECT_EQ(PlanRetention(Sizes({1, 1}), 3, false, 1, retention), (RetentionPlan{.deletions = 0, .fits = true}));
 }
 
+// Requirements: US-21
 TEST(PlanRetentionTest, DeletesTheOldestUntilTheBytesFit) {
   const CaptureRetention retention{.max_files = std::nullopt, .max_bytes = 100};
 
@@ -154,6 +161,7 @@ TEST(PlanRetentionTest, DeletesTheOldestUntilTheBytesFit) {
             (RetentionPlan{.deletions = 2, .fits = true}));
 }
 
+// Requirements: US-21
 TEST(PlanRetentionTest, ACaptureOpenThatAloneFillsTheBudgetDoesNotFit) {
   const CaptureRetention retention{.max_files = std::nullopt, .max_bytes = 100};
 
@@ -162,6 +170,7 @@ TEST(PlanRetentionTest, ACaptureOpenThatAloneFillsTheBudgetDoesNotFit) {
   EXPECT_EQ(PlanRetention(Sizes({}), 95, false, 10, retention), (RetentionPlan{.deletions = 0, .fits = false}));
 }
 
+// Requirements: US-21
 TEST(PlanRetentionTest, DeletesWhatTheStricterLimitAsks) {
   const CaptureRetention retention{.max_files = 4, .max_bytes = 100};
 

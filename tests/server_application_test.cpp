@@ -95,6 +95,7 @@ std::size_t Occurrences(std::string_view text, std::string_view needle) {
   return count;
 }
 
+// Requirements: NFR-18
 TEST(ServerApplicationTest, AConfigFileThatCannotBeReadIsAConfigurationFailure) {
   const auto config = ReadServerConfig(CommandLine{
       .config_file = "no/such/augustad.yaml", .message = {}, .options = {}, .action = CommandLineAction::kRun});
@@ -104,6 +105,7 @@ TEST(ServerApplicationTest, AConfigFileThatCannotBeReadIsAConfigurationFailure) 
   EXPECT_FALSE(config.error().detail.empty());
 }
 
+// Requirements: NFR-18
 TEST(ServerApplicationTest, ACommandLineThatCannotBeReadIsAConfigurationFailure) {
   const auto config = ReadServerConfig(std::unexpected(ConfigError{.code = ConfigErrorCode::kInvalidArguments,
                                                                    .subject = "usage: augustad [--config <file>]",
@@ -114,6 +116,7 @@ TEST(ServerApplicationTest, ACommandLineThatCannotBeReadIsAConfigurationFailure)
   EXPECT_EQ(config.error().code, Code::kInvalidConfiguration);
 }
 
+// Requirements: NFR-18
 TEST(ServerApplicationTest, ATransportThatCannotBeInitializedIsATransportFailure) {
   Faults faults;
   faults.Arm(Site::kDependencyInit, "GameNetworkingSockets_Init failed");
@@ -125,6 +128,7 @@ TEST(ServerApplicationTest, ATransportThatCannotBeInitializedIsATransportFailure
   EXPECT_EQ(outcome->detail, "GameNetworkingSockets_Init failed");
 }
 
+// Requirements: NFR-18
 TEST(ServerApplicationTest, APackThatDoesNotVerifyIsAContentFailure) {
   Faults faults;
   ServerConfig config = ExampleConfig();
@@ -138,6 +142,7 @@ TEST(ServerApplicationTest, APackThatDoesNotVerifyIsAContentFailure) {
 }
 
 // A pack that verifies but holds the client's content, not a server's.
+// Requirements: NFR-18
 TEST(ServerApplicationTest, APackWithoutServerContentIsAContentFailure) {
   Faults faults;
   ServerConfig config = ExampleConfig();
@@ -181,6 +186,7 @@ ServerConfig WithoutTheRifle(const std::filesystem::path& directory) {
 
 // Every player's Muzzle is placed from the rifle's markers (ADR-0064), so a
 // server does not start on a scenario without them.
+// Requirements: NFR-18
 TEST(ServerApplicationTest, APackWithoutARifleIsAContentFailure) {
   Faults faults;
   const auto directory = std::filesystem::temp_directory_path() / "augusta_server_application_test_no_rifle";
@@ -195,6 +201,7 @@ TEST(ServerApplicationTest, APackWithoutARifleIsAContentFailure) {
   EXPECT_EQ(outcome->detail, "not found");
 }
 
+// Requirements: NFR-18
 TEST(ServerApplicationTest, AListenAddressThatDoesNotParseIsAConfigurationFailure) {
   Faults faults;
   ServerConfig config = ExampleConfig();
@@ -208,6 +215,7 @@ TEST(ServerApplicationTest, AListenAddressThatDoesNotParseIsAConfigurationFailur
   EXPECT_EQ(ContextOf(*outcome, "phase"), "construct");
 }
 
+// Requirements: NFR-18
 TEST(ServerApplicationTest, AListenerThatCannotBeSetUpIsAListenerFailure) {
   Faults faults;
   faults.Arm(Site::kListenerSetup, "address in use");
@@ -221,6 +229,7 @@ TEST(ServerApplicationTest, AListenerThatCannotBeSetUpIsAListenerFailure) {
 }
 
 // A file where the capture directory should be: no directory can be made there.
+// Requirements: NFR-18
 TEST(ServerApplicationTest, ACaptureDirectoryThatCannotBeMadeIsAConfigurationFailure) {
   Faults faults;
   ServerConfig config = ExampleConfig();
@@ -233,6 +242,7 @@ TEST(ServerApplicationTest, ACaptureDirectoryThatCannotBeMadeIsAConfigurationFai
   EXPECT_EQ(ContextOf(*outcome, "directory"), config.capture_directory.string());
 }
 
+// Requirements: NFR-18
 TEST(ServerApplicationTest, AWorkerFailureReachesTheOutcomeWithItsTypedCause) {
   Faults faults;
   faults.Arm(Site::kWorkerExecution, "injected");
@@ -261,6 +271,7 @@ TEST(ServerApplicationTest, AReplayServerRunsOnThePackUntilItsFirstCause) {
   EXPECT_EQ(outcome->detail, "injected");
 }
 
+// Requirements: NFR-18
 TEST(ServerApplicationTest, AReplayServerWhoseCapturesAreNoDirectoryIsAConfigurationFailure) {
   Faults faults;
   ServerConfig config = ExampleConfig();
@@ -273,6 +284,7 @@ TEST(ServerApplicationTest, AReplayServerWhoseCapturesAreNoDirectoryIsAConfigura
   EXPECT_EQ(ContextOf(*outcome, "directory"), config.replay_captures.string());
 }
 
+// Requirements: NFR-18
 TEST(ServerApplicationTest, AWorkerThatCannotStartReachesTheOutcomeWithItsTypedCause) {
   Faults faults;
   faults.Arm(Site::kWorkerCreation, "resource temporarily unavailable");
@@ -284,6 +296,7 @@ TEST(ServerApplicationTest, AWorkerThatCannotStartReachesTheOutcomeWithItsTypedC
   EXPECT_EQ(ContextOf(*outcome, "thread"), "network");
 }
 
+// Requirements: NFR-18
 TEST(ServerApplicationTest, ARuntimeFailureEndsInOneTerminalEventAndANonZeroExitStatus) {
   augusta::logging::Init();
   augusta::logging::SetLogLevel(augusta::logging::Severity::kInfo);
@@ -305,6 +318,7 @@ TEST(ServerApplicationTest, ARuntimeFailureEndsInOneTerminalEventAndANonZeroExit
 
 // The content loader returns what is wrong rather than logging it: the
 // boundary's terminal event is the only line at ERROR or above.
+// Requirements: NFR-18
 TEST(ServerApplicationTest, AStartupFailureIsLoggedOnceByTheBoundaryThatDecidesIt) {
   augusta::logging::Init();
   augusta::logging::SetLogLevel(augusta::logging::Severity::kInfo);

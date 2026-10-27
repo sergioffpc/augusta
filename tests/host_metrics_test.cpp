@@ -254,12 +254,14 @@ std::map<std::string, double> CaptureHealths(const HostMetrics& metrics) {
   return states;
 }
 
+// Requirements: NFR-07
 TEST(HostMetricsTest, NoCaptureHealthIsSetWhileNothingIsCaptured) {
   const HostMetrics metrics(kTickRate);
   EXPECT_EQ(CaptureHealths(metrics),
             (std::map<std::string, double>{{"enabled", 0.0}, {"degraded", 0.0}, {"stopped", 0.0}}));
 }
 
+// Requirements: NFR-07
 TEST(HostMetricsTest, OnlyTheCapturesCurrentHealthIsSet) {
   HostMetrics metrics(kTickRate);
   CaptureMetrics counting(metrics);

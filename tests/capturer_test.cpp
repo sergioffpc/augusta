@@ -248,6 +248,7 @@ TEST_F(CapturerTest, AMatchPlayedToItsEndReadsBackAsPlayed) {
   EXPECT_EQ(Read(files.front()), expected);
 }
 
+// Requirements: US-21
 TEST_F(CapturerTest, ADrawEndsWithNoWinner) {
   {
     Capturer capturer(directory_, Header());
@@ -291,6 +292,7 @@ TEST_F(CapturerTest, NothingIsWrittenWithoutAMatch) {
   EXPECT_TRUE(Files().empty());
 }
 
+// Requirements: US-21
 TEST_F(CapturerTest, EventsOfBodiesNotInTheMatchAreNotCaptured) {
   {
     Capturer capturer(directory_, Header());
@@ -328,6 +330,7 @@ TEST_F(CapturerTest, AFailedWriteStopsTheCaptureKeepingEveryRecordBeforeIt) {
   EXPECT_FALSE(read.torn);
 }
 
+// Requirements: US-21
 TEST_F(CapturerTest, TheMatchAfterAStoppedCaptureIsCapturedAfresh) {
   Faults faults;
   {
@@ -346,6 +349,7 @@ TEST_F(CapturerTest, TheMatchAfterAStoppedCaptureIsCapturedAfresh) {
   EXPECT_EQ(second.events.size(), 1U);
 }
 
+// Requirements: US-21
 TEST_F(CapturerTest, ARecordThatFindsTheQueueFullStopsTheCapture) {
   {
     Capturer capturer(directory_, Header(), CaptureOptions{.capacity = 0});
@@ -392,6 +396,7 @@ TEST_F(CapturerTest, AnOptionalCaptureThatFailsToWriteDegradesAndCapturesTheNext
             (std::vector<CaptureHealth>{CaptureHealth::kEnabled, CaptureHealth::kDegraded, CaptureHealth::kStopped}));
 }
 
+// Requirements: US-21
 TEST_F(CapturerTest, AnOptionalCaptureWhoseFlushFailsDegradesOnAFlushFailure) {
   Faults faults;
   Capturer capturer(directory_, Header(), CaptureOptions{.mode = CaptureMode::kOptional, .faults = &faults});
@@ -406,6 +411,7 @@ TEST_F(CapturerTest, AnOptionalCaptureWhoseFlushFailsDegradesOnAFlushFailure) {
   EXPECT_TRUE(Names(*lost, "match=" + boost::uuids::to_string(MatchId(1)) + " step=flush")) << DescribeFailure(*lost);
 }
 
+// Requirements: US-21
 TEST_F(CapturerTest, AnOptionalCaptureKeepsItsFirstLossOnly) {
   Faults faults;
   Capturer capturer(directory_, Header(), CaptureOptions{.mode = CaptureMode::kOptional, .faults = &faults});
@@ -456,6 +462,7 @@ TEST_F(CapturerTest, AStrictCaptureThatFailsToWriteIsARuntimeFailureAndCapturesN
   EXPECT_EQ(health.Entered(), (std::vector<CaptureHealth>{CaptureHealth::kEnabled, CaptureHealth::kStopped}));
 }
 
+// Requirements: US-21
 TEST_F(CapturerTest, AStrictCaptureWhoseFlushFailsIsARuntimeFailure) {
   Faults faults;
   Capturer capturer(directory_, Header(), CaptureOptions{.mode = CaptureMode::kStrict, .faults = &faults});
@@ -470,6 +477,7 @@ TEST_F(CapturerTest, AStrictCaptureWhoseFlushFailsIsARuntimeFailure) {
   EXPECT_TRUE(Names(*lost, "match=" + boost::uuids::to_string(MatchId(1)) + " step=flush")) << DescribeFailure(*lost);
 }
 
+// Requirements: US-21
 TEST_F(CapturerTest, AStrictCaptureWhoseQueueIsFullFailsAtOnce) {
   Capturer capturer(directory_, Header(), CaptureOptions{.mode = CaptureMode::kStrict, .capacity = 0});
   capturer.StartMatch(MatchId(1), TwoPlayers(), kFirstTick, kStarted);
@@ -493,6 +501,7 @@ TEST_F(CapturerTest, AnOptionalCaptureWhoseQueueIsFullIsASlowDiskNotAFailedWrite
   EXPECT_TRUE(Names(*capturer.Loss(), "code=capture_queue_full")) << DescribeFailure(*capturer.Loss());
 }
 
+// Requirements: NFR-18
 TEST(LostCaptureTest, AnOptionalCapturesLossIsNamedForTheStepItWasLostAt) {
   const auto code_at = [](CaptureStep step) { return LostCapture(CaptureMode::kOptional, MatchId(3), step, {}).code; };
   EXPECT_EQ(code_at(CaptureStep::kCreate), Code::kCaptureWriteFailed);
@@ -506,6 +515,7 @@ TEST(LostCaptureTest, AnOptionalCapturesLossIsNamedForTheStepItWasLostAt) {
   }
 }
 
+// Requirements: NFR-18, US-21
 TEST(LostCaptureTest, AStrictCapturesLossIsTheRuntimesWhateverItsStep) {
   for (const CaptureStep step : {CaptureStep::kCreate, CaptureStep::kWrite, CaptureStep::kFlush,
                                  CaptureStep::kQueueFull, CaptureStep::kRecordTooLong}) {
@@ -513,6 +523,7 @@ TEST(LostCaptureTest, AStrictCapturesLossIsTheRuntimesWhateverItsStep) {
   }
 }
 
+// Requirements: US-21
 TEST(LostCaptureTest, ALossNamesItsMatchStepAndDetail) {
   EXPECT_EQ(DescribeFailure(LostCapture(CaptureMode::kOptional, MatchId(3), CaptureStep::kRecordTooLong, "300 bytes")),
             "code=capture_record_too_long disposition=subsystem match=" + boost::uuids::to_string(MatchId(3)) +
@@ -543,6 +554,7 @@ TEST_F(CapturerTest, AFinishedCaptureIsStoppedAndCapturesNothingMore) {
   EXPECT_EQ(health.Entered(), (std::vector<CaptureHealth>{CaptureHealth::kEnabled, CaptureHealth::kStopped}));
 }
 
+// Requirements: US-21
 TEST_F(CapturerTest, ADegradedCaptureIsStoppedOnceFinishedKeepingItsLoss) {
   Faults faults;
   HealthLog health;
@@ -562,6 +574,7 @@ TEST_F(CapturerTest, ADegradedCaptureIsStoppedOnceFinishedKeepingItsLoss) {
 // A record the codec cannot carry is the server's own bug, not the capture's
 // loss: in either mode it is the runtime's broken invariant (ADR-0033), and
 // nothing of it is written.
+// Requirements: NFR-18
 TEST_F(CapturerTest, ARecordTheCodecCannotCarryIsABrokenInvariantInEitherMode) {
   for (const CaptureMode mode : {CaptureMode::kOptional, CaptureMode::kStrict}) {
     const std::filesystem::path directory = directory_ / (mode == CaptureMode::kStrict ? "strict" : "optional");

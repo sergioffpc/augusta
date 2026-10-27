@@ -147,6 +147,7 @@ TEST(CaptureFormatTest, ACaptureWrittenWholeReadsBackEqual) {
 }
 
 // A Match end with no winner is a Draw, written and read as one.
+// Requirements: US-21
 TEST(CaptureFormatTest, AMatchEndWithoutAWinnerReadsBackAsADraw) {
   const auto read = Read(Bytes(TwoPlayers(MatchEnd{.winner = std::nullopt})));
   ASSERT_TRUE(read.has_value());
@@ -154,6 +155,7 @@ TEST(CaptureFormatTest, AMatchEndWithoutAWinnerReadsBackAsADraw) {
 }
 
 // Player n's Join is at index n - 1.
+// Requirements: US-21
 TEST(CaptureFormatTest, EachPlayersJoinIsAtItsNumberLessOne) {
   const auto read = Read(Bytes(TwoPlayers(MatchEnd{})));
   ASSERT_TRUE(read.has_value());
@@ -171,6 +173,7 @@ TEST(CaptureFormatTest, ACapturesHeaderReadsBackWithItsMatchId) {
 }
 
 // A capture with no events, stopped before its Match end, reads as it was.
+// Requirements: US-21
 TEST(CaptureFormatTest, ACaptureStoppedBeforeItsMatchEndReadsBackEqual) {
   const Capture written{.header = TheHeader(), .joins = TwoJoins(), .events = {}, .torn = false};
   EXPECT_EQ(Read(Bytes(written)), written);
@@ -187,6 +190,7 @@ TEST(CaptureFormatTest, AFileWithoutTheMagicIsNoCapture) {
 
 // A file is the magic, then its format version as one raw byte, then its
 // records, the header first.
+// Requirements: US-21
 TEST(CaptureFormatTest, AFileStartsWithTheMagicThenItsFormatVersion) {
   const std::string bytes = Bytes(TwoPlayers(MatchEnd{}));
   const std::string magic(reinterpret_cast<const char*>(augusta::protocol::kCaptureMagic.data()),
@@ -291,6 +295,7 @@ TEST(CaptureFormatTest, ALastRecordCutShortIsDroppedAndReported) {
 }
 
 // A stream that fails is unreadable wherever it does, never a whole or torn capture.
+// Requirements: NFR-12
 TEST(CaptureFormatTest, AFailingStreamIsUnreadable) {
   const std::string bytes = Bytes(TwoPlayers(MatchEnd{}));
   for (const std::size_t held :
@@ -301,6 +306,7 @@ TEST(CaptureFormatTest, AFailingStreamIsUnreadable) {
   }
 }
 
+// Requirements: NFR-12
 TEST(CaptureFormatTest, AStreamNeverOpenedIsUnreadable) {
   std::istringstream in;
   in.setstate(std::ios::failbit);
@@ -308,6 +314,7 @@ TEST(CaptureFormatTest, AStreamNeverOpenedIsUnreadable) {
 }
 
 // What each piece's size on disk says is what Write writes of it.
+// Requirements: US-21
 TEST(CaptureFormatTest, AnEncodedPiecesSizeOnDiskIsWhatIsWritten) {
   const Capture capture = TwoPlayers(MatchEnd{.winner = 2});
   std::vector<Encoded> pieces;
@@ -328,6 +335,7 @@ TEST(CaptureFormatTest, AnEncodedPiecesSizeOnDiskIsWhatIsWritten) {
 
 // A field the codec cannot carry is the writer's broken invariant, named by its
 // record type; nothing of the capture is written.
+// Requirements: NFR-18
 TEST(CaptureFormatTest, AFieldTheCodecCannotCarryIsACodecFailure) {
   Capture capture = TwoPlayers(MatchEnd{});
   capture.joins[1].character = std::string(augusta::protocol::kMaxCharacterNameLength + 1, 'x');
@@ -357,6 +365,7 @@ TEST(CaptureFormatTest, AFieldTheCodecCannotCarryIsACodecFailure) {
 
 // No record the codec accepts passes a frame's limit (#463), so the limit is
 // reached under the module's interface, at its framing.
+// Requirements: US-21
 TEST(CaptureFormatTest, APayloadLongerThanAFrameHoldsIsARecordTooLong) {
   const std::vector<std::byte> longest(augusta::capture::kMaxFramePayload, std::byte{0xAB});
   const auto framed = augusta::capture::Framed(longest);
@@ -369,6 +378,7 @@ TEST(CaptureFormatTest, APayloadLongerThanAFrameHoldsIsARecordTooLong) {
   EXPECT_TRUE(std::holds_alternative<RecordTooLong>(refused.error()));
 }
 
+// Requirements: US-21
 TEST(CaptureFormatTest, TheMagicCheckAcceptsACaptureAndRefusesAnythingElse) {
   std::istringstream capture(Bytes(TwoPlayers(MatchEnd{})), std::ios::binary);
   EXPECT_TRUE(StartsWithMagic(capture));
@@ -382,6 +392,7 @@ TEST(CaptureFormatTest, TheMagicCheckAcceptsACaptureAndRefusesAnythingElse) {
   EXPECT_FALSE(StartsWithMagic(failing));
 }
 
+// Requirements: US-21
 TEST(CaptureFormatTest, EveryCaptureFileEndsInItsExtension) { EXPECT_EQ(augusta::capture::kExtension, ".acap"); }
 
 }  // namespace

@@ -503,6 +503,7 @@ rc::Gen<MessageWire> Message() {
                         rc::gen::cast<MessageWire>(ReplayRequest()), rc::gen::cast<MessageWire>(ReenactRequest()));
 }
 
+// Requirements: NFR-20
 RC_GTEST_PROP(ProtocolPropertyTest, EveryMessageSurvivesEncodeThenDecode, ()) {
   const MessageWire message = *Message();
 

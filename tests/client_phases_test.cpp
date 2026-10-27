@@ -61,6 +61,7 @@ std::string ContextOf(const Failure& failure, std::string_view key) {
   return {};
 }
 
+// Requirements: US-28, NFR-18
 TEST(ClientPhasesTest, AConfigFileThatCannotBeReadIsAConfigurationFailure) {
   const auto config = ReadClientConfig(CommandLine{
       .config_file = "no/such/augustac.yaml", .message = {}, .options = {}, .action = CommandLineAction::kRun});
@@ -70,6 +71,7 @@ TEST(ClientPhasesTest, AConfigFileThatCannotBeReadIsAConfigurationFailure) {
   EXPECT_FALSE(config.error().detail.empty());
 }
 
+// Requirements: NFR-08, NFR-18
 TEST(ClientPhasesTest, APackThatDoesNotVerifyIsAContentFailure) {
   ClientConfig config;
   config.pack_path = (kPacks / "missing").replace_extension(augusta::assets::kPackExtension);
@@ -83,6 +85,7 @@ TEST(ClientPhasesTest, APackThatDoesNotVerifyIsAContentFailure) {
   EXPECT_EQ(ContextOf(loaded.error(), "path"), config.pack_path.string());
 }
 
+// Requirements: NFR-18
 TEST(ClientPhasesTest, AnUnknownCharacterInAVerifiedPackIsAContentFailure) {
   ClientConfig config;
   config.pack_path = (kPacks / "client").replace_extension(augusta::assets::kPackExtension);
@@ -99,6 +102,7 @@ TEST(ClientPhasesTest, AnUnknownCharacterInAVerifiedPackIsAContentFailure) {
 }
 
 // A pack that verifies but holds the server's content, not a client's.
+// Requirements: NFR-18
 TEST(ClientPhasesTest, APackWithoutClientContentIsAContentFailure) {
   ClientConfig config;
   config.pack_path = (kPacks / "server").replace_extension(augusta::assets::kPackExtension);
@@ -113,6 +117,7 @@ TEST(ClientPhasesTest, APackWithoutClientContentIsAContentFailure) {
   EXPECT_FALSE(loaded.error().detail.empty());
 }
 
+// Requirements: NFR-18
 TEST(ClientPhasesTest, ARefusedJoinEndsTheClientsSession) {
   const Failure failure = ClassifySessionFailure({.kind = FailureKind::kRefused, .refusal = JoinRefusal::kLobbyFull});
 
@@ -120,18 +125,21 @@ TEST(ClientPhasesTest, ARefusedJoinEndsTheClientsSession) {
   EXPECT_FALSE(failure.detail.empty());
 }
 
+// Requirements: NFR-18
 TEST(ClientPhasesTest, AServerThatNeverAnsweredIsUnreachable) {
   const Failure failure = ClassifySessionFailure({.kind = FailureKind::kServerUnreachable, .refusal = {}});
 
   EXPECT_EQ(failure.code, Code::kServerUnreachable);
 }
 
+// Requirements: NFR-18
 TEST(ClientPhasesTest, AConnectionLostAfterAdmissionIsALostPeerConnection) {
   const Failure failure = ClassifySessionFailure({.kind = FailureKind::kConnectionLost, .refusal = {}});
 
   EXPECT_EQ(failure.code, Code::kPeerConnectionLost);
 }
 
+// Requirements: NFR-18
 TEST(ClientPhasesTest, ACharacterThatCannotBeLoadedIsAContentFailure) {
   const Failure failure = ClassifyCharacterError(CharacterError{
       .code = CharacterErrorCode::kUnknownCharacter, .character = "ghost", .subject = {}, .resolve_error = {}});
@@ -164,6 +172,7 @@ std::filesystem::path WriteCapture(const std::string& stem) {
   return path;
 }
 
+// Requirements: US-21
 TEST(ClientPhasesTest, ARunThatAsksToReenactNothingPlaysAsAPerson) {
   const auto reenactment = ReadReenactment(
       CommandLine{.config_file = "augustac.yaml", .message = {}, .options = {}, .action = CommandLineAction::kRun});
@@ -185,7 +194,7 @@ TEST(ClientPhasesTest, ARunReenactsThePlayerOfTheCaptureItNames) {
   std::filesystem::remove(capture);
 }
 
-// Requirements: US-21
+// Requirements: US-21, NFR-18
 TEST(ClientPhasesTest, ACaptureThatDoesNotLoadOrLacksThePlayerIsAConfigurationFailure) {
   const std::filesystem::path capture = WriteCapture("augusta_client_reenact_two");
   const std::filesystem::path missing =
@@ -201,6 +210,7 @@ TEST(ClientPhasesTest, ACaptureThatDoesNotLoadOrLacksThePlayerIsAConfigurationFa
   std::filesystem::remove(capture);
 }
 
+// Requirements: US-21, US-28, NFR-18
 TEST(ClientPhasesTest, ReenactWithoutPlayerIsAConfigurationFailure) {
   CommandLine command_line =
       ReenactCommandLine(std::filesystem::path("a").replace_extension(augusta::capture::kExtension), "1");

@@ -81,6 +81,7 @@ class ClientRunTest : public testing::Test {
   std::filesystem::path directory_;
 };
 
+// Requirements: NFR-19
 TEST_F(ClientRunTest, ALaunchAfterACrashedRunWritesOneWarningNamingItAndItsFiles) {
   Write(LogPath(Directory(), RunId(1)), "2026-10-21T10:00:01Z CRITICAL subsystem=client event=crash signal=SIGSEGV\n");
   Write(LogPath(Directory(), RunId(2)), "2026-10-21T10:00:01Z CRITICAL subsystem=client event=crash signal=SIGSEGV\n");
@@ -100,6 +101,7 @@ TEST_F(ClientRunTest, ALaunchAfterACrashedRunWritesOneWarningNamingItAndItsFiles
 
 // Run 2 follows a crashed Run, so it is told of it: the warning is written in
 // this setup. Run 3 follows Run 2's terminal failure, and Run 1 follows none.
+// Requirements: NFR-19
 TEST_F(ClientRunTest, ALaunchAfterAnyOtherEndWritesNothing) {
   Write(LogPath(Directory(), RunId(1)), "2026-10-21T10:00:01Z CRITICAL subsystem=client event=crash signal=SIGSEGV\n");
   Write(LogPath(Directory(), RunId(2)),
@@ -127,6 +129,7 @@ void EndRun(const augusta::client::Run& run) {
 
 // Taking a Run names its files but makes none, so the crash handler is
 // installed before the Run touches the disk.
+// Requirements: NFR-10
 TEST_F(ClientRunTest, TakingARunNamesItsFilesAndMakesNone) {
   const augusta::client::Run run = augusta::client::TakeRun(Directory());
   augusta::logging::ClearContext(augusta::logging::ContextField::kRun);
@@ -136,6 +139,7 @@ TEST_F(ClientRunTest, TakingARunNamesItsFilesAndMakesNone) {
   EXPECT_FALSE(std::filesystem::exists(Directory()));
 }
 
+// Requirements: NFR-10, NFR-19
 TEST_F(ClientRunTest, ARunsLogFileAndDumpsAreUnderItsDirectoryNamedByItsId) {
   const augusta::client::Run run = StartRun(Directory());
   EndRun(run);
@@ -168,6 +172,7 @@ bool IsCanonical(std::string_view text) {
 
 // The Run ID is a UUIDv7 (GLOSSARY.md): one taken after another is later, so
 // the Runs' files sort in the order the Runs began.
+// Requirements: NFR-19
 TEST_F(ClientRunTest, TwoRunIdsTakenOneAfterTheOtherDifferSortInOrderAndAreCanonicalVersion7) {
   const augusta::client::Run first = StartRun(std::nullopt);
   EndRun(first);
@@ -183,6 +188,7 @@ TEST_F(ClientRunTest, TwoRunIdsTakenOneAfterTheOtherDifferSortInOrderAndAreCanon
   EXPECT_EQ(first_text[14], '7') << first_text;
 }
 
+// Requirements: NFR-19
 TEST_F(ClientRunTest, ARunWithNoDirectoryLogsOnlyToTheConsoleAndSaysSo) {
   testing::internal::CaptureStdout();
   const augusta::client::Run run = StartRun(std::nullopt);
@@ -196,6 +202,7 @@ TEST_F(ClientRunTest, ARunWithNoDirectoryLogsOnlyToTheConsoleAndSaysSo) {
   EXPECT_NE(written.find("subsystem=client event=gpu"), std::string::npos) << written;
 }
 
+// Requirements: NFR-10
 TEST_F(ClientRunTest, ARunNamesItsGpuCrashDumpsAfterItsId) {
   const augusta::client::Run run = StartRun(Directory());
   EndRun(run);
@@ -208,6 +215,7 @@ TEST_F(ClientRunTest, ARunNamesItsGpuCrashDumpsAfterItsId) {
 
 // A launch tells of the crashed Run before it, then keeps only the newest
 // Runs, its own among them.
+// Requirements: NFR-19
 TEST_F(ClientRunTest, ALaunchReportsTheCrashedRunBeforeItThenKeepsOnlyTheNewestRuns) {
   const auto runs = static_cast<std::uint8_t>(augusta::client::kKeptRuns + 1);
   for (std::uint8_t n = 1; n <= runs; ++n) {
@@ -230,6 +238,7 @@ TEST_F(ClientRunTest, ALaunchReportsTheCrashedRunBeforeItThenKeepsOnlyTheNewestR
 
 // A crash names its Run and writes into the Run's log; then on Windows its
 // minidump, and on Linux where its core is.
+// Requirements: NFR-10
 TEST_F(ClientRunTest, TheCrashHandlerIsGivenTheRunAndWhereItsCrashGoes) {
   const augusta::client::Run run{.id = RunId(1),
                                  .log_file = LogPath(Directory(), RunId(1)),
@@ -249,6 +258,7 @@ TEST_F(ClientRunTest, TheCrashHandlerIsGivenTheRunAndWhereItsCrashGoes) {
 }
 
 // A Run with no files - its directory unknown - gives the handler none.
+// Requirements: NFR-10
 TEST_F(ClientRunTest, ARunWithNoFilesGivesTheCrashHandlerNone) {
   const augusta::client::Run run{
       .id = RunId(1), .log_file = std::nullopt, .minidump_file = std::nullopt, .directory = std::nullopt};
@@ -272,6 +282,7 @@ std::string WrittenInfoLine(std::string_view message) {
   return testing::internal::GetCapturedStdout();
 }
 
+// Requirements: NFR-10
 TEST(SessionLogContextTest, EveryLineWhileTheSessionIsHeldCarriesItsSessionId) {
   const SessionLogContext held(kSession);
 
@@ -282,6 +293,7 @@ TEST(SessionLogContextTest, EveryLineWhileTheSessionIsHeldCarriesItsSessionId) {
 }
 
 // While held, a line carries the Session; once it ends, none does.
+// Requirements: NFR-10
 TEST(SessionLogContextTest, NoLineAfterTheSessionEndsCarriesASessionId) {
   std::string during;
   {
@@ -298,6 +310,7 @@ TEST(SessionLogContextTest, NoLineAfterTheSessionEndsCarriesASessionId) {
 const Uuid kMatch = boost::uuids::uuid(
     {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x22});
 
+// Requirements: NFR-10
 TEST(MatchLogContextTest, EveryLineFromAMatchStartToItsEndCarriesItsMatchIdAndNoneAfter) {
   MatchLogContext held;
   held.Hold(kMatch);
@@ -310,6 +323,7 @@ TEST(MatchLogContextTest, EveryLineFromAMatchStartToItsEndCarriesItsMatchIdAndNo
 }
 
 // Held when it goes, the Match is carried no more.
+// Requirements: NFR-10
 TEST(MatchLogContextTest, NoLineAfterItGoesCarriesAMatchId) {
   std::string during;
   {
