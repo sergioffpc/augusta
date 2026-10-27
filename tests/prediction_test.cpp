@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include "augusta/command.h"
+#include "augusta/grid.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
@@ -628,6 +629,28 @@ TEST_F(WeaponPredictionTest, ABodyTheServerDisagreesWithIsCorrectedWithoutCounti
   EXPECT_NEAR(state.total_correction.x, 0.5F, 0.02F);
   EXPECT_EQ(state.rifle_corrections, 0U);
   EXPECT_EQ(state.rifle.rounds, kMagazine - 2);
+}
+
+// The rifle is compared exactly (ADR-0004), so the x64 client must predict the
+// recoil the arm64 server computes to the last grid step. This offset's length
+// rounds differently with its two squares fused into one multiply-add, and its
+// recovered pitch and yaw then land a grid step off the values below: the
+// values each square rounded on its own gives, which every target is built
+// without floating-point contraction to keep. x86-64 has no fused multiply-add
+// to contract into, so it passes there either way; it is a build for a target
+// that has one, aarch64, that it checks.
+// Requirements: NFR-02, NFR-04
+TEST(RifleArithmeticTest, RecoilRecoversAsItsSquaresRoundedApartGive) {
+  constexpr float kStep = augusta::math::kAngleGrid.step;
+  augusta::weapon::Rifle rifle;
+  rifle.recoil_recovery_per_second = 0.5F;
+  augusta::weapon::State kicked;
+  kicked.recoil = {.pitch = 49922 * kStep, .yaw = -57165 * kStep};
+
+  const augusta::weapon::State recovered = augusta::weapon::Step(rifle, kicked, Command{}, kFixedTick).state;
+
+  EXPECT_EQ(recovered.recoil.pitch, 38426 * kStep);
+  EXPECT_EQ(recovered.recoil.yaw, -44002 * kStep);
 }
 
 }  // namespace

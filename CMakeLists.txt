@@ -128,6 +128,20 @@ else()
   add_compile_options($<$<CONFIG:Release>:-g>)
 endif()
 
+# No floating-point contraction, on every platform and build type (ADR-0004):
+# the shared core's arithmetic, a rifle's recoil among it, must round the same
+# on the arm64 server and the x64 client, and clang's default fuses a multiply
+# and an add into one instruction where the target has it, aarch64, and not
+# where it does not, baseline x86-64. Every target, not the shared core's
+# alone: its headers' inline arithmetic is compiled into whatever includes
+# them, the tests that pin its results among them. clang-cl defaults to
+# contraction too and takes the flag through /clang:.
+if(MSVC)
+  add_compile_options(/clang:-ffp-contract=off)
+else()
+  add_compile_options(-ffp-contract=off)
+endif()
+
 # The tools' Python modules (tools/agent, tools/pack) are shared libraries that
 # link the engine's static ones, which on Linux must then be
 # position-independent: the whole build, so the tools link what augustad does.
