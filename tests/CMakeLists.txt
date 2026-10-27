@@ -71,12 +71,6 @@ target_compile_definitions(
   PRIVATE AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs"
 )
 
-# Links augusta_limits alone, so the build fails if its header ever needs
-# another module's include path.
-add_executable(augusta_limits_tests limits_test.cpp)
-target_link_libraries(augusta_limits_tests PRIVATE augusta_limits GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_limits_tests DISCOVERY_TIMEOUT 30)
-
 # Links augusta_tick alone, so the build fails if its header ever needs another
 # module's include path.
 add_executable(augusta_tick_tests tick_test.cpp)

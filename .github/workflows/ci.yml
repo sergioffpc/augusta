@@ -297,7 +297,7 @@ jobs:
         # packs ctest loads, byte for byte, on either platform.
         working-directory: tools/pack
         run: uv run --locked --no-default-groups --group agent --group pack pytest
-  # Requirements: NFR-04
+  # Requirements: NFR-04, US-31
   server-x64-linux:
     needs: [changes, format]
     if: needs.changes.outputs.run_build == 'true'

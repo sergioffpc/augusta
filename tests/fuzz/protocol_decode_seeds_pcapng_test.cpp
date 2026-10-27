@@ -101,6 +101,7 @@ std::string WrittenVersion(const std::vector<std::byte>& fixture) {
   return userappl.starts_with(prefix) ? userappl.substr(prefix.size()) : std::string{};
 }
 
+// Requirements: US-31
 TEST(ProtocolDecodeSeedsPcapngTest, IsWhatTheEncoderWritesOfTheSeeds) {
   const std::vector<std::byte> fixture = ReadFile(kFixturePath);
   const std::string version = WrittenVersion(fixture);
@@ -112,6 +113,7 @@ TEST(ProtocolDecodeSeedsPcapngTest, IsWhatTheEncoderWritesOfTheSeeds) {
 // What tools/wireshark's test checks capinfos shows: the fixture is of this
 // engine version, so a bump means regenerating it, as the cut-release
 // runbook's step 3 does.
+// Requirements: US-31
 TEST(ProtocolDecodeSeedsPcapngTest, NamesThisBuildsEngineVersion) {
   EXPECT_EQ(WrittenVersion(ReadFile(kFixturePath)), augusta::EngineVersion())
       << "regenerate " << kFixturePath << " (tests/fuzz/README.md)";

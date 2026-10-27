@@ -219,6 +219,7 @@ INSTANTIATE_TEST_SUITE_P(
         PhysicsSwitch{.key = "shot_judgements", .read = &augusta::config::ClientPhysicsDebugConfig::shot_judgements}),
     [](const testing::TestParamInfo<PhysicsSwitch>& info) { return std::string(info.param.key); });
 
+// Requirements: US-31
 TEST(ParseClientConfigTest, WritesNoPcapngByDefault) {
   const auto config = ParseClientConfig(kMinimalClientConfig, kFileDir);
 
@@ -226,6 +227,7 @@ TEST(ParseClientConfigTest, WritesNoPcapngByDefault) {
   EXPECT_TRUE(config->debug.network_pcapng.empty());
 }
 
+// Requirements: US-31
 TEST(ParseClientConfigTest, ReadsThePcapngDirectoryUnderBaseDirAndCreatesIt) {
   const std::filesystem::path file_dir = FreshDirectory();
 
@@ -237,6 +239,7 @@ TEST(ParseClientConfigTest, ReadsThePcapngDirectoryUnderBaseDirAndCreatesIt) {
 }
 
 // A directory beneath a file can never be created.
+// Requirements: US-31
 TEST(ParseClientConfigTest, RejectsAPcapngDirectoryThatCannotBeCreated) {
   const std::filesystem::path file_dir = FreshDirectory();
   std::filesystem::create_directories(file_dir / "content");
@@ -253,6 +256,7 @@ TEST(ParseClientConfigTest, RejectsAPcapngDirectoryThatCannotBeCreated) {
 // An existing directory no file can be written in is refused as one that
 // can't be created: here a directory, which it can't remove, stands where the
 // write probe's file would go. Without it, the same directory is taken.
+// Requirements: US-31
 TEST(ParseClientConfigTest, RejectsAnExistingPcapngDirectoryThatCannotBeWritten) {
   const std::filesystem::path file_dir = FreshDirectory();
   const std::filesystem::path directory = file_dir / "content" / "net";

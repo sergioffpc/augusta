@@ -504,6 +504,7 @@ TEST_F(ReplayServerTest, AReplayRequestNamingAnythingNotInTheListingIsRefused) {
   EXPECT_EQ(server->Viewers(), 0U);
 }
 
+// Requirements: US-21
 TEST_F(ReplayServerTest, AReplayRequestFromAnotherVersionOrPackIsRefusedForItBeforeItsCapture) {
   const std::unique_ptr<ReplayServer> server = Serve();
   RawClient old_version(server->ListenEndpoint());
@@ -865,6 +866,7 @@ TEST(ReplayListQueryTest, AServerThatIsNotThereIsUnreachable) {
   EXPECT_EQ(query.GetFailure()->kind, augusta::harness::FailureKind::kServerUnreachable);
 }
 
+// Requirements: US-21
 TEST(DescribeReplayListTest, ItNamesEachCaptureWithItsStartLengthAndCharacters) {
   const std::vector<augusta::harness::ReplayListing> listings = {
       {.name = CaptureNamed("20261009T101500123Z-0001"),
@@ -992,6 +994,7 @@ TEST(ReplayServerConfigTest, AReplayServerRefusesACapturesDirectoryThatIsNone) {
 }
 
 // A list of more captures than a Replay list holds names the newest.
+// Requirements: US-21
 TEST(ListedOfTest, ItNamesTheNewestCapturesAReplayRequestCanName) {
   std::vector<augusta::host::ReplayListing> listings;
   for (std::size_t i = 0; i < protocol::kMaxReplayListings + 2; ++i) {

@@ -41,6 +41,7 @@ version only when it is cut (ENGINEERING.md, Milestones).
     - [US-28: Start Only on a Valid Configuration](#us-28-start-only-on-a-valid-configuration)
     - [US-29: Debug HUD and Panels](#us-29-debug-hud-and-panels)
     - [US-30: Physics and Shot Judgement Overlays](#us-30-physics-and-shot-judgement-overlays)
+    - [US-31: Capture Network Messages for Wireshark](#us-31-capture-network-messages-for-wireshark)
 - [Non-Functional Requirements](#non-functional-requirements)
     - [NFR-01: Server Tick Rate (Performance)](#nfr-01-server-tick-rate-performance)
     - [NFR-02: Network Latency Tolerance](#nfr-02-network-latency-tolerance)
@@ -724,6 +725,39 @@ Then it refuses to start, naming the debug section as an unknown key
 The overlays and the Physics panel are values the client builds each frame
 (ADR-0075); the collision shapes are PhysX's own and the recording is OmniPVD's.
 A Shipping build compiles every debug tool out (ADR-0074).
+
+### US-31: Capture Network Messages for Wireshark
+
+Version: v7
+
+As a developer, I want a client or server to write every message it sends and
+receives to a file Wireshark reads, so that I can see which message went where,
+when and with which fields while I chase a networking bug.
+
+```text
+Given a Development client or server whose config names a directory under
+      debug.network.pcapng
+When it runs
+Then it logs and writes one pcapng in that directory, named after the
+     executable and its start in UTC, whose header names the executable and its
+     version; the file holds every message it sent and received, decrypted,
+     each with its direction, both endpoints and its time, and Wireshark
+     decodes each with tools/wireshark; a send the transport drops is not in
+     it, and without the key it writes none
+
+Given a debug.network.pcapng directory that cannot be created or written
+When the executable starts
+Then it stops at startup naming the key
+
+Given a pcapng file that cannot be created or written, or a writer that falls
+      behind
+When that happens
+Then the file stops there, keeping every message before it, with one warning,
+     and the client or server runs on
+```
+
+A replay server writes one too. Only a Development build has it (ADR-0074,
+ADR-0076).
 
 ---
 
