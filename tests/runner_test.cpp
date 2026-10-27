@@ -154,6 +154,7 @@ class RunnerTest : public ::testing::Test {
   Session session_;
 };
 
+// Requirements: US-23
 TEST_F(RunnerTest, MovesThePlayerOnTheServerByTheCommandsItsSourceGives) {
   const Runner runner(session_,
                       RunnerHooks{.next_command = Walking, .on_tick = {}, .on_network_round = {}, .on_failure = {}});
@@ -166,6 +167,7 @@ TEST_F(RunnerTest, MovesThePlayerOnTheServerByTheCommandsItsSourceGives) {
 
 // An Agent's Runner takes each Command from its Intents (ADR-0052), set from
 // another thread while it runs.
+// Requirements: US-23
 TEST_F(RunnerTest, MovesThePlayerByTheIntentsAnExecutorCarriesOut) {
   augusta::harness::IntentExecutor executor;
   const auto from_intents = [&] { return executor.NextCommand(*session_.GetServerView(), {}); };
@@ -200,6 +202,7 @@ TEST_F(RunnerTest, ASourceWithNoCommandSkipsTheTickAndSendsNothing) {
   EXPECT_FALSE(runner.Failure().has_value());
 }
 
+// Requirements: US-23
 TEST_F(RunnerTest, TellsItsHooksOfEveryTickAtTheServersPacedRateAndOfEveryNetworkRound) {
   std::mutex mutex;
   std::vector<PredictedTick> ticks;
@@ -256,6 +259,7 @@ TEST_F(RunnerTest, TellsItsHooksOfEveryTickAtTheServersPacedRateAndOfEveryNetwor
 // A Tick whose work ends more than kMaxTicksBehind ticks behind its schedule
 // makes the loop start again from now (tick::NextDeadline): its hooks are told
 // it was resynchronised, and that it lasted until now, not a paced tick.
+// Requirements: US-23
 TEST_F(RunnerTest, ATickThatFallsTooFarBehindIsReportedResynchronised) {
   constexpr auto kStall = std::chrono::milliseconds(200);
   std::mutex mutex;
@@ -300,6 +304,7 @@ TEST_F(RunnerTest, ATickThatFallsTooFarBehindIsReportedResynchronised) {
   EXPECT_TRUE(reported_stall) << "no tick that the stall left behind was reported resynchronised";
 }
 
+// Requirements: NFR-18
 TEST_F(RunnerTest, ACommandSourceThatThrowsStopsTheRunnerWithAFailureOfThePredictionThread) {
   const Runner runner(session_, RunnerHooks{.next_command = []() -> Command { throw std::runtime_error("no input"); },
                                             .on_tick = {},
@@ -314,6 +319,7 @@ TEST_F(RunnerTest, ACommandSourceThatThrowsStopsTheRunnerWithAFailureOfThePredic
   EXPECT_EQ(failure.detail, "no input");
 }
 
+// Requirements: NFR-18
 TEST_F(RunnerTest, TellsItsHooksOfTheFirstCauseOnceOnTheThreadThatStoppedOnIt) {
   std::mutex mutex;
   std::vector<augusta::failure::Failure> told;
@@ -350,6 +356,7 @@ TEST_F(RunnerTest, TellsItsHooksOfTheFirstCauseOnceOnTheThreadThatStoppedOnIt) {
 // Once the Network I/O thread fails, the Prediction thread finishes at most
 // the Tick it is in: a Tick that already sees the failure, and so the stop
 // requested before it, is the last one. Nothing ticks once the Runner is gone.
+// Requirements: NFR-18
 TEST_F(RunnerTest, ANetworkThreadFailureStopsThePredictionTicksAndBothThreadsAreJoined) {
   constexpr auto kSeveralTicks = std::chrono::milliseconds(200);
   std::atomic<const Runner*> running{nullptr};
@@ -396,6 +403,7 @@ TEST_F(RunnerTest, ANetworkThreadFailureStopsThePredictionTicksAndBothThreadsAre
 // A Join request naming a character longer than the protocol carries is never
 // sent, in any build: the Network I/O thread stops on a broken invariant
 // (ADR-0033) instead, and the server admits no one.
+// Requirements: NFR-18
 TEST_F(RunnerTest, AJoinRequestTheProtocolCannotCarryStopsTheRunnerWithAnInvariantFailureOfTheNetworkThread) {
   Session session(SessionConfig{.server = {.address = host_.ListenEndpoint().address},
                                 .character = std::string(augusta::protocol::kMaxCharacterNameLength + 1, 'c')},

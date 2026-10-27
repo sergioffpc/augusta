@@ -720,6 +720,7 @@ TEST_F(NetworkingTest, TheDefaultTimeoutIsBackOnceTheConditionsAreReset) {
 // ---- Local transport failures (ADR-0033) ----
 
 // A transport the process cannot start ends it before any runtime exists.
+// Requirements: NFR-18
 TEST_F(NetworkingTest, ATransportThatCannotBeInitializedIsATransportInitFailure) {
   Faults faults;
   faults.Arm(Site::kDependencyInit, "GameNetworkingSockets_Init failed");
@@ -733,6 +734,7 @@ TEST_F(NetworkingTest, ATransportThatCannotBeInitializedIsATransportInitFailure)
 
 // A transport that cannot listen is the runtime's failure, typed, so the
 // application boundary classifies it by its code and never by its message.
+// Requirements: NFR-18
 TEST_F(NetworkingTest, AServerThatCannotSetUpItsListenerThrowsAListenerSetupFailure) {
   Faults faults;
   faults.Arm(Site::kListenerSetup, "no socket");
@@ -747,6 +749,7 @@ TEST_F(NetworkingTest, AServerThatCannotSetUpItsListenerThrowsAListenerSetupFail
   }
 }
 
+// Requirements: NFR-18
 TEST_F(NetworkingTest, AServerAddressThatDoesNotParseIsAConfigurationFailure) {
   try {
     const Server server(Endpoint{.address = "not an address"});
@@ -756,6 +759,7 @@ TEST_F(NetworkingTest, AServerAddressThatDoesNotParseIsAConfigurationFailure) {
   }
 }
 
+// Requirements: NFR-18
 TEST_F(NetworkingTest, AClientAddressThatDoesNotParseIsAConfigurationFailure) {
   Client client;
   try {
@@ -768,6 +772,7 @@ TEST_F(NetworkingTest, AClientAddressThatDoesNotParseIsAConfigurationFailure) {
 
 // A peer that is not there is the peer's outcome: dropped, never a failure,
 // and never mistaken for a message sent.
+// Requirements: NFR-18
 TEST_F(NetworkingTest, SendingToNoConnectedPeerDropsTheMessageWithoutFailing) {
   Server server(Endpoint{.address = kLoopbackAnyPort});
   Client client;
@@ -776,6 +781,7 @@ TEST_F(NetworkingTest, SendingToNoConnectedPeerDropsTheMessageWithoutFailing) {
   EXPECT_EQ(client.Send(MakePayload("nobody"), Reliability::kReliable), SendOutcome::kDropped);
 }
 
+// Requirements: NFR-18
 TEST_F(NetworkingTest, NothingToReceiveIsAnEmptyQueueNotAFailure) {
   Server server(Endpoint{.address = kLoopbackAnyPort});
   Client client;
@@ -789,6 +795,7 @@ TEST_F(NetworkingTest, NothingToReceiveIsAnEmptyQueueNotAFailure) {
   EXPECT_TRUE(client_received->empty());
 }
 
+// Requirements: NFR-18
 TEST_F(ConnectedNetworkingTest, AClientSendTheLocalTransportRefusesIsAFailureAndNeverArrives) {
   faults_.Arm(Site::kTransportSend, "socket closed");
 
@@ -801,6 +808,7 @@ TEST_F(ConnectedNetworkingTest, AClientSendTheLocalTransportRefusesIsAFailureAnd
   EXPECT_TRUE(DrainServerFor(kDrainWindow).empty());
 }
 
+// Requirements: NFR-18
 TEST_F(ConnectedNetworkingTest, AServerSendTheLocalTransportRefusesIsAFailureOfThatPeersSend) {
   faults_.Arm(Site::kTransportSend, "socket closed");
 
@@ -814,6 +822,7 @@ TEST_F(ConnectedNetworkingTest, AServerSendTheLocalTransportRefusesIsAFailureOfT
                                   [&](const auto& field) { return field.key == "peer" && field.value == peer; }));
 }
 
+// Requirements: NFR-18
 TEST_F(ConnectedNetworkingTest, ABroadcastStopsAtTheLocalTransportsFailure) {
   faults_.Arm(Site::kTransportSend, "socket closed");
 
@@ -823,6 +832,7 @@ TEST_F(ConnectedNetworkingTest, ABroadcastStopsAtTheLocalTransportsFailure) {
   EXPECT_EQ(broadcast.error().code, Code::kTransportSendFailed);
 }
 
+// Requirements: NFR-18
 TEST_F(ConnectedNetworkingTest, AReceiveTheLocalTransportFailsIsAFailureNotAnEmptyQueue) {
   faults_.Arm(Site::kTransportReceive, "poll group gone", 2);
 
@@ -839,6 +849,7 @@ TEST_F(ConnectedNetworkingTest, AReceiveTheLocalTransportFailsIsAFailureNotAnEmp
 
 // The peer leaving is its own outcome: what is sent to it afterwards is
 // dropped, not a failure of the server's transport.
+// Requirements: NFR-18
 TEST_F(ConnectedNetworkingTest, SendingToAPeerThatLeftDropsTheMessageWithoutFailing) {
   client_->Disconnect();
   ASSERT_TRUE(WaitForServerToLosePeer().has_value());

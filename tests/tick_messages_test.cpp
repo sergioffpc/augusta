@@ -228,6 +228,7 @@ TEST(TickMessagesTest, NoOneInTheMatchMeansNothingIsSent) {
 // An update listing more bodies than the protocol carries is a broken
 // invariant, never a peer's doing: it is not sent, in any build, and the
 // failure stops the runtime (ADR-0033).
+// Requirements: NFR-18
 TEST(TickMessagesTest, AnUpdateTheProtocolCannotCarryIsNotSentAndIsAnInvariantFailure) {
   State state = TwoBodies();
   while (state.bodies.size() <= augusta::limits::kMaxPlayers) {
@@ -252,6 +253,7 @@ TEST(TickMessagesTest, AnUpdateTheProtocolCannotCarryIsNotSentAndIsAnInvariantFa
 // Every message of a tick is encoded before any is sent: a Death the protocol
 // cannot carry, its body part corrupted, sends none of the tick's, not even
 // the updates before it.
+// Requirements: NFR-18
 TEST(TickMessagesTest, AMessageTheProtocolCannotCarrySendsNoneOfTheTicks) {
   State state = TwoBodies();
   state.deaths = {{.victim = EntityId{2},
@@ -274,6 +276,7 @@ TEST(TickMessagesTest, AMessageTheProtocolCannotCarrySendsNoneOfTheTicks) {
 
 // A sink that declines a message is handed nothing more of the tick: how the
 // Host stops sending once its runtime has failed mid-tick (ADR-0033).
+// Requirements: NFR-18
 TEST(TickMessagesTest, NothingMoreIsHandedOnOnceTheSinkDeclines) {
   ASSERT_GT(SendAll(TwoBodies(), 42, ThreePlayers()).size(), 1U);
   std::vector<Sent> sent;

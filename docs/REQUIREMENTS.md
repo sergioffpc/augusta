@@ -56,6 +56,7 @@ version only when it is cut (ENGINEERING.md, Milestones).
     - [NFR-15: Cluster Hardening (Security)](#nfr-15-cluster-hardening-security)
     - [NFR-16: VR Frame Rate](#nfr-16-vr-frame-rate)
     - [NFR-17: Desktop Frame Rate](#nfr-17-desktop-frame-rate)
+    - [NFR-18: Failure Containment](#nfr-18-failure-containment)
 
 ---
 
@@ -919,3 +920,32 @@ Measure:     144 frames a second or more for the whole Match
 Lighting has no quality setting to trade for frame rate (ADR-0067): the frame
 rate is met with every player's shadows, reflections and indirect light as
 everyone else sees them.
+
+### NFR-18: Failure Containment
+
+Version: v3
+
+```text
+Source:      A dependency, the local transport, a worker thread or a broken
+             invariant of the client or the dedicated server; or a peer
+Stimulus:    A failure at startup (configuration or content that does not
+             load, a dependency that does not start) or at runtime (a send or
+             receive the local transport refuses, a worker that throws or
+             cannot be created, a message the protocol cannot carry); a stop
+             asked for; a peer that leaves or misbehaves
+Environment: Client or server, from startup to exit
+Artifact:    The application boundary, the runtime supervisor and its workers,
+             and the shared error model's codes and dispositions
+Response:    The process ends on the first failure, classified by its code: the
+             runtime that met it sends nothing more, and every worker stops; a
+             peer's outcome stays that peer's
+Measure:     Any startup or runtime failure ends the process with one terminal
+             event naming its classified cause, and a non-zero exit; a stop
+             that was asked for exits 0; the first failure stops every worker
+             and is kept; every thread is joined; a local transport failure is
+             the runtime's failure, but a peer that leaves or misbehaves is not
+```
+
+ADR-0033 classifies each failure into the scope it is recovered at, and ADR-0005
+has the supervisor stop and join the workers. A crash is NFR-10's: it ends the
+process with its crash line, not a terminal event.

@@ -971,6 +971,7 @@ TEST(LiveServerReplayTest, ALiveServerRefusesReplayRequestsAsNoReplayServer) {
   EXPECT_EQ(viewer.Refusal(), protocol::JoinRefusalWire::kNotAReplayServer);
 }
 
+// Requirements: NFR-18
 TEST(ReplayServerConfigTest, AReplayServerRefusesACapturesDirectoryThatIsNone) {
   try {
     ReplayServer(ReplayServerConfig{.tick_rate_hz = kTickRate,

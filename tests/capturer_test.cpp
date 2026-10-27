@@ -562,6 +562,7 @@ TEST_F(CapturerTest, ADegradedCaptureIsStoppedOnceFinishedKeepingItsLoss) {
 // A record the codec cannot carry is the server's own bug, not the capture's
 // loss: in either mode it is the runtime's broken invariant (ADR-0033), and
 // nothing of it is written.
+// Requirements: NFR-18
 TEST_F(CapturerTest, ARecordTheCodecCannotCarryIsABrokenInvariantInEitherMode) {
   for (const CaptureMode mode : {CaptureMode::kOptional, CaptureMode::kStrict}) {
     const std::filesystem::path directory = directory_ / (mode == CaptureMode::kStrict ? "strict" : "optional");

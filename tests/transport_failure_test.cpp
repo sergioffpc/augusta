@@ -171,6 +171,7 @@ class TransportFailureTest : public ::testing::Test {
   Session session_;
 };
 
+// Requirements: NFR-07, NFR-18
 TEST_F(TransportFailureTest, AClientJoinsWithNoFailureAndEverySentMessageIsCounted) {
   session_.Connect();
 
@@ -186,6 +187,7 @@ TEST_F(TransportFailureTest, AClientJoinsWithNoFailureAndEverySentMessageIsCount
 // A reply the local transport refused never reaches the client and is never
 // counted as sent: the metrics count the transport's accepted work, not the
 // Host's attempts.
+// Requirements: NFR-07, NFR-18
 TEST_F(TransportFailureTest, AServerSendTheLocalTransportRefusesIsTheRuntimesFailureAndIsNotCounted) {
   host_faults_.Arm(Site::kTransportSend, "socket closed", Faults::kEveryTime);
   session_.Connect();
@@ -206,6 +208,7 @@ TEST_F(TransportFailureTest, AServerSendTheLocalTransportRefusesIsTheRuntimesFai
 // A runtime that has failed sends nothing more, valid messages included, until
 // its worker stops it: the Roster that follows a refused Join accepted is not
 // sent either.
+// Requirements: NFR-18
 TEST_F(TransportFailureTest, AfterAServerSendFailsTheHostSendsNothingMore) {
   host_faults_.Arm(Site::kTransportSend, "socket closed");
   session_.Connect();
@@ -220,6 +223,7 @@ TEST_F(TransportFailureTest, AfterAServerSendFailsTheHostSendsNothingMore) {
   EXPECT_FALSE(session_.GetServerView()->lobby.has_value());
 }
 
+// Requirements: NFR-18
 TEST_F(TransportFailureTest, AServerReceiveTheLocalTransportFailsIsTheRuntimesFailure) {
   host_faults_.Arm(Site::kTransportReceive, "poll group gone");
 
@@ -232,6 +236,7 @@ TEST_F(TransportFailureTest, AServerReceiveTheLocalTransportFailsIsTheRuntimesFa
 }
 
 // Exactly one worker escalates it, so the supervisor reports it once.
+// Requirements: NFR-18
 TEST_F(TransportFailureTest, ATransportFailureIsTakenOnlyOnce) {
   host_faults_.Arm(Site::kTransportReceive, "poll group gone", 2);
   host_.PumpNetwork(std::chrono::steady_clock::now());
@@ -243,6 +248,7 @@ TEST_F(TransportFailureTest, ATransportFailureIsTakenOnlyOnce) {
 
 // The other side of the same seam: a peer's malformed input is the peer's,
 // dropped and judged, and the server's transport has not failed.
+// Requirements: NFR-18
 TEST_F(TransportFailureTest, MalformedPeerInputIsThePeersOutcomeNotATransportFailure) {
   augusta::link::RawClient intruder;
   intruder.Connect({.address = host_.ListenEndpoint().address});
@@ -265,6 +271,7 @@ TEST_F(TransportFailureTest, MalformedPeerInputIsThePeersOutcomeNotATransportFai
   EXPECT_FALSE(host_.TakeTransportFailure().has_value());
 }
 
+// Requirements: NFR-18
 TEST_F(TransportFailureTest, APeerLeavingIsItsSessionsOutcomeNotATransportFailure) {
   session_.Connect();
   ASSERT_TRUE(ExchangeUntil([&] { return session_.GetServerView()->accepted.has_value(); }));
@@ -278,6 +285,7 @@ TEST_F(TransportFailureTest, APeerLeavingIsItsSessionsOutcomeNotATransportFailur
   EXPECT_FALSE(session_.TakeTransportFailure().has_value());
 }
 
+// Requirements: NFR-18
 TEST_F(TransportFailureTest, AClientSendTheLocalTransportRefusesIsTheClientsRuntimeFailure) {
   session_faults_.Arm(Site::kTransportSend, "socket closed", Faults::kEveryTime);
   session_.Connect();
@@ -298,6 +306,7 @@ TEST_F(TransportFailureTest, AClientSendTheLocalTransportRefusesIsTheClientsRunt
 
 // As the Host: once its send has failed, the Session sends nothing more, not
 // even a Ready the transport would now take.
+// Requirements: NFR-18
 TEST_F(TransportFailureTest, AfterAClientSendFailsTheSessionSendsNothingMore) {
   session_.Connect();
   ASSERT_TRUE(ExchangeUntil([&] { return session_.GetServerView()->lobby.has_value(); }));
@@ -313,6 +322,7 @@ TEST_F(TransportFailureTest, AfterAClientSendFailsTheSessionSendsNothingMore) {
   EXPECT_EQ(host_.Metrics().messages_received.Total(), received) << "a Ready was sent after the runtime failed";
 }
 
+// Requirements: NFR-18
 TEST_F(TransportFailureTest, AClientReceiveTheLocalTransportFailsIsTheClientsRuntimeFailure) {
   session_.Connect();
   ASSERT_TRUE(
@@ -330,6 +340,7 @@ TEST_F(TransportFailureTest, AClientReceiveTheLocalTransportFailsIsTheClientsRun
 // Through the Runner, as a client runs live: the failure becomes the Runner's
 // first cause, and both threads stop. Whichever of its threads takes it first
 // escalates it, so the thread named is either; the failure is the same.
+// Requirements: NFR-18
 TEST_F(TransportFailureTest, AClientTransportFailureStopsTheRunnerWithATypedFailure) {
   session_faults_.Arm(Site::kTransportReceive, "connection handle gone", Faults::kEveryTime);
   const Runner runner(
@@ -349,6 +360,7 @@ TEST_F(TransportFailureTest, AClientTransportFailureStopsTheRunnerWithATypedFail
 // Through ServerRuntime, as augustad runs: both threads stop on the failure,
 // and Run returns it as the runtime's first cause for the application boundary
 // to report. Whichever thread takes it first escalates it.
+// Requirements: NFR-18
 TEST(ServerRuntimeTransportFailureTest, AServerTransportFailureEndsRunWithATypedFailure) {
   Faults faults;
   faults.Arm(Site::kTransportReceive, "poll group gone", Faults::kEveryTime);
@@ -375,6 +387,7 @@ TEST(ServerRuntimeTransportFailureTest, AServerTransportFailureEndsRunWithATyped
 // the metrics endpoint's start, before the Network I/O thread's, makes differ
 // from machine to machine: the first rounds stop before the failure, the last
 // ones after.
+// Requirements: NFR-18
 TEST(ServerRuntimeTransportFailureTest, ATransportFailureRacingAStopFromOutsideEndsRunWithEveryThreadJoined) {
   constexpr int kRounds = 8;
   std::chrono::steady_clock::duration unstopped_run{};
@@ -416,6 +429,7 @@ TEST(ServerRuntimeTransportFailureTest, ATransportFailureRacingAStopFromOutsideE
 // cannot encode a Join accepted: a broken invariant (ADR-0033), sent to no one,
 // after which the Host sends nothing more - not even the Roster the join
 // changed.
+// Requirements: NFR-18
 TEST(HostInvariantFailureTest, AJoinAcceptedTheProtocolCannotCarryIsAnInvariantFailureAndNothingIsSent) {
   HostConfig config = HostConfigWith(nullptr);
   config.parameters.rifle.recoil_pattern.resize(augusta::limits::kMaxRecoilKicks + 1);
@@ -448,6 +462,7 @@ TEST(HostInvariantFailureTest, AJoinAcceptedTheProtocolCannotCarryIsAnInvariantF
 
 // A message the peer's connection dropped was never sent, so the metrics do not
 // count it, as they do not count one the local transport refused.
+// Requirements: NFR-07, NFR-18
 TEST(SendCountedTest, AMessageThePeersConnectionDroppedIsNotCounted) {
   augusta::link::Server server(Endpoint{.address = "127.0.0.1:0"});
   augusta::host::HostMetrics metrics(kTickRate);
