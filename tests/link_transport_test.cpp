@@ -144,6 +144,7 @@ TEST(EncodeTest, AServersMessageIsItsProtocolBytesUnderItsType) {
 
 // A refusal no case names is no message the protocol carries: the broken
 // invariant, and nothing to send.
+// Requirements: NFR-18
 TEST(EncodeTest, AMessageTheProtocolCannotCarryIsABrokenInvariant) {
   constexpr auto kCorrupted = static_cast<augusta::link::JoinRefusal>(200);
   const auto encoded = augusta::link::Encode(kCorrupted);
@@ -180,6 +181,7 @@ TEST(ReaddressedTest, IsTheStateEncodedForItsRecipient) {
 }
 
 // Only an Authoritative State has a recipient's own fields to readdress.
+// Requirements: NFR-18
 TEST(ReaddressedTest, AnyOtherMessageIsABrokenInvariant) {
   const auto shot = augusta::link::Encode(augusta::link::Shot{});
   ASSERT_TRUE(shot.has_value());

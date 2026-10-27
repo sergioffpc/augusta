@@ -2036,6 +2036,7 @@ TEST_F(FirstMatchWonCaptureHostTest, AMatchEveryPlayerLeftEndsAsADrawWhoeverWonT
   EXPECT_FALSE(end.winner.has_value());
 }
 
+// Requirements: NFR-18
 TEST(CaptureHostConfigTest, AHostRefusesACaptureDirectoryItCannotCreate) {
   const std::filesystem::path file =
       std::filesystem::temp_directory_path() / ("augusta_capture_file_" + std::to_string(std::random_device{}()));
@@ -2623,6 +2624,7 @@ TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseTickRateFailsTheChecks
 }
 
 // What a client is told when its session ends on its own.
+// Requirements: NFR-18
 TEST(SessionFailureTest, ASessionThatNeverConnectedHasNoFailure) {
   Session session(TestSessionConfig(UnusedLoopbackEndpoint()), EmptyWorld());
 
@@ -2676,6 +2678,7 @@ TEST(SessionFailureTest, AServerThatGoesAwayDuringAMatchIsAConnectionLost) {
   EXPECT_EQ(failure->kind, FailureKind::kConnectionLost);
 }
 
+// Requirements: NFR-18
 TEST(SessionFailureTest, EndingTheSessionOneselfIsNotAFailure) {
   Host host(TestHostConfig(),
             Scenario{.collision = {},

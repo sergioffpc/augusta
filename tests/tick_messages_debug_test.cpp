@@ -208,6 +208,7 @@ TEST(TickMessagesDebugTest, AShotJudgementWhoseShooterHasNoPeerIsNotSent) {
 
 // Like every message of the tick, one the protocol cannot carry, its Body part
 // corrupted, sends none of the tick's.
+// Requirements: NFR-18
 TEST(TickMessagesDebugTest, AShotJudgementTheProtocolCannotCarryIsAnInvariantFailureWithNothingSent) {
   TickResult result = ATickWithAShotJudgement();
   result.shot_judgements.front().part = static_cast<augusta::body_part::BodyPart>(99);

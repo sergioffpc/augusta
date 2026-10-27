@@ -843,6 +843,7 @@ TEST_F(ReplayViewerTest, AReplayListQueryGetsTheServersList) {
   EXPECT_FALSE(query.GetFailure().has_value());
 }
 
+// Requirements: NFR-18
 TEST(ReplayListQueryTest, AServerThatIsNotThereIsUnreachable) {
   Endpoint gone;
   {
@@ -971,6 +972,7 @@ TEST(LiveServerReplayTest, ALiveServerRefusesReplayRequestsAsNoReplayServer) {
   EXPECT_EQ(viewer.Refusal(), protocol::JoinRefusalWire::kNotAReplayServer);
 }
 
+// Requirements: NFR-18
 TEST(ReplayServerConfigTest, AReplayServerRefusesACapturesDirectoryThatIsNone) {
   try {
     ReplayServer(ReplayServerConfig{.tick_rate_hz = kTickRate,
