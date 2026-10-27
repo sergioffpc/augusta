@@ -60,6 +60,7 @@ TEST(LoadCharacterMeshTest, ResolvesTheVisualMeshOfTheCharacterAPathNames) {
   EXPECT_EQ(mesh->indices, (std::vector<std::uint32_t>{0, 1, 2}));
 }
 
+// Requirements: US-22
 TEST(LoadCharacterMeshTest, AMissingVisualMeshIsACharacterErrorNamingTheCharacter) {
   const auto mesh = LoadCharacterMesh(kCharacters, "sniper", ResolveNothing());
 
@@ -71,6 +72,7 @@ TEST(LoadCharacterMeshTest, AMissingVisualMeshIsACharacterErrorNamingTheCharacte
   EXPECT_NE(DescribeCharacterError(mesh.error()).find("sniper"), std::string::npos);
 }
 
+// Requirements: US-22
 TEST(LoadCharacterMeshTest, ACharacterOutsideThePacksCharacterListIsACharacterError) {
   for (const std::string_view character : {"", "characters/nobody", "medic/"}) {
     const auto mesh = LoadCharacterMesh(kCharacters, character, ResolveNothing());
@@ -82,6 +84,7 @@ TEST(LoadCharacterMeshTest, ACharacterOutsideThePacksCharacterListIsACharacterEr
   }
 }
 
+// Requirements: US-22
 TEST(LoadCharacterEyeTest, ResolvesTheEyeOfTheCharacterAPathNames) {
   std::string resolved;
   const auto eye = LoadCharacterEye("medic", [&](std::string_view path) {
@@ -94,6 +97,7 @@ TEST(LoadCharacterEyeTest, ResolvesTheEyeOfTheCharacterAPathNames) {
   ExpectNear(*eye, kEye);
 }
 
+// Requirements: US-22
 TEST(LoadCharacterEyeTest, AMissingEyeIsACharacterErrorNamingTheCharacter) {
   const auto eye = LoadCharacterEye("sniper", [](std::string_view) {
     return std::expected<EyeData, ResolveError>(std::unexpected(ResolveError::kNotFound));
