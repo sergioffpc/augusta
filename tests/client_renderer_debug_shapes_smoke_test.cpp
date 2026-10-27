@@ -90,6 +90,7 @@ class RendererDebugShapesSmokeTest : public RendererSmokeTest {
   }
 };
 
+// Requirements: US-30
 TEST_F(RendererDebugShapesSmokeTest, DrawsASegmentInItsColourWhereTheCameraSeesIt) {
   SetWorld(*renderer_);
   debug::Shapes shapes;
@@ -108,6 +109,7 @@ TEST_F(RendererDebugShapesSmokeTest, DrawsASegmentInItsColourWhereTheCameraSeesI
   EXPECT_TRUE(IsClearColor(Pixel(frame, kCentreX, kCentreY + 2)));
 }
 
+// Requirements: US-30
 TEST_F(RendererDebugShapesSmokeTest, HidesAShapeBehindTheScene) {
   SetWorld(*renderer_);
   debug::Shapes shapes;
@@ -122,6 +124,7 @@ TEST_F(RendererDebugShapesSmokeTest, HidesAShapeBehindTheScene) {
   EXPECT_GT(Pixel(frame, kRightX, kCentreY)[kBlue], kClearChannel + kTolerance);
 }
 
+// Requirements: US-30
 TEST_F(RendererDebugShapesSmokeTest, DrawsAShapeMarkedThroughWallsOverTheScene) {
   SetWorld(*renderer_);
   debug::Shapes shapes;
@@ -133,6 +136,7 @@ TEST_F(RendererDebugShapesSmokeTest, DrawsAShapeMarkedThroughWallsOverTheScene) 
   EXPECT_TRUE(IsExactly(Pixel(frame, kRightX, kCentreY), kPureRed));
 }
 
+// Requirements: US-30
 TEST_F(RendererDebugShapesSmokeTest, BlendsATranslucentShapeWithWhatIsBehindIt) {
   SetWorld(*renderer_);
   const CapturedFrame without = RenderShapes({});
@@ -153,6 +157,7 @@ TEST_F(RendererDebugShapesSmokeTest, BlendsATranslucentShapeWithWhatIsBehindIt) 
   EXPECT_EQ(blended[3], kOpaque);
 }
 
+// Requirements: US-30
 TEST_F(RendererDebugShapesSmokeTest, DrawsShapesUnderTheDebugHud) {
   renderer_->SetCamera(kCamera);
   debug::Shapes shapes;
@@ -175,6 +180,7 @@ TEST_F(RendererDebugShapesSmokeTest, DrawsShapesUnderTheDebugHud) {
   EXPECT_GT(other_than_red(frame), 0U);
 }
 
+// Requirements: US-30
 TEST_F(RendererDebugShapesSmokeTest, DrawsTheFrameAsBeforeOnceHandedNoShapes) {
   SetWorld(*renderer_);
   const CapturedFrame before = RenderFrames();

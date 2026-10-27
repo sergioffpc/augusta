@@ -707,6 +707,7 @@ class ReplayViewerTest : public ReplayServerTest {
 
 // The replay server logs a Replay's start with the Run ID its viewer sent
 // (ADR-0038), as a live server logs an admission.
+// Requirements: NFR-19
 TEST_F(ReplayViewerTest, AReplaysStartIsLoggedWithTheRunIdItsViewerSent) {
   const std::string name = CaptureAKill(directory_.Path());
   if (name.empty()) {

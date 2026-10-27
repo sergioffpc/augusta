@@ -133,6 +133,7 @@ TEST(ParseClientConfigTest, RejectsADebugNetworkPanelThatIsNotTrueOrFalse) {
   EXPECT_EQ(config.error().subject, "debug.network.panel");
 }
 
+// Requirements: US-30
 TEST(ParseClientConfigTest, PhysicsRecordingIsOffByDefault) {
   const auto config = ParseClientConfig(
       "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: k.pub\n", kFileDir);
@@ -141,6 +142,7 @@ TEST(ParseClientConfigTest, PhysicsRecordingIsOffByDefault) {
   EXPECT_FALSE(config->debug.physics_recording);
 }
 
+// Requirements: US-30
 TEST(ParseClientConfigTest, DebugPhysicsRecordingTrueRecordsPhysics) {
   const auto config = ParseClientConfig(
       "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: "
@@ -151,6 +153,7 @@ TEST(ParseClientConfigTest, DebugPhysicsRecordingTrueRecordsPhysics) {
   EXPECT_TRUE(config->debug.physics_recording);
 }
 
+// Requirements: US-30
 TEST(ParseClientConfigTest, RejectsADebugPhysicsRecordingThatIsNotTrueOrFalse) {
   const auto config = ParseClientConfig(
       "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: "
@@ -180,6 +183,7 @@ class PhysicsSwitchTest : public testing::TestWithParam<PhysicsSwitch> {
   }
 };
 
+// Requirements: US-30
 TEST_P(PhysicsSwitchTest, IsOffByDefault) {
   const auto config = ParseClientConfig(
       "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: k.pub\n", kFileDir);
@@ -188,6 +192,7 @@ TEST_P(PhysicsSwitchTest, IsOffByDefault) {
   EXPECT_FALSE(config->debug.physics.*GetParam().read);
 }
 
+// Requirements: US-30
 TEST_P(PhysicsSwitchTest, TrueTurnsItOn) {
   const auto config = ParseWith("true");
 
@@ -195,6 +200,7 @@ TEST_P(PhysicsSwitchTest, TrueTurnsItOn) {
   EXPECT_TRUE(config->debug.physics.*GetParam().read);
 }
 
+// Requirements: US-30
 TEST_P(PhysicsSwitchTest, RejectsAValueThatIsNotTrueOrFalse) {
   const auto config = ParseWith("maybe");
 

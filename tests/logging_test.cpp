@@ -29,11 +29,13 @@ const std::chrono::steady_clock::time_point kStart{std::chrono::seconds{100}};
 // 2024-02-01T12:00:00Z
 const std::chrono::system_clock::time_point kFixedTime{std::chrono::seconds{1706788800}};
 
+// Requirements: NFR-19
 TEST(LoggingFormat, LineIsUtcTimestampLevelThenMessage) {
   EXPECT_EQ(FormatLine(kFixedTime, Severity::kInfo, "subsystem=client event=starting", false),
             "2024-02-01T12:00:00Z INFO subsystem=client event=starting");
 }
 
+// Requirements: NFR-19
 TEST(LoggingFormat, LevelIsUpperCase) {
   EXPECT_EQ(FormatLine(kFixedTime, Severity::kTrace, "m", false), "2024-02-01T12:00:00Z TRACE m");
   EXPECT_EQ(FormatLine(kFixedTime, Severity::kDebug, "m", false), "2024-02-01T12:00:00Z DEBUG m");
@@ -42,16 +44,19 @@ TEST(LoggingFormat, LevelIsUpperCase) {
   EXPECT_EQ(FormatLine(kFixedTime, Severity::kCritical, "m", false), "2024-02-01T12:00:00Z CRITICAL m");
 }
 
+// Requirements: NFR-19
 TEST(LoggingFormat, SubSecondTimeIsDropped) {
   EXPECT_EQ(FormatLine(kFixedTime + std::chrono::milliseconds{999}, Severity::kInfo, "m", false),
             "2024-02-01T12:00:00Z INFO m");
 }
 
+// Requirements: NFR-19
 TEST(LoggingFormat, ColorWrapsOnlyTheLevel) {
   EXPECT_EQ(FormatLine(kFixedTime, Severity::kInfo, "m", true), "2024-02-01T12:00:00Z \x1b[32mINFO\x1b[m m");
   EXPECT_EQ(FormatLine(kFixedTime, Severity::kError, "m", true), "2024-02-01T12:00:00Z \x1b[31m\x1b[1mERROR\x1b[m m");
 }
 
+// Requirements: NFR-19
 TEST(LoggingInit, CanBeCalledTwiceAndLoggedThrough) {
   augusta::logging::Init();
   augusta::logging::Init();
@@ -76,6 +81,7 @@ bool IsInfoLineWrittenBetween(const std::string& written, std::string_view messa
   return false;
 }
 
+// Requirements: NFR-19
 TEST(LoggingRuntimeLevel, CallsUnderItDoNotEvaluateTheirArguments) {
   SetLogLevel(Severity::kInfo);
   int evaluated = 0;
@@ -87,6 +93,7 @@ TEST(LoggingRuntimeLevel, CallsUnderItDoNotEvaluateTheirArguments) {
   EXPECT_EQ(evaluated, 0);
 }
 
+// Requirements: NFR-19
 TEST(LoggingRuntimeLevel, CallsAtOrAboveItAreWrittenInTheLineFormat) {
   augusta::logging::Init();
   SetLogLevel(Severity::kInfo);
@@ -116,6 +123,7 @@ void ClearEveryContextField() {
   ClearContext(ContextField::kMatch);
 }
 
+// Requirements: NFR-10
 TEST(LoggingContext, ALineWrittenWithNoContextCarriesNoField) {
   ClearEveryContextField();
 
@@ -126,6 +134,7 @@ TEST(LoggingContext, ALineWrittenWithNoContextCarriesNoField) {
   EXPECT_TRUE(IsInfoLineWrittenBetween(written, "subsystem=test event=plain", before, after)) << written;
 }
 
+// Requirements: NFR-10
 TEST(LoggingContext, ALineCarriesTheRunOnceItIsSet) {
   ClearEveryContextField();
   SetContext(ContextField::kRun, "017f22e2-79b0-7cc3-98c4-dc0c0c07398f");
@@ -140,6 +149,7 @@ TEST(LoggingContext, ALineCarriesTheRunOnceItIsSet) {
       << written;
 }
 
+// Requirements: NFR-10
 TEST(LoggingContext, SessionAndMatchFollowTheRunWhileSetAndAreGoneOnceCleared) {
   ClearEveryContextField();
   SetContext(ContextField::kMatch, "m1");
@@ -162,6 +172,7 @@ TEST(LoggingContext, SessionAndMatchFollowTheRunWhileSetAndAreGoneOnceCleared) {
   EXPECT_TRUE(IsInfoLineWrittenBetween(cleared, "subsystem=test event=match_end run=r1", before, after)) << cleared;
 }
 
+// Requirements: NFR-10
 TEST(LoggingContext, SettingAFieldAgainReplacesIt) {
   ClearEveryContextField();
   SetContext(ContextField::kSession, "s1");
@@ -177,6 +188,7 @@ TEST(LoggingContext, SettingAFieldAgainReplacesIt) {
 
 // What a crash handler reads of the context (ADR-0047): the fields as a line
 // ends in them, and none once cleared.
+// Requirements: NFR-10
 TEST(LoggingContext, ACopyOfTheContextIsTheFieldsAsALineEndsInThem) {
   ClearEveryContextField();
   SetContext(ContextField::kRun, "r1");
@@ -191,6 +203,7 @@ TEST(LoggingContext, ACopyOfTheContextIsTheFieldsAsALineEndsInThem) {
   EXPECT_EQ(augusta::logging::CopyContext(cleared), "");
 }
 
+// Requirements: NFR-10
 TEST(LoggingContext, ACopyLeavesOutAFieldTooLongForItAndKeepsTheOthers) {
   ClearEveryContextField();
   SetContext(ContextField::kRun, std::string(augusta::logging::kContextCapacity, 'r'));
@@ -211,6 +224,7 @@ std::string ReadWhole(const std::filesystem::path& file) {
   return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
 }
 
+// Requirements: NFR-19
 TEST(LoggingFileSink, ALineReachesTheFileAsItIsWrittenAndUncolored) {
   ClearEveryContextField();
   const std::filesystem::path file =
@@ -238,6 +252,7 @@ TEST(LoggingFileSink, ALineReachesTheFileAsItIsWrittenAndUncolored) {
 
 // Before it is removed a line reaches the file; after, none does, and the file
 // is closed, so it can be deleted.
+// Requirements: NFR-19
 TEST(LoggingFileSink, ALineAfterTheSinkIsRemovedReachesTheFileNoMore) {
   ClearEveryContextField();
   const std::filesystem::path file =
@@ -257,6 +272,7 @@ TEST(LoggingFileSink, ALineAfterTheSinkIsRemovedReachesTheFileNoMore) {
   EXPECT_TRUE(std::filesystem::remove(file, error)) << error.message();
 }
 
+// Requirements: NFR-19
 TEST(LoggingFileSink, AFileThatCannotBeOpenedIsAnError) {
   // A directory where the file would be.
   const std::filesystem::path directory = std::filesystem::path(testing::TempDir()) / "augusta_logging_test_dir";
@@ -269,6 +285,7 @@ TEST(LoggingFileSink, AFileThatCannotBeOpenedIsAnError) {
   EXPECT_EQ(added.error().path, directory);
 }
 
+// Requirements: NFR-19
 TEST(LoggingFileSink, AFileWhoseDirectoryCannotBeMadeIsAnErrorNamingTheDirectory) {
   // A file where the directory would be.
   const std::filesystem::path root = std::filesystem::path(testing::TempDir()) / "augusta_logging_test_file_parent";
@@ -286,6 +303,7 @@ TEST(LoggingFileSink, AFileWhoseDirectoryCannotBeMadeIsAnErrorNamingTheDirectory
       << added.error().path;
 }
 
+// Requirements: NFR-19
 TEST(LoggingRuntimeLevel, LimitedWarningUnderItTakesNoThrottleSlot) {
   SetLogLevel(Severity::kError);
   Throttle throttle{std::chrono::hours{1}};
@@ -297,6 +315,7 @@ TEST(LoggingRuntimeLevel, LimitedWarningUnderItTakesNoThrottleSlot) {
   EXPECT_EQ(throttle.Admit(std::chrono::steady_clock::now()), 0U);
 }
 
+// Requirements: NFR-19
 TEST(LoggingRuntimeLevel, EveryLevelsLimitedVariantUnderItTakesNoThrottleSlot) {
   SetLogLevel(Severity::kCritical);
   Throttle throttle{std::chrono::hours{1}};
@@ -311,6 +330,7 @@ TEST(LoggingRuntimeLevel, EveryLevelsLimitedVariantUnderItTakesNoThrottleSlot) {
   EXPECT_EQ(throttle.Admit(std::chrono::steady_clock::now()), 0U);
 }
 
+// Requirements: NFR-19
 TEST(LoggingRuntimeLevel, ALimitedLineIsWrittenOnceAnInterval) {
   augusta::logging::Init();
   SetLogLevel(Severity::kInfo);
@@ -328,6 +348,7 @@ TEST(LoggingRuntimeLevel, ALimitedLineIsWrittenOnceAnInterval) {
   EXPECT_EQ(throttle.Admit(std::chrono::steady_clock::now()), std::nullopt);
 }
 
+// Requirements: NFR-19
 TEST(LoggingParseSeverity, ParsesEachName) {
   EXPECT_EQ(ParseSeverity("trace"), Severity::kTrace);
   EXPECT_EQ(ParseSeverity("debug"), Severity::kDebug);
@@ -337,18 +358,21 @@ TEST(LoggingParseSeverity, ParsesEachName) {
   EXPECT_EQ(ParseSeverity("critical"), Severity::kCritical);
 }
 
+// Requirements: NFR-19
 TEST(LoggingParseSeverity, RejectsAnythingElse) {
   EXPECT_EQ(ParseSeverity("TRACE"), std::nullopt);
   EXPECT_EQ(ParseSeverity("verbose"), std::nullopt);
   EXPECT_EQ(ParseSeverity(""), std::nullopt);
 }
 
+// Requirements: NFR-19
 TEST(LoggingThrottle, FirstEventIsLetThroughWithNothingSuppressed) {
   Throttle throttle{std::chrono::seconds{1}};
 
   EXPECT_EQ(throttle.Admit(kStart), 0U);
 }
 
+// Requirements: NFR-19
 TEST(LoggingThrottle, EventsWithinTheIntervalAreTurnedAway) {
   Throttle throttle{std::chrono::seconds{1}};
   throttle.Admit(kStart);
@@ -357,6 +381,7 @@ TEST(LoggingThrottle, EventsWithinTheIntervalAreTurnedAway) {
   EXPECT_EQ(throttle.Admit(kStart + std::chrono::milliseconds{999}), std::nullopt);
 }
 
+// Requirements: NFR-19
 TEST(LoggingThrottle, NextEventAfterTheIntervalReportsHowManyWereTurnedAway) {
   Throttle throttle{std::chrono::seconds{1}};
   throttle.Admit(kStart);
@@ -366,6 +391,7 @@ TEST(LoggingThrottle, NextEventAfterTheIntervalReportsHowManyWereTurnedAway) {
   EXPECT_EQ(throttle.Admit(kStart + std::chrono::seconds{1}), 2U);
 }
 
+// Requirements: NFR-19
 TEST(LoggingThrottle, CountStartsOverAfterAnEventIsLetThrough) {
   Throttle throttle{std::chrono::seconds{1}};
   throttle.Admit(kStart);
@@ -375,6 +401,7 @@ TEST(LoggingThrottle, CountStartsOverAfterAnEventIsLetThrough) {
   EXPECT_EQ(throttle.Admit(kStart + std::chrono::seconds{2}), 0U);
 }
 
+// Requirements: NFR-19
 TEST(LoggingThrottle, IntervalRunsFromTheLastEventLetThrough) {
   Throttle throttle{std::chrono::seconds{1}};
   throttle.Admit(kStart);
@@ -383,6 +410,7 @@ TEST(LoggingThrottle, IntervalRunsFromTheLastEventLetThrough) {
   EXPECT_EQ(throttle.Admit(kStart + std::chrono::milliseconds{2000}), std::nullopt);
 }
 
+// Requirements: NFR-19
 TEST(LoggingThrottle, MessageNamesTheSuppressedCountOnlyWhenThereWasOne) {
   EXPECT_EQ(WithSuppressed("event=dropped", 0), "event=dropped");
   EXPECT_EQ(WithSuppressed("event=dropped", 7), "event=dropped suppressed=7");

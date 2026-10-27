@@ -87,6 +87,7 @@ void ExpectCapsuleOf(const Capsule& drawn, const BodyState& body) {
   EXPECT_FLOAT_EQ(drawn.radius, expected.radius);
 }
 
+// Requirements: US-30
 TEST(ServerBodiesTest, EveryBodyIsItsCapsuleAtTheNewestUpdateNotBetweenTheUpdates) {
   const std::vector<WorldSnapshot> updates{
       Update(10, {{.entity = kOther, .state = BodyAt(Vec3(0.0F, 0.0F, 0.0F)), .yaw = 0.0F}}),
@@ -100,6 +101,7 @@ TEST(ServerBodiesTest, EveryBodyIsItsCapsuleAtTheNewestUpdateNotBetweenTheUpdate
   EXPECT_EQ(shapes.capsules.front().color, kServerBodyColor);
 }
 
+// Requirements: US-30
 TEST(ServerBodiesTest, EachPlayerIsDrawnInItsStance) {
   const std::vector<WorldSnapshot> updates{
       Update(11, {{.entity = kOther, .state = BodyAt(Vec3(2.0F, 0.0F, 0.0F), Stance::kCrouching), .yaw = 0.0F},
@@ -113,6 +115,7 @@ TEST(ServerBodiesTest, EachPlayerIsDrawnInItsStance) {
   ExpectCapsuleOf(shapes.capsules[1], BodyAt(Vec3(-2.0F, 0.0F, 0.0F), Stance::kProne));
 }
 
+// Requirements: US-30
 TEST(ServerBodiesTest, TheLocalPlayersServerBodyIsDrawnBesideItsPredictedOne) {
   const BodyState server = BodyAt(Vec3(5.0F, 0.0F, 0.0F));
   const BodyState predicted = BodyAt(Vec3(5.5F, 0.0F, 0.0F), Stance::kCrouching);
@@ -127,6 +130,7 @@ TEST(ServerBodiesTest, TheLocalPlayersServerBodyIsDrawnBesideItsPredictedOne) {
   EXPECT_EQ(shapes.capsules[1].color, kPredictedBodyColor);
 }
 
+// Requirements: US-30
 TEST(ServerBodiesTest, NoPredictedBodyIsDrawnForALocalPlayerTheUpdateNoLongerLists) {
   const std::vector<WorldSnapshot> updates{
       Update(11, {{.entity = kOther, .state = BodyAt(Vec3(2.0F, 0.0F, 0.0F)), .yaw = 0.0F}})};
@@ -137,10 +141,12 @@ TEST(ServerBodiesTest, NoPredictedBodyIsDrawnForALocalPlayerTheUpdateNoLongerLis
   EXPECT_EQ(shapes.capsules.front().color, kServerBodyColor);
 }
 
+// Requirements: US-30
 TEST(ServerBodiesTest, NothingIsDrawnWithoutAnUpdate) {
   EXPECT_EQ(ServerBodiesOn().BuildShapes(FrameOf({}), State{}), Shapes{});
 }
 
+// Requirements: US-30
 TEST(ServerBodiesTest, NothingIsDrawnWhileTheOverlayIsOff) {
   const std::vector<WorldSnapshot> updates{
       Update(11, {{.entity = kOther, .state = BodyAt(Vec3(2.0F, 0.0F, 0.0F)), .yaw = 0.0F}})};
@@ -150,6 +156,7 @@ TEST(ServerBodiesTest, NothingIsDrawnWhileTheOverlayIsOff) {
   EXPECT_EQ(PhysicsOverlays(PhysicsOverlaysStart{}).BuildShapes(FrameOf(updates), State{}), Shapes{});
 }
 
+// Requirements: US-30
 TEST(ServerBodiesTest, TheBodiesAreHiddenBehindTheWorldUntilThroughWallsIsOn) {
   const std::vector<WorldSnapshot> updates{Update(11, {{.entity = kLocal, .state = BodyAt({}), .yaw = 0.0F}})};
   PhysicsOverlays overlays = ServerBodiesOn();
@@ -213,6 +220,7 @@ void ExpectOutlinesOf(const std::vector<Segment>& segments, const std::vector<hi
   }
 }
 
+// Requirements: US-30
 TEST(HitboxesTest, AnotherPlayersHitboxesAreOutlinedWhereItsInterpolatedPoseStands) {
   const Shapes shapes =
       HitboxesOn().BuildShapes(FrameOf({}), ShowingOther({.position = Vec3(3.0F, 0.0F, -1.0F), .velocity = {}}));
@@ -225,6 +233,7 @@ TEST(HitboxesTest, AnotherPlayersHitboxesAreOutlinedWhereItsInterpolatedPoseStan
   ExpectNear(shapes.segments[3].from, Vec3(3.0F, 0.3F, -1.0F));
 }
 
+// Requirements: US-30
 TEST(HitboxesTest, TheHitboxesAreTurnedAsTheServerPlacesThem) {
   const RemoteBody body{.position = Vec3(-2.0F, 0.5F, 4.0F),
                         .velocity = Vec3(1.0F, 0.0F, 0.0F),
@@ -238,6 +247,7 @@ TEST(HitboxesTest, TheHitboxesAreTurnedAsTheServerPlacesThem) {
                                                   {.position = body.position, .yaw = body.yaw, .stance = body.stance}));
 }
 
+// Requirements: US-30
 TEST(HitboxesTest, EachHitboxIsColouredByItsBodyPart) {
   const Shapes shapes = HitboxesOn().BuildShapes(FrameOf({}), ShowingOther({}));
 
@@ -251,6 +261,7 @@ TEST(HitboxesTest, EachHitboxIsColouredByItsBodyPart) {
   EXPECT_NE(HitboxColorOf(BodyPart::kLimb), HitboxColorOf(BodyPart::kHead));
 }
 
+// Requirements: US-30
 TEST(HitboxesTest, APlayerWhoseCharacterHasNoHitboxesKnownDrawsNothing) {
   // The control: the soldier's are drawn.
   ASSERT_FALSE(HitboxesOn().BuildShapes(FrameOf({}), ShowingOther({})).segments.empty());
@@ -258,6 +269,7 @@ TEST(HitboxesTest, APlayerWhoseCharacterHasNoHitboxesKnownDrawsNothing) {
   EXPECT_EQ(HitboxesOn().BuildShapes(FrameOf({}), ShowingOther({}, "medic")), Shapes{});
 }
 
+// Requirements: US-30
 TEST(HitboxesTest, NothingIsDrawnWhileTheOverlayIsOff) {
   // The control: on, the same frame draws.
   ASSERT_FALSE(HitboxesOn().BuildShapes(FrameOf({}), ShowingOther({})).segments.empty());
@@ -267,6 +279,7 @@ TEST(HitboxesTest, NothingIsDrawnWhileTheOverlayIsOff) {
   EXPECT_EQ(overlays.BuildShapes(FrameOf({}), ShowingOther({})), Shapes{});
 }
 
+// Requirements: US-30
 TEST(HitboxesTest, TheHitboxesAreHiddenBehindTheWorldUntilThroughWallsIsOn) {
   PhysicsOverlays overlays = HitboxesOn();
   const Shapes hidden = overlays.BuildShapes(FrameOf({}), ShowingOther({}));
@@ -308,6 +321,7 @@ const debug::Slider* SliderOf(const Panel& panel, const std::string& id) {
   return nullptr;
 }
 
+// Requirements: US-30
 TEST(CollisionTest, ThePredictionStatesLinesAreSegmentsInTheirOwnColours) {
   const FrameInput input = FrameWithLines({
       {.from = Vec3(0.0F, 0.0F, 0.0F), .to = Vec3(1.0F, 0.0F, 0.0F), .argb = 0xFFFF0000U},
@@ -331,6 +345,7 @@ TEST(CollisionTest, ThePredictionStatesLinesAreSegmentsInTheirOwnColours) {
   }
 }
 
+// Requirements: US-30
 TEST(CollisionTest, AGreyLineKeepsItsShade) {
   const Shapes shapes = CollisionOn().BuildShapes(
       FrameWithLines({{.from = {}, .to = Vec3(1.0F, 0.0F, 0.0F), .argb = 0xFF336699U}}), State{});
@@ -341,6 +356,7 @@ TEST(CollisionTest, AGreyLineKeepsItsShade) {
   EXPECT_FLOAT_EQ(shapes.segments[0].color.z, 0x99 / 255.0F);
 }
 
+// Requirements: US-30
 TEST(CollisionTest, NothingIsDrawnWhileCollisionIsOff) {
   const FrameInput input = FrameWithLines({{.from = {}, .to = Vec3(1.0F, 0.0F, 0.0F), .argb = 0xFFFF0000U}});
   // The control: on, the same frame draws.
@@ -349,10 +365,12 @@ TEST(CollisionTest, NothingIsDrawnWhileCollisionIsOff) {
   EXPECT_EQ(PhysicsOverlays(PhysicsOverlaysStart{}).BuildShapes(input, State{}), Shapes{});
 }
 
+// Requirements: US-30
 TEST(CollisionTest, NothingIsDrawnWhileThePredictionStateCarriesNoLines) {
   EXPECT_EQ(CollisionOn().BuildShapes(FrameOf({}), State{}), Shapes{});
 }
 
+// Requirements: US-30
 TEST(CollisionTest, ThroughWallsDrawsTheLinesOverTheWorld) {
   PhysicsOverlays overlays = CollisionOn();
   overlays.Update(PanelEvent("collision.through_walls", true));
@@ -364,6 +382,7 @@ TEST(CollisionTest, ThroughWallsDrawsTheLinesOverTheWorld) {
   EXPECT_TRUE(shapes.segments[0].through_walls);
 }
 
+// Requirements: US-30
 TEST(CollisionTest, TheVisualizationIsOnWithItsFlagsAndABoxOfTheRadiusAroundTheCamera) {
   const physics::Visualization visualization = CollisionOn().Visualization(Vec3(4.0F, 1.5F, -2.0F));
 
@@ -377,6 +396,7 @@ TEST(CollisionTest, TheVisualizationIsOnWithItsFlagsAndABoxOfTheRadiusAroundTheC
   EXPECT_FLOAT_EQ(visualization.cull_half_extent, 20.0F);
 }
 
+// Requirements: US-30
 TEST(CollisionTest, WithTheOverlayClosedTheVisualizationIsOff) {
   PhysicsOverlays overlays = CollisionOn();
   // The control: open, it is on.
@@ -388,6 +408,7 @@ TEST(CollisionTest, WithTheOverlayClosedTheVisualizationIsOff) {
   EXPECT_FALSE(PhysicsOverlays(PhysicsOverlaysStart{}).Visualization(Vec3(4.0F, 1.5F, -2.0F)).on);
 }
 
+// Requirements: US-30
 TEST(PhysicsPanelTest, TheCollisionFlagsComeBackAsStateChanges) {
   PhysicsOverlays overlays = CollisionOn();
 
@@ -414,6 +435,7 @@ TEST(PhysicsPanelTest, TheCollisionFlagsComeBackAsStateChanges) {
   }
 }
 
+// Requirements: US-30
 TEST(PhysicsPanelTest, ShowsTheCollisionToggleAndItsRadiusSliderFrom1To100Metres) {
   const Panel panel = CollisionOn().BuildPanel();
 
@@ -429,6 +451,7 @@ TEST(PhysicsPanelTest, ShowsTheCollisionToggleAndItsRadiusSliderFrom1To100Metres
   EXPECT_FLOAT_EQ(radius->max, 100.0F);
 }
 
+// Requirements: US-30
 TEST(PhysicsPanelTest, TheRadiusComesBackAsAStateChangeKeptWithin1To100Metres) {
   PhysicsOverlays overlays = CollisionOn();
 
@@ -443,6 +466,7 @@ TEST(PhysicsPanelTest, TheRadiusComesBackAsAStateChangeKeptWithin1To100Metres) {
   EXPECT_FLOAT_EQ(overlays.Visualization({}).cull_half_extent, 100.0F);
 }
 
+// Requirements: US-30
 TEST(PhysicsPanelTest, ShowsEachOverlaysToggleAndThroughWallsToggleAsTheStateHasThem) {
   const Panel panel = ServerBodiesOn().BuildPanel();
 
@@ -457,6 +481,7 @@ TEST(PhysicsPanelTest, ShowsEachOverlaysToggleAndThroughWallsToggleAsTheStateHas
   EXPECT_FALSE(through_walls->on);
 }
 
+// Requirements: US-30
 TEST(PhysicsPanelTest, ItsTogglesComeBackAsStateChanges) {
   PhysicsOverlays overlays(PhysicsOverlaysStart{});
   ASSERT_FALSE(overlays.IsOn(PhysicsOverlay::kServerBodies));
@@ -475,6 +500,7 @@ TEST(PhysicsPanelTest, ItsTogglesComeBackAsStateChanges) {
   EXPECT_TRUE(overlays.ThroughWalls(PhysicsOverlay::kServerBodies));
 }
 
+// Requirements: US-30
 TEST(PhysicsPanelTest, TheHitboxesTogglesComeBackAsStateChanges) {
   PhysicsOverlays overlays(PhysicsOverlaysStart{});
   const Panel before = overlays.BuildPanel();
@@ -495,6 +521,7 @@ TEST(PhysicsPanelTest, TheHitboxesTogglesComeBackAsStateChanges) {
   EXPECT_TRUE(ToggleOf(after, "hitboxes.through_walls")->on);
 }
 
+// Requirements: US-30
 TEST(PhysicsPanelTest, AnotherPanelsEventChangesNothing) {
   // The control: the same event of the Physics panel switches it.
   PhysicsOverlays control(PhysicsOverlaysStart{});
@@ -507,6 +534,7 @@ TEST(PhysicsPanelTest, AnotherPanelsEventChangesNothing) {
   EXPECT_FALSE(overlays.IsOn(PhysicsOverlay::kServerBodies));
 }
 
+// Requirements: US-30
 TEST(PhysicsPanelTest, AnOverlayStaysDrawnWithThePanelClosed) {
   const std::vector<WorldSnapshot> updates{
       Update(11, {{.entity = kOther, .state = BodyAt(Vec3(2.0F, 0.0F, 0.0F)), .yaw = 0.0F}})};
@@ -613,6 +641,7 @@ std::vector<hitbox::PlacedHitbox> SoldierAt(const Vec3& position) {
   return hitbox::Place(kSoldierHitboxes, {.position = position, .yaw = 0.0F});
 }
 
+// Requirements: US-30
 TEST(ShotJudgementsTest, ARoundFiredKeepsTheSeenHitboxesBesideTheJudgedOnes) {
   PhysicsOverlays overlays = ShotJudgementsOn();
   FireOneRound(overlays, SeenAt(Vec3(3.0F, 0.0F, -1.0F), 98), kNow);
@@ -625,6 +654,7 @@ TEST(ShotJudgementsTest, ARoundFiredKeepsTheSeenHitboxesBesideTheJudgedOnes) {
   ExpectOutlinesOf(SegmentsIn(shapes, kJudgedHitboxColor), SoldierAt(Vec3(3.5F, 0.0F, -1.0F)));
 }
 
+// Requirements: US-30
 TEST(ShotJudgementsTest, AJudgementPairsWithTheRecordOfItsSeenTime) {
   PhysicsOverlays overlays = ShotJudgementsOn();
   FireOneRound(overlays, SeenAt(Vec3(1.0F, 0.0F, 0.0F), 97, 0.5F), kNow);
@@ -638,6 +668,7 @@ TEST(ShotJudgementsTest, AJudgementPairsWithTheRecordOfItsSeenTime) {
                    SoldierAt(Vec3(2.0F, 0.0F, 0.0F)));
 }
 
+// Requirements: US-30
 TEST(ShotJudgementsTest, AJudgementWithNoRecordWithinATickIsDrawnJudgedOnly) {
   PhysicsOverlays overlays = ShotJudgementsOn();
   FireOneRound(overlays, SeenAt(Vec3(1.0F, 0.0F, 0.0F), 90), kNow);
@@ -649,6 +680,7 @@ TEST(ShotJudgementsTest, AJudgementWithNoRecordWithinATickIsDrawnJudgedOnly) {
   ExpectOutlinesOf(SegmentsIn(shapes, kJudgedHitboxColor), SoldierAt(Vec3(9.0F, 0.0F, 0.0F)));
 }
 
+// Requirements: US-30
 TEST(ShotJudgementsTest, ARoundFiredWithTheOverlayOffKeepsNoSeenHitboxes) {
   // The control: fired with it on, the round keeps them.
   PhysicsOverlays control = ShotJudgementsOn();
@@ -680,6 +712,7 @@ ShotJudgement StruckHead(const Vec3& position, const Vec3& point) {
   return judgement;
 }
 
+// Requirements: US-30
 TEST(ShotJudgementsTest, TheStruckHitboxIsFilled) {
   PhysicsOverlays overlays = ShotJudgementsOn();
 
@@ -697,6 +730,7 @@ TEST(ShotJudgementsTest, TheStruckHitboxIsFilled) {
   EXPECT_EQ(SegmentsIn(shapes, kJudgedHitboxColor).size(), 12U);
 }
 
+// Requirements: US-30
 TEST(ShotJudgementsTest, AMissFillsNoHitbox) {
   // The control: a round that struck the head fills it.
   PhysicsOverlays control = ShotJudgementsOn();
@@ -709,6 +743,7 @@ TEST(ShotJudgementsTest, AMissFillsNoHitbox) {
   EXPECT_TRUE(overlays.BuildShapes(FiredSoFar(0), State{}).triangles.empty());
 }
 
+// Requirements: US-30
 TEST(ShotJudgementsTest, ThePointStruckIsASmallSphere) {
   PhysicsOverlays overlays = ShotJudgementsOn();
 
@@ -742,6 +777,7 @@ PhysicsOverlays FlyingOwnShot() {
   return overlays;
 }
 
+// Requirements: US-30
 TEST(ShotJudgementsTest, TheRoundsFlightIsFlownFromItsShotToThePointStruck) {
   PhysicsOverlays overlays = FlyingOwnShot();
 
@@ -761,6 +797,7 @@ TEST(ShotJudgementsTest, TheRoundsFlightIsFlownFromItsShotToThePointStruck) {
   }
 }
 
+// Requirements: US-30
 TEST(ShotJudgementsTest, NoFlightIsDrawnWithoutItsShot) {
   // The control: with its Shot announced, the same judgement draws one.
   PhysicsOverlays control = FlyingOwnShot();
@@ -792,6 +829,7 @@ std::vector<Segment> MissFlownAgainst(const physics::World& map) {
 }
 
 // The Map a tracer meets, as Tracers fly it: a miss is not drawn through walls.
+// Requirements: US-30
 TEST(ShotJudgementsTest, AMissIsFlownOnlyAsFarAsTheMap) {
   // The control: with no Map, it flies on past where the wall would be.
   const std::vector<Segment> open = MissFlownAgainst(NoMap());
@@ -805,6 +843,7 @@ TEST(ShotJudgementsTest, AMissIsFlownOnlyAsFarAsTheMap) {
   ExpectNear(flight.back().to, Vec3(0.0F, 1.5F, -3.5F));
 }
 
+// Requirements: US-30
 TEST(ShotJudgementsTest, AtMostTheNewest8RoundsAreKept) {
   PhysicsOverlays overlays = ShotJudgementsOn();
 
@@ -818,6 +857,7 @@ TEST(ShotJudgementsTest, AtMostTheNewest8RoundsAreKept) {
   ExpectNear(judged.front().from, SoldierAt(Vec3(1.0F, 0.0F, 0.0F))[0].triangles[0].a);
 }
 
+// Requirements: US-30
 TEST(ShotJudgementsTest, EachRoundIsGoneAfter5Seconds) {
   PhysicsOverlays overlays = ShotJudgementsOn();
   overlays.Judge(JudgedPast(Vec3(1.0F, 0.0F, 0.0F), 0.0F), NoMap(), kNow);
@@ -831,6 +871,7 @@ TEST(ShotJudgementsTest, EachRoundIsGoneAfter5Seconds) {
                    SoldierAt(Vec3(2.0F, 0.0F, 0.0F)));
 }
 
+// Requirements: US-30
 TEST(ShotJudgementsTest, ASeenRecordNeverPairedIsDroppedOnceItExpires) {
   PhysicsOverlays overlays = ShotJudgementsOn();
   FireOneRound(overlays, SeenAt(Vec3(1.0F, 0.0F, 0.0F), 99), kNow);
@@ -841,6 +882,7 @@ TEST(ShotJudgementsTest, ASeenRecordNeverPairedIsDroppedOnceItExpires) {
   EXPECT_TRUE(SegmentsIn(overlays.BuildShapes(FiredSoFar(1), State{}), kSeenHitboxColor).empty());
 }
 
+// Requirements: US-30
 TEST(ShotJudgementsTest, IsDrawnThroughWallsByDefault) {
   PhysicsOverlays overlays = ShotJudgementsOn();
   ASSERT_TRUE(overlays.ThroughWalls(PhysicsOverlay::kShotJudgements));
@@ -859,6 +901,7 @@ TEST(ShotJudgementsTest, IsDrawnThroughWallsByDefault) {
   EXPECT_FALSE(hidden.spheres.front().through_walls);
 }
 
+// Requirements: US-30
 TEST(ShotJudgementsTest, AJudgedRoundIsGoneOnceTheOverlayIsSwitchedOffAndOnAgain) {
   PhysicsOverlays overlays = ShotJudgementsOn();
   overlays.Judge(JudgedPast(Vec3(2.0F, 0.0F, 0.0F), 0.0F), NoMap(), kNow);
@@ -874,6 +917,7 @@ TEST(ShotJudgementsTest, AJudgedRoundIsGoneOnceTheOverlayIsSwitchedOffAndOnAgain
   EXPECT_TRUE(Shows(overlays.BuildPanel(), "Shot judgements kept: 0"));
 }
 
+// Requirements: US-30
 TEST(ShotJudgementsTest, NothingIsDrawnWhileTheOverlayIsOff) {
   PhysicsOverlays overlays = ShotJudgementsOn();
   overlays.Judge(JudgedPast(Vec3(2.0F, 0.0F, 0.0F), 0.0F), NoMap(), kNow);
@@ -884,6 +928,7 @@ TEST(ShotJudgementsTest, NothingIsDrawnWhileTheOverlayIsOff) {
   EXPECT_EQ(overlays.BuildShapes(FiredSoFar(0), State{}), Shapes{});
 }
 
+// Requirements: US-30
 TEST(ShotJudgementsTest, TheNoJudgementsLineShows2SecondsAfterAnUnansweredRound) {
   PhysicsOverlays overlays = ShotJudgementsOn();
   FireOneRound(overlays, SeenAt(Vec3(1.0F, 0.0F, 0.0F), 99), kNow);
@@ -895,6 +940,7 @@ TEST(ShotJudgementsTest, TheNoJudgementsLineShows2SecondsAfterAnUnansweredRound)
   EXPECT_TRUE(Shows(overlays.BuildPanel(), kNoShotJudgementsLine));
 }
 
+// Requirements: US-30
 TEST(ShotJudgementsTest, TheNoJudgementsLineClearsOnTheNextJudgement) {
   PhysicsOverlays overlays = ShotJudgementsOn();
   FireOneRound(overlays, SeenAt(Vec3(1.0F, 0.0F, 0.0F), 99), kNow);
@@ -909,6 +955,7 @@ TEST(ShotJudgementsTest, TheNoJudgementsLineClearsOnTheNextJudgement) {
 
 // Each judgement answers the oldest round unanswered: one fired after it is
 // still timed.
+// Requirements: US-30
 TEST(ShotJudgementsTest, TheNoJudgementsLineShows2SecondsAfterARoundFiredAfterTheJudgedOne) {
   PhysicsOverlays overlays = ShotJudgementsOn();
   FireOneRound(overlays, SeenAt(Vec3(1.0F, 0.0F, 0.0F), 99), kNow);
@@ -922,6 +969,7 @@ TEST(ShotJudgementsTest, TheNoJudgementsLineShows2SecondsAfterARoundFiredAfterTh
   EXPECT_TRUE(Shows(overlays.BuildPanel(), kNoShotJudgementsLine));
 }
 
+// Requirements: US-30
 TEST(ShotJudgementsTest, ThePanelShowsTheRoundsKeptAndWhenAJudgementLeftPosesOut) {
   PhysicsOverlays overlays = ShotJudgementsOn();
   overlays.Judge(JudgedPast(Vec3(1.0F, 0.0F, 0.0F), 0.0F), NoMap(), kNow);
@@ -938,6 +986,7 @@ TEST(ShotJudgementsTest, ThePanelShowsTheRoundsKeptAndWhenAJudgementLeftPosesOut
   EXPECT_TRUE(Shows(after, "A Shot judgement left Hitbox poses out"));
 }
 
+// Requirements: US-30
 TEST(ShotJudgementsTest, TurningTheOverlayOnAsksForShotJudgementsAndOffStopsThem) {
   PhysicsOverlays overlays(PhysicsOverlaysStart{});
   EXPECT_FALSE(overlays.WantsShotJudgements());
@@ -950,6 +999,7 @@ TEST(ShotJudgementsTest, TurningTheOverlayOnAsksForShotJudgementsAndOffStopsThem
   EXPECT_FALSE(overlays.WantsShotJudgements());
 }
 
+// Requirements: US-30
 TEST(ShotJudgementsTest, StartsOnAndAsksAsItsConfigKeySays) {
   EXPECT_TRUE(PhysicsOverlays(PhysicsOverlaysStart{.shot_judgements = true}).WantsShotJudgements());
 }
