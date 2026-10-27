@@ -230,7 +230,21 @@ that damage can be determined accordingly.
 Given a bullet's simulated trajectory intersects a player's hitbox
 When the intersection is resolved server-side
 Then the specific body part hit (e.g., head, torso, limb) is recorded
+
+Given a player who moves, changes stance, looks up or down, or aims down sights
+When the server poses that player's Hitboxes on a tick
+Then they follow the pose its Character's Clips give it: locomotion by its velocity,
+     the transitions between stances, an aim offset by its view pitch and the rifle's
+     ADS grip
+
+Given the Authoritative State a client is sent of that player
+When the client evaluates the player's pose from it
+Then the client's pose agrees with the server's within the tolerance
 ```
+
+Hitboxes have followed the pose since v8, the Authoritative Body (ADR-0061,
+ADR-0066); a client poses the body only to agree with the server, and does not
+draw it yet (US-17).
 
 A bullet goes on through a player it hits, with the energy that player's body
 leaves it, and can hit the player behind (ADR-0065).

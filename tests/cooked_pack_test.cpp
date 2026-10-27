@@ -44,6 +44,7 @@ class CookedPackTest : public ::testing::Test {
   std::optional<Pack> server_;
 };
 
+// Requirements: US-22
 TEST_F(CookedPackTest, TheClientPackResolvesTheExampleScenariosContent) {
   EXPECT_TRUE(client_->ResolveScene("Scene").has_value());
   EXPECT_TRUE(client_->ResolveMesh("Root/Floor/Visual").has_value());
@@ -83,6 +84,7 @@ TEST_F(CookedPackTest, TheServerPackHoldsTheExamplesRulesAndTheyLoad) {
 
 // The client puts the camera at it and the server fires Shots from it, so both
 // packs hold the example character's eye.
+// Requirements: US-22
 TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersEye) {
   for (const Pack* pack : {&*client_, &*server_}) {
     const auto eye = pack->ResolveEye(augusta::assets::CharacterEyePath("soldier"));
@@ -106,6 +108,7 @@ TEST_F(CookedPackTest, BothPacksHoldTheExampleRiflesMarkers) {
 
 // Both packs pose the example character holding the rifle (ADR-0066), so both
 // hold its weapon socket, on its right hand, and name its left hand.
+// Requirements: US-11
 TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersWeaponSocket) {
   for (const Pack* pack : {&*client_, &*server_}) {
     const auto socket = pack->ResolveWeaponSocket("soldier");
@@ -117,6 +120,7 @@ TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersWeaponSocket) {
 
 // The server judges hits against them and the client draws where a Shot lands,
 // so both packs hold the example character's hitboxes, one or more per body part.
+// Requirements: US-11
 TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersHitboxesForEveryBodyPart) {
   for (const Pack* pack : {&*client_, &*server_}) {
     const auto hitboxes = pack->ResolveHitboxes("soldier");
@@ -131,6 +135,7 @@ TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersHitboxesForEveryBodyPart
 
 // Each Hitbox moves with a Joint of it (ADR-0061), so both packs hold the
 // example character's Skeleton.
+// Requirements: US-11
 TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersSkeleton) {
   for (const Pack* pack : {&*client_, &*server_}) {
     const auto entries = pack->Entries();
@@ -143,6 +148,7 @@ TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersSkeleton) {
 
 // The example character's pose comes from its Clips (ADR-0066), so both packs
 // hold its animation Skeleton, its Clips and its stance transitions.
+// Requirements: US-11
 TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersAnimation) {
   using augusta::assets::AssetType;
   const std::vector<std::pair<AssetType, std::string>> expected = {
@@ -164,6 +170,7 @@ TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersAnimation) {
 
 // Both packs carry the same Skeleton (ADR-0061), and it loads with every one of
 // the example character's Hitboxes on a Joint of it.
+// Requirements: US-11
 TEST_F(CookedPackTest, BothPacksLoadTheSameExampleSkeletonAndEveryHitboxResolvesItsJoint) {
   const auto client_skeleton = client_->ResolveSkeleton("soldier");
   const auto server_skeleton = server_->ResolveSkeleton("soldier");

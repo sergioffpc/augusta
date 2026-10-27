@@ -93,6 +93,7 @@ const Vec3 kWalking(0.0F, 0.0F, -fixture::kStandingForward);
 const float kFootAhead = std::sin(fixture::kLegSwing);
 const float kFootUp = 1.0F - std::cos(fixture::kLegSwing);
 
+// Requirements: US-11
 TEST_F(PoseTest, StillACrouchedBodysHeadIsWhereItsCrouchingIdleHoldsIt) {
   const Vec3 standing = HeadOf(PoseAt(Vec3(0.0F), Stance::kStanding, 0));
   const Vec3 crouched = HeadOf(PoseAt(Vec3(0.0F), Stance::kCrouching, 0));
@@ -101,6 +102,7 @@ TEST_F(PoseTest, StillACrouchedBodysHeadIsWhereItsCrouchingIdleHoldsIt) {
   ExpectNear(crouched, Vec3(0.0F, fixture::kPelvisCrouching + fixture::kHeadAbovePelvis, 0.0F));
 }
 
+// Requirements: US-11
 TEST_F(PoseTest, AtTheLeftFootContactTheLeftLegIsAheadAndTheRightBehind) {
   const SkeletonPose posed = PoseAt(kWalking, Stance::kStanding, kLeftContact);
 
@@ -108,6 +110,7 @@ TEST_F(PoseTest, AtTheLeftFootContactTheLeftLegIsAheadAndTheRightBehind) {
   ExpectNear(FootOf(posed, fixture::kWalkerRightLeg), Vec3(fixture::kHipSide, kFootUp, kFootAhead));
 }
 
+// Requirements: US-11
 TEST_F(PoseTest, HalfAStrideOnTheRightLegIsAheadAndAQuarterOnTheLegsPass) {
   const SkeletonPose right = PoseAt(kWalking, Stance::kStanding, kRightContact);
   const SkeletonPose passing = PoseAt(kWalking, Stance::kStanding, kPassing);
@@ -122,6 +125,7 @@ TEST_F(PoseTest, HalfAStrideOnTheRightLegIsAheadAndAQuarterOnTheLegsPass) {
 // lands its left foot a quarter of a cycle later than the forward one: sampled
 // at the same ratio, its left leg would be straight down as the forward walk's
 // is ahead, and the blend half way between.
+// Requirements: US-11
 TEST_F(PoseTest, TwoBlendedWalksLandTheSameFootTogether) {
   const float speed = (fixture::kStandingForward + fixture::kStandingRight) / 2.0F;
   const float along = speed / std::numbers::sqrt2_v<float>;
@@ -132,6 +136,7 @@ TEST_F(PoseTest, TwoBlendedWalksLandTheSameFootTogether) {
 }
 
 // Facing a quarter turn to its left (yaw +pi/2 looks down -X), at (5, 0, 2).
+// Requirements: US-11
 TEST_F(PoseTest, ThePositionAndTheYawMoveAndTurnThePose) {
   const float quarter_turn = std::numbers::pi_v<float> / 2.0F;
   const Vec3 ahead_of_it(-fixture::kStandingForward, 0.0F, 0.0F);
@@ -143,6 +148,7 @@ TEST_F(PoseTest, ThePositionAndTheYawMoveAndTurnThePose) {
 
 // Down from standing into a crouch, still: the Pelvis is held at each stance's
 // height by its idle, so the head moves down with the change's progress.
+// Requirements: US-11
 TEST_F(PoseTest, ThroughAChangeOfStanceTheHeadMovesDownByItsProgress) {
   BodyState body;
   body.stance = Stance::kCrouching;
@@ -169,6 +175,7 @@ TEST_F(PoseTest, ThroughAChangeOfStanceTheHeadMovesDownByItsProgress) {
 
 // Posing is a function of what it is given alone: the same state posed again
 // after another gives the same pose.
+// Requirements: US-11
 TEST_F(PoseTest, ThePoseOfAStateIsTheSameWhateverWasPosedBefore) {
   const SkeletonPose first = PoseAt(kWalking, Stance::kStanding, 40);
   PoseAt(Vec3(0.0F, 0.0F, 1.5F), Stance::kCrouching, 200);
@@ -220,12 +227,14 @@ Vec3 HeadBentBy(float pelvis, float bend) {
 constexpr float kLowest = -augusta::command::kMaxLookPitch;
 constexpr float kHighest = augusta::command::kMaxLookPitch;
 
+// Requirements: US-11
 TEST_F(AimTest, AimingAtTheLowestPitchBendsTheBodyByItsAimDown) {
   const Vec3 head = HeadOf(PoseAt(Stance::kStanding, kLowest));
 
   ExpectNear(head, HeadBentBy(fixture::kPelvisStanding, fixture::kStandingAimBend));
 }
 
+// Requirements: US-11
 TEST_F(AimTest, AimingAtTheHighestPitchLeansTheBodyBackByItsAimUp) {
   const Vec3 head = HeadOf(PoseAt(Stance::kStanding, kHighest));
 
@@ -233,6 +242,7 @@ TEST_F(AimTest, AimingAtTheHighestPitchLeansTheBodyBackByItsAimUp) {
 }
 
 // Half way down, the Aim offset bends it half as far as at the lowest pitch.
+// Requirements: US-11
 TEST_F(AimTest, HalfWayDownTheBodyBendsHalfAsFar) {
   const Vec3 head = HeadOf(PoseAt(Stance::kStanding, kLowest / 2.0F));
 
@@ -246,6 +256,7 @@ Vec3 HandRaisedBy(float pelvis, float raise) {
               -0.6F * std::sin(raise));
 }
 
+// Requirements: US-11
 TEST_F(AimTest, WithoutADSTheArmHangsAndWithItTheADSGripRaisesIt) {
   const Vec3 hanging = HandOf(PoseAt(Stance::kStanding, 0.0F));
   const Vec3 raised = HandOf(PoseAt(Stance::kStanding, 0.0F, true));
@@ -256,6 +267,7 @@ TEST_F(AimTest, WithoutADSTheArmHangsAndWithItTheADSGripRaisesIt) {
 
 // Aiming down in ADS, the body bends and the arm is raised from the bent
 // shoulder: both add onto the pose.
+// Requirements: US-11
 TEST_F(AimTest, AimingDownInADSBendsTheBodyAndRaisesTheArm) {
   const SkeletonPose posed = PoseAt(Stance::kStanding, kLowest, true);
   const Vec3 head = HeadOf(posed);
@@ -273,6 +285,7 @@ TEST_F(AimTest, AimingDownInADSBendsTheBodyAndRaisesTheArm) {
   ExpectNear(hand, shoulder + Vec3(0.0F, -0.6F * std::cos(swing), -0.6F * std::sin(swing)));
 }
 
+// Requirements: US-11
 TEST_F(AimTest, EachStanceBendsAndRaisesByItsOwnAimOffsetAndADSGrip) {
   const SkeletonPose crouched = PoseAt(Stance::kCrouching, kLowest, true);
   const SkeletonPose prone = PoseAt(Stance::kProne, kHighest);
@@ -288,6 +301,7 @@ TEST_F(AimTest, EachStanceBendsAndRaisesByItsOwnAimOffsetAndADSGrip) {
 // Just crouched from standing, aiming down, the body is still all standing's:
 // standing's own Aim offset bends it, so a change of stance never straightens
 // an aiming body.
+// Requirements: US-11
 TEST_F(AimTest, ThroughAChangeOfStanceTheStanceItLeftKeepsItsOwnAimOffset) {
   const SkeletonPose posed = PoseAt(Stance::kCrouching, kLowest, false, Stance::kStanding, 0);
   const Vec3 head = HeadOf(posed);
@@ -312,6 +326,7 @@ const Vec3 kRightFootDown(fixture::kHipSide, 0.0F, 0.0F);
 
 // Walking ahead at a left Foot contact, its left leg would be kLegSwing ahead;
 // off the ground the air Clip has it tucked level with its hip instead.
+// Requirements: US-11
 TEST_F(PoseTest, OffTheGroundABodyIsPosedByItsAirClipInPlaceOfItsBlendSpace) {
   const SkeletonPose posed = PoseOf(InTheAir(kWalking));
 
@@ -320,6 +335,7 @@ TEST_F(PoseTest, OffTheGroundABodyIsPosedByItsAirClipInPlaceOfItsBlendSpace) {
 
 // From rising at kAirVerticalSpeed (its start) to falling as fast (its end),
 // the top of a jump halfway; faster is held at either end.
+// Requirements: US-11
 TEST_F(PoseTest, TheAirClipIsSampledByTheBodysVerticalVelocityFromRisingToFalling) {
   constexpr float kSpeed = augusta::animation::kAirVerticalSpeed;
 
@@ -338,6 +354,7 @@ TEST_F(PoseTest, TheAirClipIsSampledByTheBodysVerticalVelocityFromRisingToFallin
 
 // The pose switches on the tick the body lands, with nothing of the air Clip
 // left: posed on the ground right after the air, it is the ground's pose.
+// Requirements: US-11
 TEST_F(PoseTest, TheTickABodyLandsItIsPosedOnTheGroundWithNoCrossfade) {
   BodyState landed = InTheAir(kWalking);
   landed.grounded = true;
@@ -391,6 +408,7 @@ Vec3 RightShoulder(float pelvis) {
 
 // Standing or crouched, the hand hangs kHolderArm below the shoulder; in ADS the
 // grip swings the arm straight ahead and brings the hand to the Eye.
+// Requirements: US-11
 TEST_F(HoldTest, TheRifleIsHeldOnTheRightHandsSocketInEveryStanceAndInADS) {
   const Held standing = HoldAt(Stance::kStanding, 0.0F);
   const Held crouched = HoldAt(Stance::kCrouching, 0.0F);
@@ -405,6 +423,7 @@ TEST_F(HoldTest, TheRifleIsHeldOnTheRightHandsSocketInEveryStanceAndInADS) {
 
 // Aiming down, the Pelvis bends 45 degrees ahead: the shoulder with it, and the
 // arm hanging from it turned as far.
+// Requirements: US-11
 TEST_F(HoldTest, TheRifleFollowsTheHandAsTheAimOffsetBendsTheBody) {
   const float bend = fixture::kStandingAimBend;
   const Vec3 shoulder(fixture::kHolderShoulderSide,
@@ -420,6 +439,7 @@ TEST_F(HoldTest, TheRifleFollowsTheHandAsTheAimOffsetBendsTheBody) {
 // The hand is the socket's, so the rifle's Muzzle is kHolderMuzzle along the
 // hand's -Z: ahead of the hanging hand, and ahead of the Eye, where the ADS
 // grip holds the hand turned back level.
+// Requirements: US-07
 TEST_F(HoldTest, TheMuzzleIsWhereTheHandHoldsTheRifle) {
   const Held standing = HoldAt(Stance::kStanding, 0.0F);
   const Held ads = HoldAt(Stance::kStanding, 0.0F, true);
@@ -432,6 +452,7 @@ TEST_F(HoldTest, TheMuzzleIsWhereTheHandHoldsTheRifle) {
 
 // The Fore-end is kHolderForeEnd along the hand's -Z: ahead of the hanging hand,
 // and ahead of the Eye in ADS. Both are within the left arm's reach.
+// Requirements: US-11
 TEST_F(HoldTest, TheLeftHandReachesTheRiflesForeEnd) {
   const Held standing = HoldAt(Stance::kStanding, 0.0F);
   const Held ads = HoldAt(Stance::kStanding, 0.0F, true);
@@ -448,6 +469,7 @@ TEST_F(HoldTest, TheLeftHandReachesTheRiflesForeEnd) {
 // The IK turns the left shoulder and elbow alone: the shoulder stays where the
 // body puts it, each bone keeps its length, and the elbow bends the way its
 // Clip bends it, out of the line from shoulder to hand and below it.
+// Requirements: US-11
 TEST_F(HoldTest, TheLeftArmBendsAtItsElbowAndKeepsItsLengths) {
   const Held held = HoldAt(Stance::kStanding, 0.0F);
   const Vec3 shoulder = OriginOf(held.posed, fixture::kHolderLeftArm);
