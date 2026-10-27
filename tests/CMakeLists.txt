@@ -28,9 +28,12 @@ add_executable(augusta_version_benchmarks version_benchmark.cpp)
 target_link_libraries(augusta_version_benchmarks PRIVATE augusta_version benchmark::benchmark benchmark::benchmark_main)
 
 # The hot paths the nightly times and keeps the history of (ADR-0013): one
-# binary, so one run gives one result file for the whole set.
-add_executable(
-  augusta_benchmarks
+# binary, augusta_benchmarks, so one run gives one result file for the whole
+# set. Compiled once, into objects, which the allocator benchmarks below link
+# too.
+add_library(
+  augusta_hot_path_benchmarks
+  OBJECT
   ballistics_benchmark.cpp
   interpolation_benchmark.cpp
   pack_benchmark.cpp
@@ -46,8 +49,8 @@ add_executable(
 # Its players' Clips are authored with ozz-animation's offline libraries, and
 # checked as they are built with GoogleTest's assertions (clips_fixture.h).
 target_link_libraries(
-  augusta_benchmarks
-  PRIVATE
+  augusta_hot_path_benchmarks
+  PUBLIC
     augusta_animation
     ozz::animation_offline
     GTest::gtest
@@ -63,13 +66,114 @@ target_link_libraries(
     augusta_host_replay
     augusta_policy_loader
     benchmark::benchmark
-    benchmark::benchmark_main
 )
-target_include_directories(augusta_benchmarks PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/host)
+target_include_directories(augusta_hot_path_benchmarks PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/host)
 target_compile_definitions(
-  augusta_benchmarks
+  augusta_hot_path_benchmarks
   PRIVATE AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs"
 )
+add_executable(augusta_benchmarks)
+target_link_libraries(augusta_benchmarks PRIVATE augusta_hot_path_benchmarks benchmark::benchmark_main)
+
+# The allocator benchmarks (#1351): the hot paths above, and a churn of blocks
+# freed on another thread than the one that allocated them, under each
+# general-purpose allocator that can replace malloc/free and new/delete for the
+# whole process on this host, against the platform's own. Built only when the
+# configure asks for them (AUGUSTA_ALLOCATOR_BENCHMARKS, the root
+# CMakeLists.txt), and run only by their label, allocator, which every test
+# preset leaves out: `make test TAGS="allocator"`. One at a time (RUN_SERIAL),
+# so ctest's --parallel adds no contention to what they measure. Each writes
+# its Google Benchmark JSON into allocator-results/, and first fails if its
+# candidate does not serve the process's allocations (allocator_candidate.h).
+#
+# Not built here, so not in the results: snmalloc on Windows, where replacing
+# the CRT's malloc takes Microsoft Detours; jemalloc on Windows, whose port
+# builds it with a prefix and no override; gperftools on Windows, whose
+# override needs a static CRT, which this project's triplet does not link;
+# oneTBB on macOS, where its proxy does not replace malloc; google/tcmalloc
+# and rpmalloc anywhere, which have no vcpkg port.
+if(AUGUSTA_ALLOCATOR_BENCHMARKS)
+  add_library(augusta_allocator_benchmark_common OBJECT allocator_benchmark_main.cpp allocator_churn_benchmark.cpp)
+  target_link_libraries(augusta_allocator_benchmark_common PUBLIC benchmark::benchmark)
+  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/allocator-results)
+
+  # One candidate's executable, augusta_allocator_benchmarks_<candidate>, from
+  # SOURCES (its allocator_candidate.h) linked with LIBRARIES, and the test
+  # that runs it, five repetitions as the nightly runs augusta_benchmarks, but
+  # with every repetition's row in the file beside the aggregates, not the
+  # aggregates alone: only those rows carry the resident set. LIBRARIES go
+  # first on the link line, so that on Windows their DLLs come first in the
+  # import table and load before the CRT's, as mimalloc's redirect needs. Both
+  # object libraries are linked directly: an object library's objects reach
+  # only the targets that link it themselves, not through another.
+  function(augusta_allocator_benchmark candidate)
+    cmake_parse_arguments(PARSE_ARGV 1 arg "" "" "SOURCES;LIBRARIES")
+    set(target augusta_allocator_benchmarks_${candidate})
+    add_executable(${target} ${arg_SOURCES})
+    target_link_libraries(
+      ${target}
+      PRIVATE ${arg_LIBRARIES} augusta_allocator_benchmark_common augusta_hot_path_benchmarks
+    )
+    add_test(
+      NAME allocator_${candidate}
+      COMMAND
+        ${target} --benchmark_repetitions=5 --benchmark_display_aggregates_only=true
+        --benchmark_out=${CMAKE_CURRENT_BINARY_DIR}/allocator-results/${candidate}.json --benchmark_out_format=json
+    )
+    set_tests_properties(
+      allocator_${candidate}
+      PROPERTIES LABELS allocator RUN_SERIAL TRUE TIMEOUT 3600
+    )
+  endfunction()
+
+  augusta_allocator_benchmark(platform SOURCES allocator_platform.cpp)
+  if(WIN32)
+    # The process heap as the Segment Heap, which the executable's manifest
+    # asks Windows for: the platform's own other allocator.
+    augusta_allocator_benchmark(segment_heap SOURCES allocator_segment_heap.cpp segment_heap.manifest)
+  endif()
+
+  find_package(mimalloc CONFIG REQUIRED)
+  # Static where the triplet links statically (Linux, macOS), where its malloc
+  # replaces the C library's at link time; the DLL on Windows, to which its
+  # mimalloc-redirect.dll redirects the CRT's malloc at load time.
+  augusta_allocator_benchmark(
+    mimalloc
+    SOURCES allocator_mimalloc.cpp
+    LIBRARIES $<IF:$<TARGET_EXISTS:mimalloc-static>,mimalloc-static,mimalloc>
+  )
+
+  if(NOT APPLE)
+    find_package(TBB CONFIG REQUIRED)
+    # tbbmalloc_proxy replaces malloc when its shared library loads: by
+    # patching the CRT's on Windows (allocator_tbbmalloc_proxy.cpp makes the
+    # executable load it), by interposing its own on Linux, whose triplets
+    # build oneTBB shared for it.
+    augusta_allocator_benchmark(
+      tbbmalloc
+      SOURCES allocator_tbbmalloc.cpp allocator_tbbmalloc_proxy.cpp
+      LIBRARIES TBB::tbbmalloc TBB::tbbmalloc_proxy
+    )
+    # The startup check's control: the same check, with tbbmalloc but not its
+    # proxy, so the platform's malloc serves the allocations and it must fail.
+    augusta_allocator_benchmark(tbbmalloc_unproxied SOURCES allocator_tbbmalloc.cpp LIBRARIES TBB::tbbmalloc)
+    set_tests_properties(allocator_tbbmalloc_unproxied PROPERTIES WILL_FAIL TRUE)
+  endif()
+
+  if(NOT WIN32)
+    find_package(snmalloc CONFIG REQUIRED)
+    augusta_allocator_benchmark(snmalloc SOURCES allocator_snmalloc.cpp LIBRARIES snmalloc::snmalloc)
+
+    # jemalloc's and gperftools' ports install pkg-config files, no CMake
+    # package.
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(jemalloc REQUIRED IMPORTED_TARGET jemalloc)
+    augusta_allocator_benchmark(jemalloc SOURCES allocator_jemalloc.cpp LIBRARIES PkgConfig::jemalloc)
+
+    pkg_check_modules(tcmalloc_minimal REQUIRED IMPORTED_TARGET libtcmalloc_minimal)
+    augusta_allocator_benchmark(gperftools SOURCES allocator_gperftools.cpp LIBRARIES PkgConfig::tcmalloc_minimal)
+  endif()
+endif()
 
 # Links augusta_tick alone, so the build fails if its header ever needs another
 # module's include path.
