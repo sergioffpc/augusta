@@ -6,25 +6,50 @@
 # to make each area's build target, and a `cmake -P` source scan can read it
 # the same way, with no build. Included by both, so it reads only files.
 
+# The listfiles that hold the test executables, relative to source_dir:
+# tests/'s, tests/fuzz/'s and each tool's tests/ (tools/<tool>/tests).
+function(augusta_test_listfiles source_dir out_listfiles)
+  file(GLOB tool_tests RELATIVE "${source_dir}" "${source_dir}/tools/*/tests/CMakeLists.txt")
+  set(${out_listfiles} tests/CMakeLists.txt tests/fuzz/CMakeLists.txt ${tool_tests} PARENT_SCOPE)
+endfunction()
+
 # The names an area may take: a runtime module's (src/modules/<module>),
 # client and server for their Runtimes' tests, and the name of a tool whose
-# tests ctest runs (tools/<tool>/tests). Every other label (check, property,
-# netcode) is not an area.
+# tests ctest runs (tools/<tool>/tests).
 function(augusta_test_area_vocabulary source_dir out_vocabulary)
   file(GLOB modules LIST_DIRECTORIES true RELATIVE "${source_dir}/src/modules" "${source_dir}/src/modules/*")
-  file(GLOB tool_tests RELATIVE "${source_dir}/tools" "${source_dir}/tools/*/tests/CMakeLists.txt")
+  augusta_test_listfiles("${source_dir}" listfiles)
   set(vocabulary client server)
   foreach(module IN LISTS modules)
     if(IS_DIRECTORY "${source_dir}/src/modules/${module}")
       list(APPEND vocabulary ${module})
     endif()
   endforeach()
-  foreach(listfile IN LISTS tool_tests)
-    string(REGEX REPLACE "/.*" "" tool "${listfile}")
-    list(APPEND vocabulary ${tool})
+  foreach(listfile IN LISTS listfiles)
+    if(listfile MATCHES "^tools/([^/]+)/")
+      list(APPEND vocabulary ${CMAKE_MATCH_1})
+    endif()
   endforeach()
   list(REMOVE_DUPLICATES vocabulary)
   set(${out_vocabulary} ${vocabulary} PARENT_SCOPE)
+endfunction()
+
+# Which of an executable's labels are areas, those of vocabulary, into
+# out_areas, and which are neither an area nor one of the labels an executable
+# may carry beside it, into out_unknown: check (make check's), property (the
+# nightly's property run's) and netcode (the netcode presets', ADR-0013).
+function(augusta_test_label_areas labels vocabulary out_areas out_unknown)
+  set(areas "")
+  set(unknown "")
+  foreach(label IN LISTS labels)
+    if(label IN_LIST vocabulary)
+      list(APPEND areas ${label})
+    elseif(NOT label MATCHES "^(check|property|netcode)$")
+      list(APPEND unknown ${label})
+    endif()
+  endforeach()
+  set(${out_areas} ${areas} PARENT_SCOPE)
+  set(${out_unknown} ${unknown} PARENT_SCOPE)
 endfunction()
 
 # The gtest_discover_tests calls of a listfile, comments left out: sets

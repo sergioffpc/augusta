@@ -1,8 +1,9 @@
 # Checks of the repository's structure rather than of a feature: the
 # architecture's boundaries, the Glue rule, the test areas, the platforms
-# augustad configures for and the Linux client's staging. Each is a `cmake -P` script that builds
-# nothing, so they configure with the rest of the build, not behind
-# augusta_tests. The scripts' own pytest tests sit beside them; CI runs those.
+# augustad configures for and the Linux client's staging. Each is a `cmake -P`
+# script that builds nothing, so they configure with the rest of the build, not
+# behind augusta_tests. The scripts' own pytest tests sit beside them; CI runs
+# those.
 
 # No header past the protocol's edge names a protocol type (ADR-0038): only
 # the Link converts (augusta/link_messages.h). Nor does a presentation header
@@ -65,9 +66,10 @@ add_test(
 )
 
 # Every test executable names exactly one area (ADR-0008): the area check
-# refuses a gtest_discover_tests call with no area label, with two, or with one
-# that is no module's, Runtime's or tool's name (cmake/TestAreas.cmake), each
-# first proved on a planted violation. A source scan, so it builds nothing.
+# refuses a gtest_discover_tests call with no area label, with more than one,
+# or with a label that is neither a module's, Runtime's or tool's name nor
+# check, property or netcode (cmake/TestAreas.cmake), each first proved on a
+# planted violation. A source scan, so it builds nothing.
 add_test(
   NAME augusta_test_areas
   COMMAND

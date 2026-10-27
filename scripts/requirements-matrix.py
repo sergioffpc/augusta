@@ -76,10 +76,9 @@ ul { margin: 0; padding-left: 1rem; }
 
 @dataclasses.dataclass
 class Requirement:
-    """A requirement's title, where it is defined and its version."""
+    """A requirement's title, its line in the document and its version."""
 
     title: str
-    path: pathlib.Path
     line: int
     version: str
 
@@ -141,7 +140,6 @@ def requirements(document):
         version = _VERSION.search(text, heading.end(), end)
         known[heading.group(1)] = Requirement(
             heading.group(2),
-            document,
             text.count("\n", 0, heading.start()) + 1,
             version.group(1) if version else "",
         )
@@ -248,11 +246,12 @@ def marked_jobs(path, errors):
     return jobs
 
 
-def check(named, known, errors):
+def check(named, known, document, errors):
     """Adds an error for each unknown requirement a test or a job names.
 
-    And one for each requirement a release met (vN) that none names; one still
-    planned need not be named yet.
+    It also adds one for each requirement of the document that a release met
+    (vN) and that none names. A requirement still planned need not be named
+    yet.
     """
     for each in named:
         where = f"{_relative(each.path)}:{each.line}: {each.label}"
@@ -260,7 +259,7 @@ def check(named, known, errors):
             if requirement not in known:
                 errors.append(
                     f"{where} names {requirement!r}, which"
-                    " docs/REQUIREMENTS.md does not have"
+                    f" {_relative(document)} does not have"
                 )
     checked = {
         requirement for each in named for requirement in each.requirements
@@ -268,7 +267,7 @@ def check(named, known, errors):
     for requirement, defined in known.items():
         if defined.met and requirement not in checked:
             errors.append(
-                f"{_relative(defined.path)}:{defined.line}: {requirement},"
+                f"{_relative(document)}:{defined.line}: {requirement},"
                 f" met in {defined.version}, is named by no test or CI job"
             )
 
@@ -396,11 +395,12 @@ def main():
     if not args.check and not (args.junit and args.output):
         parser.error("either --check, or --junit and --output")
 
-    known = requirements(_ROOT / "docs" / "REQUIREMENTS.md")
+    document = _ROOT / "docs" / "REQUIREMENTS.md"
+    known = requirements(document)
     errors = []
     tests = [test for path in sources() for test in marked_tests(path, errors)]
     jobs = [job for path in workflows() for job in marked_jobs(path, errors)]
-    check([*tests, *jobs], known, errors)
+    check([*tests, *jobs], known, document, errors)
     if args.check:
         for error in errors:
             print(error, file=sys.stderr)

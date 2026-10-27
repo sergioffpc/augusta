@@ -196,9 +196,9 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
   executable tests, not every module it links, and a fuzz target's seed tests
   take the area of the input they decode. So `make test TAGS=<area>` builds and
   runs that module's own tests alone (ADR-0008); the integration tests that only
-  use it stay with the full regression. The `check`, `property` and `netcode`
-  labels stay beside the area. The area check refuses an executable with none,
-  two or an unknown one.
+  use it stay with the full regression. An executable's labels are its one area
+  and, beside it, only `check`, `property` or `netcode`. The area check refuses
+  an executable with no area, with more than one, or with any other label.
 - **Coverage** is a report for finding untested deterministic logic, not a gate:
   a minimum percentage pushes toward tests written for the number.
 - **Every test names at least one requirement it checks**

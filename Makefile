@@ -161,7 +161,7 @@ help:
 	$(info Test:)
 	$(info $()  test             build, then compile the tests and run ctest, or TAGS="property ..." the tests with any of those labels alone:)
 	$(info $()                   TAGS=<area> ... (animation, ...) compiles that area's test executables alone)
-	$(info $()  labels           configure, then list the labels TAGS picks from, the areas among them (the GoogleTest ones once test has built them))
+	$(info $()  labels           configure, then list the test areas, and the labels ctest knows (the GoogleTest ones once test has built them))
 	$(info $()  check            configure, then the repository's structural checks (checks/) and their pytest)
 	$(info $()  coverage         test under the linux-coverage preset, then its report into build/x64-linux-coverage/report)
 	$(info $()  profile          build augustac, then run it under nsys, which records the Profiling panel's capture into $(PROFILE_DIR))
@@ -200,7 +200,8 @@ space := $() $()
 TAGS_REGEX = "^($(subst $(space),|,$(strip $(TAGS))))$$"
 
 # The test areas this build's executables carry, as tests/CMakeLists.txt
-# writes them when it configures: read when test runs, after its configure.
+# writes them when it configures: read when test or labels runs, after its
+# configure.
 TEST_AREAS = $(file <$(BUILD_DIR)/tests/test_areas.txt)
 # augusta_tests_<area> for each of TAGS when every tag is an area, so only
 # those areas' executables build; augusta_tests, every test, otherwise.
@@ -212,11 +213,13 @@ test: build
 	$(RUN) cmake --build --preset $(PRESET) --target $(TEST_TARGETS)
 	$(RUN) ctest --preset $(PRESET) --parallel $(JOBS) $(if $(strip $(TAGS)),--label-regex $(TAGS_REGEX) --no-tests=error)
 
-# The labels ctest knows in this build, which TAGS picks from: the test areas
-# (animation, ...) and check, property and netcode.
-# gtest_discover_tests labels its tests when they are built, so those show once
-# test has run.
+# The labels TAGS picks from: first the test areas, read from what configure
+# wrote, so they show before any test is built; then the labels ctest knows in
+# this build. gtest_discover_tests labels its tests when they are built, so
+# ctest lists the areas, property and netcode once test has run.
 labels: configure
+	$(info Test areas, each of which TAGS=<area> builds alone:)
+	$(foreach area,$(sort $(TEST_AREAS)),$(info $()  $(area)))
 	$(RUN) ctest --preset $(PRESET) --print-labels
 
 # The structural checks (checks/CMakeLists.txt) build nothing: configuring

@@ -2,11 +2,11 @@
 # gtest_discover_tests call in tests/, tests/fuzz/ and a tool's tests/ names
 # one area among its ctest labels, beside check, property and netcode, so
 # `make test TAGS=<area>` builds and runs it, and no executable falls out of
-# every area's run. The check refuses a call with no area, one with two, and
-# one whose area is no module's, Runtime's or tool's (cmake/TestAreas.cmake),
-# each naming the file and line. It proves itself first on a planted violation
-# of each, so it cannot pass by matching nothing. A source scan, so it builds
-# nothing.
+# every area's run. The check refuses a call with no area, one with more than
+# one, and one with a label that is neither an area (a module's, Runtime's or
+# tool's) nor check, property or netcode (cmake/TestAreas.cmake), each naming
+# the file and line. It proves itself first on a planted violation of each, so
+# it cannot pass by matching nothing. A source scan, so it builds nothing.
 #
 # Run by ctest as `cmake -DSOURCE_DIR=<repo root> -DBINARY_DIR=<scratch dir>
 # -P test_areas.cmake`.
@@ -17,27 +17,15 @@ endif()
 include(${SOURCE_DIR}/cmake/TestAreas.cmake)
 augusta_test_area_vocabulary(${SOURCE_DIR} vocabulary)
 
-# The labels a call may carry beside its area: make check's, the nightly's
-# property run's and the netcode presets' (ADR-0013).
-set(other_labels check property netcode)
-
-# What of listfile's gtest_discover_tests calls has no area, two or an unknown
-# one: each a line of out_violations, `<relative>:<line>: <what>`, with the
-# number of calls read in out_count.
+# What of listfile's gtest_discover_tests calls has no area, more than one or
+# an unknown label: each a line of out_violations, `<relative>:<line>: <what>`,
+# with the number of calls read in out_count.
 function(check_areas listfile relative out_violations out_count)
   augusta_read_test_labels("${listfile}" discovered)
   set(violations "")
   foreach(target IN LISTS discovered_TARGETS)
     set(where "${relative}:${discovered_LINE_${target}}: ${target}")
-    set(areas "")
-    set(unknown "")
-    foreach(label IN LISTS discovered_LABELS_${target})
-      if(label IN_LIST vocabulary)
-        list(APPEND areas ${label})
-      elseif(NOT label IN_LIST other_labels)
-        list(APPEND unknown ${label})
-      endif()
-    endforeach()
+    augusta_test_label_areas("${discovered_LABELS_${target}}" "${vocabulary}" areas unknown)
     list(LENGTH areas area_count)
     if(unknown)
       list(JOIN unknown ", " unknown)
@@ -46,7 +34,7 @@ function(check_areas listfile relative out_violations out_count)
       list(APPEND violations "${where} names no area among its labels")
     elseif(area_count GREATER 1)
       list(JOIN areas ", " areas)
-      list(APPEND violations "${where} names two areas, ${areas}: an executable tests one")
+      list(APPEND violations "${where} names more than one area, ${areas}: an executable tests one")
     endif()
   endforeach()
   list(LENGTH discovered_TARGETS count)
@@ -74,7 +62,7 @@ set(self_test "")
 set(
   expected
   "planted:1: augusta_none_tests names no area"
-  "planted:2: augusta_two_tests names two areas, animation, audio"
+  "planted:2: augusta_two_tests names more than one area, animation, audio"
   "planted:4: augusta_unknown_tests names animations, no area"
 )
 foreach(refusal IN LISTS expected)
@@ -97,11 +85,12 @@ if(self_test)
   message(FATAL_ERROR "test_areas.cmake: the check fails its planted violations:\n${self_test}")
 endif()
 
-# Then the tree's test directories, as tests/CMakeLists.txt lists them.
-file(GLOB tool_tests RELATIVE "${SOURCE_DIR}" "${SOURCE_DIR}/tools/*/tests/CMakeLists.txt")
+# Then the tree's test listfiles, every tool's whether or not a build
+# configures the tools (cmake/TestAreas.cmake).
+augusta_test_listfiles(${SOURCE_DIR} listfiles)
 set(violations "")
 set(total 0)
-foreach(relative tests/CMakeLists.txt tests/fuzz/CMakeLists.txt ${tool_tests})
+foreach(relative IN LISTS listfiles)
   check_areas("${SOURCE_DIR}/${relative}" "${relative}" listfile_violations count)
   if(count EQUAL 0)
     message(FATAL_ERROR "test_areas.cmake: no gtest_discover_tests call found in ${relative}")

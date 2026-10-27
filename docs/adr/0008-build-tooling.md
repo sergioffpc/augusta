@@ -19,7 +19,8 @@ of those areas' targets when every tag is an area, and `augusta_tests`
 otherwise, then runs the tests carrying those labels: a change to one module
 neither waits for nor runs the whole suite. The area check
 (`checks/test_areas.cmake`, under `make check`) refuses an executable with no
-area, with two, or with one that is no module's, Runtime's or tool's.
+area, with more than one, or with any label besides its area other than the
+`check`, `property` and `netcode` that ADR-0013 allows.
 
 Linux (the server, the client and the shared core, including the sanitizer and
 fuzzing builds) builds with LLVM's toolchain alone, Ubuntu's packages of it:

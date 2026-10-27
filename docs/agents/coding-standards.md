@@ -110,15 +110,9 @@ names no requirement, a marker that names an ID the document does not have, and
 a requirement met in a release (`vN`) that no test or CI job names
 (`scripts/requirements-matrix.py --check`, ADR-0013).
 
-A new test executable names its area as a `ctest` label on its
-`gtest_discover_tests` call: the one runtime module it tests, `client` or
-`server` for a Runtime's tests, or the tool's name for a tool's tests (ADR-0008,
-ADR-0013). The area is what the executable tests, not what it links: an
-executable that links animation only to build fixture Clips takes the area of
-the module it tests. The `check`, `property` and `netcode` labels go beside it
-(`PROPERTIES LABELS "protocol;property"`), and the area check
-(`checks/test_areas.cmake`) refuses an executable with none, two or an unknown
-one.
+A new test executable names the one area it tests, not what it links, as a
+`ctest` label on its `gtest_discover_tests` call, with only `check`, `property`
+or `netcode` beside it (ADR-0013's rule; `make check` enforces it).
 
 Reach for a property-based test (RapidCheck) when an invariant holds over a
 whole input domain — a serialization round-trip, a value that must never go

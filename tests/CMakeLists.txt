@@ -1258,16 +1258,22 @@ target_link_libraries(
 )
 
 # Every executable here and in fuzz/, and in each tool's tests/ (kept next to
-# the tool) when AUGUSTA_TOOLS builds the tools:
-# what ctest, the benchmarks and the fuzz jobs run. Each directory is
-# EXCLUDE_FROM_ALL, so this is how they get built. Custom targets (the seed
-# regenerators) stay out: they rewrite committed files. A tool's tests/ joins
-# the list here and turns VCPKG_APPLOCAL_DEPS off at its own top (see below).
+# the tool) when AUGUSTA_TOOLS builds the tools: what ctest, the benchmarks and
+# the fuzz jobs run (cmake/TestAreas.cmake lists the directories). Each
+# directory is EXCLUDE_FROM_ALL, so this is how they get built. Custom targets
+# (the seed regenerators) stay out: they rewrite committed files. A tool's
+# tests/ turns VCPKG_APPLOCAL_DEPS off at its own top (see below).
 add_custom_target(augusta_tests)
-set(test_directories ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/fuzz)
-if(AUGUSTA_TOOLS)
-  list(APPEND test_directories ${CMAKE_SOURCE_DIR}/tools/agent/tests)
+include(${CMAKE_SOURCE_DIR}/cmake/TestAreas.cmake)
+augusta_test_listfiles(${CMAKE_SOURCE_DIR} test_listfiles)
+if(NOT AUGUSTA_TOOLS)
+  list(FILTER test_listfiles EXCLUDE REGEX "^tools/")
 endif()
+set(test_directories "")
+foreach(listfile IN LISTS test_listfiles)
+  get_filename_component(directory ${CMAKE_SOURCE_DIR}/${listfile} DIRECTORY)
+  list(APPEND test_directories ${directory})
+endforeach()
 
 # On Windows vcpkg gives each executable a POST_BUILD step, z-applocal
 # (VCPKG_APPLOCAL_DEPS), that runs vcpkg.exe to copy the DLLs it loads from the
@@ -1318,7 +1324,6 @@ endforeach()
 # the area labels their gtest_discover_tests calls carry (cmake/TestAreas.cmake),
 # so labelling an executable is all that adding it to an area takes. The areas
 # go to test_areas.txt, from which `make test TAGS=<area>` picks the targets.
-include(${CMAKE_SOURCE_DIR}/cmake/TestAreas.cmake)
 augusta_test_area_vocabulary(${CMAKE_SOURCE_DIR} area_vocabulary)
 set(test_areas "")
 foreach(directory IN LISTS test_directories)
@@ -1332,15 +1337,13 @@ foreach(directory IN LISTS test_directories)
     if(NOT target_type STREQUAL "EXECUTABLE")
       continue()
     endif()
-    foreach(label IN LISTS discovered_LABELS_${target})
-      if(NOT label IN_LIST area_vocabulary)
-        continue()
+    augusta_test_label_areas("${discovered_LABELS_${target}}" "${area_vocabulary}" areas unknown)
+    foreach(area IN LISTS areas)
+      if(NOT TARGET augusta_tests_${area})
+        add_custom_target(augusta_tests_${area})
+        list(APPEND test_areas ${area})
       endif()
-      if(NOT TARGET augusta_tests_${label})
-        add_custom_target(augusta_tests_${label})
-        list(APPEND test_areas ${label})
-      endif()
-      add_dependencies(augusta_tests_${label} ${target})
+      add_dependencies(augusta_tests_${area} ${target})
     endforeach()
   endforeach()
 endforeach()
