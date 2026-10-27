@@ -297,14 +297,14 @@ TEST(ApplicationTest, AStopAsAskedExitsZeroWithoutAnErrorLine) {
 // it has to, and the block malloc handed out is in its heap.
 // Requirements: NFR-01
 TEST(ApplicationTest, MimallocServesAProcessItRedirectedAndAllocatesFor) {
-  const MimallocFacts facts{.redirected = true, .block_in_heap = true, .version = 217};
+  const MimallocFacts facts{.redirected = true, .block_in_heap = true, .version = 30503};
 
   EXPECT_TRUE(CheckMimalloc("augustad", facts).has_value());
 }
 
 // Requirements: NFR-01
 TEST(ApplicationTest, AProcessMimallocDidNotRedirectIsRefusedWithOneLineSayingSo) {
-  const MimallocFacts facts{.redirected = false, .block_in_heap = false, .version = 217};
+  const MimallocFacts facts{.redirected = false, .block_in_heap = false, .version = 30503};
 
   const auto checked = CheckMimalloc("augustad", facts);
 
@@ -316,7 +316,7 @@ TEST(ApplicationTest, AProcessMimallocDidNotRedirectIsRefusedWithOneLineSayingSo
 
 // Requirements: NFR-01
 TEST(ApplicationTest, AProcessWhoseBlockIsOutsideMimallocsHeapIsRefusedWithOneLineSayingSo) {
-  const MimallocFacts facts{.redirected = true, .block_in_heap = false, .version = 217};
+  const MimallocFacts facts{.redirected = true, .block_in_heap = false, .version = 30503};
 
   const auto checked = CheckMimalloc("augustac", facts);
 

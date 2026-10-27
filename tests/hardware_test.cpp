@@ -85,11 +85,12 @@ TEST(DescribeMachine, SaysUnknownForWhatTheOsDidNotTell) {
 }
 
 // The allocator a bug ran on (ADR-0078): mimalloc, with its version as
-// mi_version() gives it.
+// mi_version() gives it: two digits each for the minor and the patch, as
+// mimalloc.h's MI_MALLOC_VERSION has it (30503 for 3.5.3).
 // Requirements: NFR-19
 TEST(DescribeAllocator, NamesMimallocAndItsVersion) {
-  EXPECT_EQ(DescribeAllocator(353), "allocator=mimalloc/3.5.3");
-  EXPECT_EQ(DescribeAllocator(217), "allocator=mimalloc/2.1.7");
+  EXPECT_EQ(DescribeAllocator(30503), "allocator=mimalloc/3.5.3");
+  EXPECT_EQ(DescribeAllocator(31012), "allocator=mimalloc/3.10.12");
 }
 
 // A sanitizer build reads no mimalloc version: its sanitizer's allocator serves.

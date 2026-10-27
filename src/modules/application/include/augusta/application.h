@@ -133,7 +133,7 @@ struct MimallocFacts {
   /// Whether a block malloc had just handed out is in mimalloc's heap
   /// (mi_is_in_heap_region()).
   bool block_in_heap = false;
-  /// mi_version(): major * 100 + minor * 10 + patch, e.g. 353 for 3.5.3.
+  /// mi_version(): major * 10000 + minor * 100 + patch, e.g. 30503 for 3.5.3.
   int version = 0;
 };
 

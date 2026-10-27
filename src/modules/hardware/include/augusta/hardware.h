@@ -60,7 +60,7 @@ std::string DescribeMachine(const Machine& machine);
 
 /// What serves malloc, as a logfmt field (ADR-0029) for the same line:
 /// `allocator=mimalloc/<major>.<minor>.<patch>` from mimalloc_version as
-/// mi_version() gives it (major * 100 + minor * 10 + patch), which the
+/// mi_version() gives it (major * 10000 + minor * 100 + patch), which the
 /// executable read of mimalloc (ADR-0078); `allocator=platform` without one, in
 /// a sanitizer build, whose sanitizer's allocator serves.
 std::string DescribeAllocator(std::optional<int> mimalloc_version);
