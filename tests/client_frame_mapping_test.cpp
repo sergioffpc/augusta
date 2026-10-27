@@ -51,8 +51,10 @@ TEST(CharactersOfTest, AreEveryPlayersCharacterInSessionOrder) {
   EXPECT_EQ(characters[1].character, "medic");
 }
 
+// Requirements: US-17
 TEST(CharactersOfTest, AreNoneBeforeTheFirstMatch) { EXPECT_TRUE(CharactersOf(std::nullopt).empty()); }
 
+// Requirements: US-18
 TEST(MatchEndOfTest, NamesTheWinnerByTheBodyItPlayed) {
   augusta::harness::ServerView view;
   view.match_start = TwoPlayerMatch();
@@ -64,6 +66,7 @@ TEST(MatchEndOfTest, NamesTheWinnerByTheBodyItPlayed) {
   EXPECT_EQ(end->winner, augusta::presentation::EntityId{70});
 }
 
+// Requirements: US-18
 TEST(MatchEndOfTest, AWinnerMissingFromMatchStartIsNone) {
   augusta::harness::ServerView view;
   view.match_start = TwoPlayerMatch();
@@ -75,6 +78,7 @@ TEST(MatchEndOfTest, AWinnerMissingFromMatchStartIsNone) {
   EXPECT_FALSE(end->winner.has_value());
 }
 
+// Requirements: US-18
 TEST(MatchEndOfTest, IsNoneWhileNoMatchHasEnded) {
   augusta::harness::ServerView view;
   view.match_start = TwoPlayerMatch();
@@ -82,6 +86,7 @@ TEST(MatchEndOfTest, IsNoneWhileNoMatchHasEnded) {
   EXPECT_FALSE(MatchEndOf(view).has_value());
 }
 
+// Requirements: US-19
 TEST(CombatEffectsOfTest, FadesEachEffectByItsAgeOverItsLifetime) {
   augusta::presentation::State state;
   state.impacts = {{.position = Vec3(1.0F, 0.0F, 0.0F), .age = augusta::presentation::kImpactSeconds / 4.0F}};
@@ -99,6 +104,7 @@ TEST(CombatEffectsOfTest, FadesEachEffectByItsAgeOverItsLifetime) {
   EXPECT_EQ(effects.tracers[0].head, Vec3(0.0F, 0.0F, 1.0F));
 }
 
+// Requirements: US-11, NFR-02
 TEST(WithSeenTimeTest, ReportsTheSeenTimeOfTheLastFrame) {
   const auto command = WithSeenTime({}, augusta::presentation::SeenTime{.tick = 41, .fraction = 0.5F});
 
@@ -106,6 +112,7 @@ TEST(WithSeenTimeTest, ReportsTheSeenTimeOfTheLastFrame) {
   EXPECT_FLOAT_EQ(command.seen_fraction, 0.5F);
 }
 
+// Requirements: US-11, NFR-02
 TEST(WithSeenTimeTest, ReportsNoneWithoutASeenTime) {
   const augusta::command::Command command = WithSeenTime({}, std::nullopt);
 
@@ -145,6 +152,7 @@ std::vector<augusta::tick::Tick> TicksOf(std::span<const augusta::presentation::
   return ticks;
 }
 
+// Requirements: US-17
 TEST(ConvertedServerViewTest, IsNothingBeforeTheFirstView) {
   const ConvertedServerView converted;
 
@@ -152,6 +160,7 @@ TEST(ConvertedServerViewTest, IsNothingBeforeTheFirstView) {
   EXPECT_TRUE(converted.Characters().empty());
 }
 
+// Requirements: US-17
 TEST(ConvertedServerViewTest, IsNoUpdateBeforeTheFirstAuthoritativeState) {
   ConvertedServerView converted;
 
@@ -160,6 +169,7 @@ TEST(ConvertedServerViewTest, IsNoUpdateBeforeTheFirstAuthoritativeState) {
   EXPECT_TRUE(converted.Updates().empty());
 }
 
+// Requirements: US-17
 TEST(ConvertedServerViewTest, CarriesTheNewestAuthoritativeStateAtTheServersTickDuration) {
   ConvertedServerView converted;
 
@@ -207,6 +217,7 @@ TEST(ConvertedServerViewTest, CarriesEveryRecentUpdateOfTheServerViewOldestFirst
   EXPECT_EQ(TicksOf(converted.Updates()), (std::vector<augusta::tick::Tick>{10, 11, 12, 13}));
 }
 
+// Requirements: US-17
 TEST(ConvertedServerViewTest, DropsTheUpdatesTheServerViewNoLongerKeeps) {
   ConvertedServerView converted;
   converted.Update(InMatch(1, {{.tick = 10, .bodies = {}}, {.tick = 11, .bodies = {}}}));
@@ -219,6 +230,7 @@ TEST(ConvertedServerViewTest, DropsTheUpdatesTheServerViewNoLongerKeeps) {
 // The Inbox publishes an Authoritative State only newer than the one it holds,
 // so a view of the same match holds the same state at a tick already converted:
 // render frames in between reuse what the first converted.
+// Requirements: US-17
 TEST(ConvertedServerViewTest, ConvertsAnAuthoritativeStateOnlyOnceForEveryRenderFrameItIsRecent) {
   ConvertedServerView converted;
   converted.Update(InMatch(1, 12, {{.entity = EntityId{4}}}));
@@ -235,6 +247,7 @@ TEST(ConvertedServerViewTest, ConvertsAnAuthoritativeStateOnlyOnceForEveryRender
   EXPECT_EQ(converted.Updates()[1].bodies.size(), 2U);
 }
 
+// Requirements: US-17
 TEST(ConvertedServerViewTest, ConvertsTheNextMatchsStateEvenAtATickAlreadySeen) {
   ConvertedServerView converted;
   converted.Update(InMatch(1, 12, {{.entity = EntityId{4}}}));
@@ -246,6 +259,7 @@ TEST(ConvertedServerViewTest, ConvertsTheNextMatchsStateEvenAtATickAlreadySeen) 
   EXPECT_EQ(converted.Updates()[0].bodies[0].entity, augusta::presentation::EntityId{5});
 }
 
+// Requirements: US-17
 TEST(ConvertedServerViewTest, IsNoUpdateOnceTheMatchEnds) {
   ConvertedServerView converted;
   augusta::harness::ServerView view = InMatch(1, 12, {{.entity = EntityId{4}}});
@@ -260,6 +274,7 @@ TEST(ConvertedServerViewTest, IsNoUpdateOnceTheMatchEnds) {
   EXPECT_TRUE(converted.Updates().empty());
 }
 
+// Requirements: US-17
 TEST(ConvertedServerViewTest, NamesEveryPlayersCharacterInSessionOrder) {
   ConvertedServerView converted;
 
@@ -275,6 +290,7 @@ TEST(ConvertedServerViewTest, NamesEveryPlayersCharacterInSessionOrder) {
 
 // Match start is told once per match: render frames reuse its characters until
 // the next.
+// Requirements: US-17
 TEST(ConvertedServerViewTest, ConvertsTheCharactersOnlyOnceForEveryMatch) {
   ConvertedServerView converted;
   converted.Update(InMatch(1, 12, {}));

@@ -54,6 +54,7 @@ void ExpectNear(const Vec3& actual, const Vec3& expected) {
   EXPECT_NEAR(actual.z, expected.z, kTolerance);
 }
 
+// Requirements: NFR-04
 TEST(BuildRenderSceneTest, PlacesMeshGeometryInWorldSpaceThroughTheParentChain) {
   SceneData scene;
   scene.nodes.push_back(Node("Root", augusta::assets::kSceneNodeNoParent));
@@ -73,6 +74,7 @@ TEST(BuildRenderSceneTest, PlacesMeshGeometryInWorldSpaceThroughTheParentChain) 
   EXPECT_EQ(result->meshes[0].indices, (std::vector<std::uint32_t>{0, 1, 2}));
 }
 
+// Requirements: NFR-04
 TEST(BuildRenderSceneTest, ReadsAMeshsBaseColorFromItsNodeProperty) {
   SceneData scene;
   scene.nodes.push_back(Node("Root/Tri", augusta::assets::kSceneNodeNoParent));
@@ -85,6 +87,7 @@ TEST(BuildRenderSceneTest, ReadsAMeshsBaseColorFromItsNodeProperty) {
   ExpectNear(result->meshes[0].color, {0.25F, 0.5F, 1.0F});
 }
 
+// Requirements: NFR-04
 TEST(BuildRenderSceneTest, KeepsTheDefaultColorWhenANodeHasNoBaseColor) {
   SceneData scene;
   scene.nodes.push_back(Node("Root/Tri", augusta::assets::kSceneNodeNoParent));
@@ -96,6 +99,7 @@ TEST(BuildRenderSceneTest, KeepsTheDefaultColorWhenANodeHasNoBaseColor) {
   ExpectNear(result->meshes[0].color, augusta::renderer::SceneMesh{}.color);
 }
 
+// Requirements: US-22
 TEST(BuildRenderSceneTest, RejectsAMalformedBaseColorNamingTheNode) {
   for (const char* value : {"0.5 0.5", "red", "0.1 0.2 0.3 0.4", ""}) {
     SceneData scene;
@@ -112,6 +116,7 @@ TEST(BuildRenderSceneTest, RejectsAMalformedBaseColorNamingTheNode) {
   }
 }
 
+// Requirements: NFR-04
 TEST(BuildRenderSceneTest, AppliesAParentsRotationToItsChildren) {
   SceneData scene;
   scene.nodes.push_back(Node("Root", augusta::assets::kSceneNodeNoParent));
@@ -127,6 +132,7 @@ TEST(BuildRenderSceneTest, AppliesAParentsRotationToItsChildren) {
   ExpectNear(result->meshes[0].positions[2], {1.0F, 0.0F, 0.0F});
 }
 
+// Requirements: US-03
 TEST(BuildRenderSceneTest, PutsTheCameraAtTheLocalPlayersEyeAboveTheFirstSpawnPoint) {
   SceneData scene;
   scene.nodes.push_back(Node("Root", augusta::assets::kSceneNodeNoParent));
@@ -147,6 +153,7 @@ TEST(BuildRenderSceneTest, PutsTheCameraAtTheLocalPlayersEyeAboveTheFirstSpawnPo
   EXPECT_NEAR(result->camera.rotation.y, expected.y, kTolerance);
 }
 
+// Requirements: NFR-04
 TEST(BuildRenderSceneTest, KeepsTheDefaultCameraWithoutASpawnPoint) {
   SceneData scene;
   scene.nodes.push_back(Node("Root", augusta::assets::kSceneNodeNoParent));
@@ -158,6 +165,7 @@ TEST(BuildRenderSceneTest, KeepsTheDefaultCameraWithoutASpawnPoint) {
   ExpectNear(result->camera.position, default_camera.position);
 }
 
+// Requirements: US-22
 TEST(BuildRenderSceneTest, ReportsTheMeshItCouldNotResolve) {
   SceneData scene;
   scene.nodes.push_back(Node("Root", augusta::assets::kSceneNodeNoParent));
@@ -172,6 +180,7 @@ TEST(BuildRenderSceneTest, ReportsTheMeshItCouldNotResolve) {
   EXPECT_EQ(result.error().resolve_error, ResolveError::kNotFound);
 }
 
+// Requirements: US-22
 TEST(DescribeSceneErrorTest, NamesTheAssetThatFailedToResolve) {
   const auto scene = DescribeSceneError({.code = SceneErrorCode::kSceneUnresolved,
                                          .node = {},

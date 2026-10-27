@@ -151,6 +151,16 @@ accuracy for speed.
 Given I have a weapon equipped
 When I toggle aim down sights (ADS)
 Then my view zooms and the weapon's accuracy/recoil model changes accordingly
+
+Given I am playing with the cursor captured
+When I move the mouse
+Then my view turns by how far it moved at augustac.yaml's input.mouse_sensitivity,
+     right turning right and up looking up; pitch stops short of straight up and
+     straight down, and yaw wraps, so turning on and on stays within one turn
+
+Given I am aiming from the hip
+When a frame is drawn, whatever the window's size
+Then the crosshair shows at the frame's centre, the same size in pixels
 ```
 
 In VR (US-25), I aim by bringing the rifle's sight to my eye: there is no ADS
@@ -723,6 +733,25 @@ silicon Mac, `scripts/dev-container.sh`) builds it natively too.
 
 `cmake/AugustaPlatform.cmake` holds this contract, and the configure stops on
 any other OS, architecture or 32-bit toolchain rather than compiling for it.
+
+On each client platform, the client runs on the machine's own Vulkan device:
+
+```text
+Source:      Player
+Stimulus:    Client startup
+Environment: A Windows x64 or Linux x86-64 machine with one or more Vulkan
+             devices
+Artifact:    Client (renderer)
+Response:    The client picks a Vulkan 1.3 device that can present to its
+             window, a discrete GPU over an integrated one, and a software
+             (CPU) device only when asked for one; it draws the Map as
+             authored
+Measure:     A device without Vulkan 1.3 or that cannot present is never
+             picked; a GPU is never picked when a software device is asked
+             for, nor a software device otherwise; each of the Map's meshes
+             is drawn where its node and their parents place it, in its
+             node's base colour
+```
 
 ### NFR-05: Server Authority / Cheat Resistance
 
