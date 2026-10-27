@@ -6,27 +6,32 @@ custom-built module instead of relying on PhysX's generic projectile handling,
 since hand-rolling it is one of this project's core learning goals and gives
 full control over determinism.
 
-## Raycasting a moved body
+## No raycast sees a body
+
+A `physics::World` offers no raycast that reports a player's body: its one
+raycast, `World::RaycastMap`, sees the collision meshes (the Map) only. No
+requirement needs a ray that sees bodies, and the scene does not hold them where
+they are.
 
 A World moves players' bodies only through PhysX character controllers. A
-controller's scene-query actor, the one a raycast reports a player hit on, is a
-kinematic actor, and the controller moves it only with `setKinematicTarget` (in
-`move`, and in `setPosition`/`setFootPosition`, which `resize` also goes
-through). A kinematic target takes effect at the next simulate, and scene
-queries see it earlier only if the actor has
+controller's scene-query actor, the one a scene raycast would report a player
+hit on, is a kinematic actor, and the controller moves it only with
+`setKinematicTarget` (in `move`, and in `setPosition`/`setFootPosition`, which
+`resize` also goes through). A kinematic target takes effect at the next
+simulate, and scene queries see it earlier only if the actor has
 `PxRigidBodyFlag::eUSE_KINEMATIC_TARGET_FOR_SCENE_QUERIES`, which the controller
-does not set. So `physics::World::Raycast` hits a body where its controller
-stood at the World's last simulate (ADR-0045's Dynamics phase), not where it is
-after the moves since; before a World's first simulate, that place is where the
-controller was made. `CreateBody` leaves the controller descriptor's position at
-its default, so that first place is a capsule centered on the world origin,
-whatever the body's `initial_position`; a stance change resizes that capsule
-where it stands.
+does not set. So a scene raycast would hit a body where its controller stood at
+the World's last simulate (ADR-0045's Dynamics phase), not where it is after the
+moves since; before a World's first simulate, that place is where the controller
+was made. `CreateBody` leaves the controller descriptor's position at its
+default, so that first place is a capsule centered on the world origin, whatever
+the body's `initial_position`; a stance change resizes that capsule where it
+stands.
 
 This was read from the PhysX 5.5.0 source the vcpkg port builds (tag
 `106.4-physx-5.5.0`: `CctController.cpp`, `CctCharacterController.cpp`,
 `CctCapsuleController.cpp`, `PxRigidDynamic.h`, `PxRigidBody.h`), not seen run:
-the confidence is high, but it is not verified. Nothing calls `World::Raycast`.
+the confidence is high, but it is not verified.
 
 Player hit detection (M4, US-11) does not test against these actors: it tests a
 shot against each player's hitboxes as they were the Shooter's delay ago, kept

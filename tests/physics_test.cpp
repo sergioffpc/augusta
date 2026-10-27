@@ -539,8 +539,12 @@ TEST(StaticGeometryTest, ARaycastOfTheMapSeesTheMapButNoBody) {
   world.CreateBody(Vec3(0.0F));
   const Vec3 above(0.0F, 10.0F, 0.0F);
   const Vec3 down(0.0F, -1.0F, 0.0F);
-  ASSERT_TRUE(world.Raycast(above, down, 20.0F).has_hit);
-  ASSERT_GT(world.Raycast(above, down, 20.0F).point.y, 0.5F);
+  // The body stands under the ray, as a second body walking through there
+  // stops short of it.
+  const auto walker = world.CreateBody(Vec3(-4.0F, 0.0F, 0.0F));
+  MovementInput walk{};
+  walk.direction = Vec3(1.0F, 0.0F, 0.0F);
+  ASSERT_LT(Settle(world, walker, walk, 300).position.x, 0.0F);
 
   const MapRaycastHit hit = world.RaycastMap(above, down, 20.0F);
 

@@ -219,22 +219,6 @@ std::expected<void, CollisionMeshError> ValidateCollisionMesh(const CollisionMes
 /// A phrase for error, for a startup failure to report.
 std::string_view DescribeCollisionMeshError(CollisionMeshError error);
 
-/// The result of one World::Raycast query.
-struct RaycastHit {
-  /// True if the ray intersected any body within max_distance. If false,
-  /// every other field here is unspecified.
-  bool has_hit = false;
-  /// Which body was hit. Only meaningful if has_hit is true and the hit was a
-  /// body: it is left at its default when the ray hit static map geometry.
-  BodyHandle body{};
-  /// World-space point where the ray intersected body. Only meaningful
-  /// if has_hit is true.
-  math::Vec3 point;
-  /// Distance along the ray from origin to point. Only meaningful if
-  /// has_hit is true.
-  float distance = 0.0F;
-};
-
 /// The result of one World::RaycastMap query.
 struct MapRaycastHit {
   /// True if the ray intersected a collision mesh within max_distance. If
@@ -381,19 +365,10 @@ class World {
   /// starting over.
   BodyState Restore(BodyHandle handle, const BodyState& state, const FallState& fall);
 
-  /// Casts a ray from origin in direction (need not be pre-normalized) up
-  /// to max_distance, against every body and collision mesh currently in this
-  /// World, and returns the closest intersection.
-  ///
-  /// A body is not hit where it is: the ray sees it where its PhysX
-  /// controller was made (centered on the world origin), however far
-  /// CreateBody, Step, SetState or Restore have put it since (ADR-0002), until
-  /// a StepVisualization moves its actor to where its body is.
-  /// Player hit detection does not use this - see RaycastMap.
-  [[nodiscard]] RaycastHit Raycast(const math::Vec3& origin, const math::Vec3& direction, float max_distance) const;
-
-  /// Like Raycast, but against the collision meshes (the Map) only: no body is
-  /// ever reported, wherever its controller is. What a bullet's flight is tested
+  /// Casts a ray from origin in direction (need not be pre-normalized) up to
+  /// max_distance, against the collision meshes (the Map) currently in this
+  /// World, and returns the closest intersection. No body is ever reported,
+  /// wherever its controller is (ADR-0002). What a bullet's flight is tested
   /// against, since player hits are judged against hitboxes instead (ADR-0044).
   /// Reports which mesh it struck by the Surface id the mesh was added with.
   [[nodiscard]] MapRaycastHit RaycastMap(const math::Vec3& origin, const math::Vec3& direction,
@@ -415,8 +390,7 @@ class World {
   /// The step is harmless: a World holds the Map's static meshes and each
   /// body's kinematic actor, nothing dynamic, so it moves only those actors,
   /// to where their bodies last moved. No body's Step, SetState, Restore or
-  /// Fall sees them, nor RaycastMap; only Raycast sees a body where it is
-  /// rather than where its controller was made, from this call on.
+  /// Fall sees them, nor RaycastMap.
   [[nodiscard]] std::optional<std::vector<VisualizationLine>> StepVisualization(float delta_time);
 #endif
 

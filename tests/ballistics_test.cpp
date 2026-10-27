@@ -290,10 +290,17 @@ TEST(BallisticsStrikeTest, ABulletPassesThroughAPlayersControllerWhenNoHitboxIsH
   augusta::physics::World map{StaminaConfig{}};
   map.CreateBody(Vec3(0.0F));
   // The controller's capsule stands on the world origin (ADR-0002); this line
-  // crosses it, as a plain physics raycast confirms.
+  // crosses it, as a Hitbox there, handed in, is struck.
   const Vec3 muzzle(-5.0F, 0.0F, 0.0F);
-  ASSERT_TRUE(map.Raycast(muzzle, kAlongX, 10.0F).has_hit);
+  const Vec3 low_near(0.0F, -1.0F, -1.0F);
+  const Vec3 low_far(0.0F, -1.0F, 1.0F);
+  const Vec3 high_far(0.0F, 1.0F, 1.0F);
+  const Vec3 high_near(0.0F, 1.0F, -1.0F);
+  const std::array player{Triangle{low_near, low_far, high_far}, Triangle{low_near, high_far, high_near}};
+  const std::array hitboxes{Hitbox{.surface = kNearHitbox, .triangles = player}};
   World world;
+  const auto struck = world.Fire(muzzle, kAlongX, kTenUnitsATick, kNoDrop);
+  ASSERT_EQ(world.Step(struck, kFixedTick, map, hitboxes).outcome, Outcome::kStruck);
   const auto bullet = world.Fire(muzzle, kAlongX, kTenUnitsATick, kNoDrop);
 
   EXPECT_EQ(world.Step(bullet, kFixedTick, map, {}).outcome, Outcome::kInFlight);
