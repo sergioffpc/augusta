@@ -34,7 +34,7 @@ class LogErrorCallback : public physx::PxErrorCallback {
 // on every platform. PxDefaultAllocator relies on plain malloc's alignment
 // outside Windows and Linux, which mimalloc and others don't give a small
 // block on macOS (#1401).
-class AlignedAllocator : public physx::PxAllocatorCallback {
+class PhysxAllocator : public physx::PxAllocatorCallback {
  public:
   // NOLINTNEXTLINE(readability-identifier-naming) - name mandated by PxAllocatorCallback's own virtual signature.
   void* allocate(std::size_t size, const char* type_name, const char* file, int line) override;
@@ -51,7 +51,7 @@ struct PhysxProcessState {
   int users = 0;
   // Must outlive the foundation, so they live here rather than in each World.
   LogErrorCallback error_callback;
-  AlignedAllocator allocator;
+  PhysxAllocator allocator;
   physx::PxFoundation* foundation = nullptr;
 #if AUGUSTA_DEBUG_TOOLS
   // What samples physics into a recording (StartRecording); null when none does.

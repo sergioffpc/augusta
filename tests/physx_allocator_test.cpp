@@ -10,12 +10,13 @@
 // 16-byte aligned, whatever malloc the process runs (#1401).
 namespace {
 
-using augusta::physics::AlignedAllocator;
+using augusta::physics::PhysxAllocator;
 
 constexpr std::uintptr_t kPhysxAlignment = 16;
 
-TEST(AlignedAllocatorTest, EverySizeComesBack16ByteAligned) {
-  AlignedAllocator allocator;
+// Requirements: NFR-04
+TEST(PhysxAllocatorTest, EverySizeComesBack16ByteAligned) {
+  PhysxAllocator allocator;
   std::vector<std::size_t> sizes;
   for (std::size_t size = 1; size <= 16; ++size) {
     sizes.push_back(size);
@@ -32,10 +33,7 @@ TEST(AlignedAllocatorTest, EverySizeComesBack16ByteAligned) {
   for (void* block : blocks) {
     allocator.deallocate(block);
   }
-}
-
-TEST(AlignedAllocatorTest, DeallocatingNullDoesNothing) {
-  AlignedAllocator allocator;
+  // Null is accepted, as free() accepts it.
   allocator.deallocate(nullptr);
 }
 

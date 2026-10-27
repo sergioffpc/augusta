@@ -54,11 +54,11 @@ void LogErrorCallback::reportError(physx::PxErrorCode::Enum code, const char* me
 
 // Null on failure, as PxDefaultAllocator's malloc gave, rather than a throw
 // through PhysX's own code.
-void* AlignedAllocator::allocate(std::size_t size, const char* /*type_name*/, const char* /*file*/, int /*line*/) {
+void* PhysxAllocator::allocate(std::size_t size, const char* /*type_name*/, const char* /*file*/, int /*line*/) {
   return ::operator new(size, kPhysxAlignment, std::nothrow);
 }
 
-void AlignedAllocator::deallocate(void* ptr) { ::operator delete(ptr, kPhysxAlignment); }
+void PhysxAllocator::deallocate(void* ptr) { ::operator delete(ptr, kPhysxAlignment); }
 
 PhysxProcessState& GlobalState() {
   static PhysxProcessState state;
