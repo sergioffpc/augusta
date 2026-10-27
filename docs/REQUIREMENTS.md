@@ -56,6 +56,7 @@ version only when it is cut (ENGINEERING.md, Milestones).
     - [NFR-15: Cluster Hardening (Security)](#nfr-15-cluster-hardening-security)
     - [NFR-16: VR Frame Rate](#nfr-16-vr-frame-rate)
     - [NFR-17: Desktop Frame Rate](#nfr-17-desktop-frame-rate)
+    - [NFR-19: Diagnosable Runs](#nfr-19-diagnosable-runs)
 
 ---
 
@@ -737,34 +738,41 @@ Version: v3
 Source:      A defect in the dedicated server or the client
 Stimulus:    A fatal signal (SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT) in a
              published Linux build; an unhandled exception or an abort in a
-             published Windows client
+             published Windows client; a device fault (a GPU crash or TDR)
+             in a client on an NVIDIA GPU
 Environment: The server: a k3s node whose kernel.core_pattern is
              systemd-coredump's. The Linux client: a player's machine whose
              kernel.core_pattern is systemd-coredump's. The Windows client: a
              player's machine as installed, no registry key or Windows Error
              Reporting set up
-Artifact:    The shared crash handler, the server's image, the client's
-             tarball or zip and the build's debug info or PDB
+Artifact:    The shared crash handler, the Renderer's Aftermath hook, the
+             server's image, the client's tarball or zip and the build's
+             debug info or PDB
 Response:    The process logs the crash and the crashing thread's stack, then
              dies. On Linux the stack is symbolized and the kernel keeps its
              core; the Windows client names each frame's module and offset and
              writes its own minidump. The client's lines also reach the Run's
-             log, under its Run ID
+             log, under its Run ID. A device fault on an NVIDIA GPU writes
+             Aftermath's GPU crash dump
 Measure:     Every such crash leaves a crash line and one line per frame in
              ADR-0029's format, a core or minidump, and debug info whose build
              ID, or PDB whose GUID and age, matches the binary, kept as long as
-             the image or the release. The client's lines end in the Run's
-             run= and, while set, its session= and match=, end the Run's log
-             file; the Linux crash line names
+             the image or the release. The client's crash lines end in the
+             Run's run= and, while set, its session= and match=, and end the
+             Run's log file; the Linux crash line names
              coredumpctl as where the core is, and the Windows client's
              minidump is dumps/augustac-<run-id>.dmp, holding the Run ID in a
-             user stream
+             user stream. Each GPU crash dump is
+             dumps/augustac-<run-id>-<n>.nv-gpudmp, numbered from 1, and a
+             Development client's Profiling panel says whether Aftermath is
+             attached to the device and where the dumps land
 ```
 
 A stack overflow, or a crash in another thread or in the report itself, leaves
 no logged stack; a corrupted Windows client may fail to write its minidump; and
 the development-only Windows server build writes no core or minidump (ADR-0047,
-ADR-0055).
+ADR-0055). GPU crash dumps were first met in v6; a GPU of another vendor gets
+none.
 
 ### NFR-11: Deployability
 
@@ -919,3 +927,37 @@ Measure:     144 frames a second or more for the whole Match
 Lighting has no quality setting to trade for frame rate (ADR-0067): the frame
 rate is met with every player's shadows, reflections and indirect light as
 everyone else sees them.
+
+### NFR-19: Diagnosable Runs
+
+Version: v6
+
+```text
+Source:      A developer or operator reading what a client or the dedicated
+             server did
+Stimulus:    A client's Run or the server's life; a Session or a Match; a
+             warning repeated faster than it can be read; a launch after a
+             Run that crashed
+Environment: Client or server, from startup to exit, at the log level its
+             configuration names
+Artifact:    The shared logger, the client's Run files and the hardware probe
+Response:    Each line at or above the configured level reaches the console
+             and, for a client Run, its log file; a log file that cannot be
+             opened is reported, and the Run logs to the console alone; each
+             Run, Session and Match is named, and the server's log ties them
+             together
+Measure:     Every line is a UTC timestamp, the level and the message; only a
+             line at or above the configured level is written, and one below
+             it evaluates nothing; a throttled warning counts what it
+             suppressed; each Run, Session
+             and Match is named by a UUIDv7, the server logging a client's
+             Run ID with its Session ID at admission and each Match ID on
+             its Match's lines; the Match start line names every player's
+             Session; a launch after a crashed Run warns once and names that
+             Run's files; only the newest Runs' files are kept; the host's
+             OS, CPU, memory, container limits and GPU are logged at startup
+```
+
+ADR-0027 and ADR-0029 define the logger, the line and its levels; ADR-0038 the
+Run ID a client sends with its join. What a crash leaves in the log, and the
+`run=`, `session=` and `match=` that end a client's lines, are NFR-10's.

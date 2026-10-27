@@ -264,6 +264,7 @@ TEST(DescribeServerConfigErrorTest, SaysWhatACaptureRetentionLimitMustBe) {
   EXPECT_EQ(message, "'simulation.capture_retention.max_mib' must be an integer from 1 to 4294967295");
 }
 
+// Requirements: NFR-19
 TEST(ParseServerConfigTest, DefaultsTheLogLevel) {
   const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
 
@@ -271,6 +272,7 @@ TEST(ParseServerConfigTest, DefaultsTheLogLevel) {
   EXPECT_EQ(config->log_level, augusta::config::kDefaultLogLevel);
 }
 
+// Requirements: NFR-19
 TEST(ParseServerConfigTest, ReadsALogLevel) {
   const auto config = ParseServerConfig(ServerConfigWith("logging:\n  level: trace\n"), kFileDir);
 
@@ -278,6 +280,7 @@ TEST(ParseServerConfigTest, ReadsALogLevel) {
   EXPECT_EQ(config->log_level, "trace");
 }
 
+// Requirements: NFR-19
 TEST(ParseServerConfigTest, RejectsAnInvalidLogLevel) {
   const auto config = ParseServerConfig(ServerConfigWith("logging:\n  level: verbose\n"), kFileDir);
 
