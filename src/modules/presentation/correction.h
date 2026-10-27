@@ -31,7 +31,20 @@ class Correction {
   /// has grown by, whether the ticks in between were all seen or not.
   [[nodiscard]] math::Vec3 Update(const math::Vec3& total_correction, float delta_time);
 
+  /// The same, for a frame showing the body blended fraction of the way from
+  /// the previous tick's prediction::State to the latest's (BlendTicks), given
+  /// their total_corrections. Whether a jump snaps is decided on the jump the
+  /// latest tick made, not on what the blend shows of it this frame: one of
+  /// kSnapDistance or more is shown in full on the first frame of its tick.
+  [[nodiscard]] math::Vec3 Update(const math::Vec3& previous_total, const math::Vec3& latest_total, float fraction,
+                                  float delta_time);
+
  private:
+  // The offset for a frame that has seen total_correction. The jump since the
+  // last frame is shown at once when snaps is set or the jump itself reaches
+  // kSnapDistance (ticks the frames skipped); otherwise it is hidden.
+  math::Vec3 Hide(const math::Vec3& total_correction, float delta_time, bool snaps);
+
   math::Vec3 seen_total_{};
   math::Vec3 offset_{};
   bool has_seen_ = false;
