@@ -229,6 +229,7 @@ MessageWire RoundTrip(const MessageWire& message) {
   return decoded.value_or(MessageWire{});
 }
 
+// Requirements: NFR-20
 TEST(ProtocolTest, JoinRequestRoundTrips) {
   const auto decoded = RoundTrip(JoinRequestWire{.engine_version = "0.1.0", .character = ""});
 
@@ -236,6 +237,7 @@ TEST(ProtocolTest, JoinRequestRoundTrips) {
   EXPECT_EQ(std::get<JoinRequestWire>(decoded).engine_version, "0.1.0");
 }
 
+// Requirements: NFR-20
 TEST(ProtocolTest, JoinRequestWithTheLongestVersionRoundTrips) {
   const std::string longest(kMaxEngineVersionLength, 'v');
 
@@ -245,10 +247,12 @@ TEST(ProtocolTest, JoinRequestWithTheLongestVersionRoundTrips) {
 }
 
 // Either kind of build's version, `+dev` and all (ADR-0074), fits the wire.
+// Requirements: US-01, NFR-20
 TEST(ProtocolTest, TheEngineVersionFitsAJoinRequest) {
   EXPECT_LE(augusta::EngineVersion().size(), kMaxEngineVersionLength) << augusta::EngineVersion();
 }
 
+// Requirements: US-01, NFR-20
 TEST(ProtocolTest, JoinRequestCarriesTheClientPackHash) {
   const auto decoded =
       RoundTrip(JoinRequestWire{.engine_version = "0.1.0", .client_pack = CountingPackHash(), .character = ""});
@@ -256,12 +260,14 @@ TEST(ProtocolTest, JoinRequestCarriesTheClientPackHash) {
   EXPECT_EQ(std::get<JoinRequestWire>(decoded).client_pack, CountingPackHash());
 }
 
+// Requirements: US-16, NFR-20
 TEST(ProtocolTest, JoinRequestCarriesTheChosenCharacter) {
   const auto decoded = RoundTrip(JoinRequestWire{.engine_version = "0.1.0", .character = "soldier"});
 
   EXPECT_EQ(std::get<JoinRequestWire>(decoded).character, "soldier");
 }
 
+// Requirements: NFR-20
 TEST(ProtocolTest, JoinRequestWithTheLongestCharacterRoundTrips) {
   const std::string longest(augusta::protocol::kMaxCharacterNameLength, 'c');
 
@@ -278,6 +284,7 @@ TEST(ProtocolTest, ACharacterLongerThanAllowedIsTooLong) {
             DecodeError::kFieldTooLong);
 }
 
+// Requirements: NFR-20
 TEST(ProtocolTest, JoinRequestWithAnEmptyVersionRoundTrips) {
   const auto decoded = RoundTrip(JoinRequestWire{});
 
@@ -378,6 +385,7 @@ TEST(ProtocolTest, AReenactRequestsVersionAndCharacterAreBoundAsAJoinRequestsAre
   EXPECT_EQ(Encode(long_character).error(), EncodeError::kFieldTooLong);
 }
 
+// Requirements: US-01, US-22, NFR-20
 TEST(ProtocolTest, JoinAcceptedRoundTrips) {
   JoinAcceptedWire sent{
       .session = Session(0xD4),
@@ -418,6 +426,7 @@ TEST(ProtocolTest, ACharacterInJoinAcceptedLongerThanTheLimitIsTooLong) {
             DecodeError::kFieldTooLong);
 }
 
+// Requirements: US-01, NFR-20
 TEST(ProtocolTest, JoinRefusedRoundTripsEveryReason) {
   for (const JoinRefusalWire reason : kEveryRefusal) {
     const auto decoded = RoundTrip(JoinRefusedWire{.reason = reason});
@@ -434,11 +443,13 @@ JoinRefusalWire RefusalNumbered(std::uint64_t number) {
 }
 
 // A full Lobby is refused with the value a full match was, under its new name.
+// Requirements: NFR-20
 TEST(ProtocolTest, ALobbyFullRefusalKeepsTheWireValueOfAFullMatch) {
   EXPECT_EQ(RefusalNumbered(2), JoinRefusalWire::kLobbyFull);
   EXPECT_EQ(RefusalNumbered(4), JoinRefusalWire::kMatchInProgress);
 }
 
+// Requirements: US-16, NFR-20
 TEST(ProtocolTest, LobbyRoundTrips) {
   const LobbyWire sent{
       .version = 42,
@@ -458,6 +469,7 @@ TEST(ProtocolTest, LobbyRoundTrips) {
   }
 }
 
+// Requirements: NFR-06, NFR-20
 TEST(ProtocolTest, AnEmptyLobbyAndAFullOneRoundTrip) {
   EXPECT_TRUE(std::get<LobbyWire>(RoundTrip(LobbyWire{.version = 1, .roster = {}})).roster.empty());
 
@@ -491,6 +503,7 @@ MatchPlayerWire MatchPlayer(std::uint8_t session, std::string character, float x
                          .character = std::move(character)};
 }
 
+// Requirements: US-16, NFR-20
 TEST(ProtocolTest, MatchStartRoundTripsWithEveryPlayersCharacterAndSpawnPoint) {
   const MatchStartWire sent{.players = {MatchPlayer(3, "soldier", 4.0F), MatchPlayer(4, "sniper", -12.345F)},
                             .first_tick = 0x1'0000'0007ULL};
@@ -525,6 +538,7 @@ TEST(ProtocolTest, AMatchIdOfAnyOtherLengthThanSixteenBytesIsOutOfRange) {
             DecodeError::kOutOfRange);
 }
 
+// Requirements: NFR-06, NFR-20
 TEST(ProtocolTest, AMatchStartOfAFullMatchRoundTrips) {
   MatchStartWire sent;
   sent.players.assign(kMaxPlayers, MatchPlayer(1, "soldier", 0.0F));
@@ -538,6 +552,7 @@ TEST(ProtocolTest, MorePlayersInAMatchStartThanAMatchHoldsIsTooLong) {
             DecodeError::kFieldTooLong);
 }
 
+// Requirements: NFR-20
 TEST(ProtocolTest, ReadyRoundTripsTheVersionItWasLoadedFor) {
   const auto decoded = RoundTrip(ReadyWire{.version = 0xA1B2C3D4U});
 
@@ -545,6 +560,7 @@ TEST(ProtocolTest, ReadyRoundTripsTheVersionItWasLoadedFor) {
   EXPECT_EQ(std::get<ReadyWire>(decoded).version, 0xA1B2C3D4U);
 }
 
+// Requirements: US-14, NFR-20
 TEST(ProtocolTest, MatchEndRoundTripsItsWinnersSession) {
   const auto decoded = RoundTrip(MatchEndWire{.winner = Session(0xD4)});
 
@@ -554,6 +570,7 @@ TEST(ProtocolTest, MatchEndRoundTripsItsWinnersSession) {
 
 // No Session ID is the nil UUID, so a winner of all zeros is a draw
 // (ADR-0038): one with no winner at all, as an absent field reads as nil.
+// Requirements: US-14, NFR-20
 TEST(ProtocolTest, AMatchEndThatIsADrawNamesTheNilSession) {
   EXPECT_EQ(std::get<MatchEndWire>(RoundTrip(MatchEndWire{.winner = augusta::protocol::kDraw})).winner,
             augusta::protocol::kDraw);
@@ -561,6 +578,7 @@ TEST(ProtocolTest, AMatchEndThatIsADrawNamesTheNilSession) {
 }
 
 // A Session ID travels as its 16 bytes, in RFC 9562's order (ADR-0038).
+// Requirements: NFR-20
 TEST(ProtocolTest, ASessionIdTravelsAsItsSixteenBytes) {
   EXPECT_EQ(Decode(Envelope(MessageTypeWire::kMatchEnd, LengthField(2, BytesOf(Session(0x2A))))).value(),
             MessageWire(MatchEndWire{.winner = Session(0x2A)}));
@@ -580,6 +598,7 @@ TEST(ProtocolTest, ASessionIdOfAnyLengthButSixteenBytesIsOutOfRange) {
   }
 }
 
+// Requirements: US-19, NFR-20
 TEST(ProtocolTest, AShotRoundTripsWithItsShooterTickOriginAndDirection) {
   const ShotWire shot{.tick = 1200,
                       .origin = Vec3(12.5F, 1.75F, -40.0F),
@@ -595,6 +614,7 @@ TEST(ProtocolTest, AShotRoundTripsWithItsShooterTickOriginAndDirection) {
 
 // Its origin and its direction travel as counts of the grids a body's position
 // and a command's view do (ADR-0038).
+// Requirements: NFR-20
 TEST(ProtocolTest, AShotsOriginAndDirectionTravelAsCountsOfTheirGrids) {
   const BytesWire shot = Cat({VarintField(1, 1200), VarintField(2, 7), SignedField(3, 1024), SignedField(5, -1),
                               SignedField(6, 2097152), SignedField(7, -1)});
@@ -607,6 +627,7 @@ TEST(ProtocolTest, AShotsOriginAndDirectionTravelAsCountsOfTheirGrids) {
                                  .pitch = -1.0F / 2097152.0F}));
 }
 
+// Requirements: US-19, NFR-20
 TEST(ProtocolTest, AHitConfirmationRoundTripsWithItsTargetBodyPartAndDamage) {
   for (const BodyPartWire part : {BodyPartWire::kHead, BodyPartWire::kTorso, BodyPartWire::kLimb}) {
     const HitConfirmationWire hit{.target = static_cast<EntityIdWire>(0xA1B2C3D4U), .damage = 37.5F, .part = part};
@@ -628,6 +649,7 @@ TEST(ProtocolTest, AHitConfirmationsBodyPartOutsideItsRangeIsInvalid) {
   }
 }
 
+// Requirements: US-13, NFR-20
 TEST(ProtocolTest, ADeathRoundTripsWithItsVictimKillerBodyPartAndDirection) {
   for (const BodyPartWire part : {BodyPartWire::kHead, BodyPartWire::kTorso, BodyPartWire::kLimb}) {
     const DeathWire death{.victim = static_cast<EntityIdWire>(0xA1B2C3D4U),
@@ -753,12 +775,14 @@ TEST(ProtocolTest, AZeroByteAfterAnyMessageIsMalformed) {
 
 // The two refusals a replay server gives are appended after every older one,
 // which keep their wire values (ADR-0051).
+// Requirements: NFR-20
 TEST(ProtocolTest, AReplayServersRefusalsFollowEveryOlderOne) {
   EXPECT_EQ(RefusalNumbered(6), JoinRefusalWire::kReplayServer);
   EXPECT_EQ(RefusalNumbered(7), JoinRefusalWire::kUnknownCapture);
   EXPECT_EQ(RefusalNumbered(8), JoinRefusalWire::kNotAReplayServer);
 }
 
+// Requirements: NFR-20
 TEST(ProtocolTest, AReplayListRequestIsItsTypeAlone) {
   EXPECT_EQ(Encode(ReplayListRequestWire{}).value(), Envelope(MessageTypeWire::kReplayListRequest, {}));
   EXPECT_TRUE(std::holds_alternative<ReplayListRequestWire>(RoundTrip(ReplayListRequestWire{})));
@@ -778,6 +802,7 @@ TEST(ProtocolTest, AReplayListRoundTripsEachCapturesNameStartLengthAndCharacters
   EXPECT_EQ(RoundTrip(list), MessageWire{list});
 }
 
+// Requirements: NFR-20
 TEST(ProtocolTest, AnEmptyReplayListRoundTrips) {
   EXPECT_EQ(RoundTrip(ReplayListWire{}), MessageWire{ReplayListWire{}});
 }
@@ -820,6 +845,7 @@ TEST(ProtocolTest, ALengthPastTheEndOfThePayloadIsMalformedWithoutAllocatingForI
   EXPECT_EQ(BytesDecodeAllocates(claims_most), BytesDecodeAllocates(claims_one));
 }
 
+// Requirements: US-21, NFR-20
 TEST(ProtocolTest, AReplayRequestRoundTripsItsVersionPackCaptureAndRunId) {
   const ReplayRequestWire request{.engine_version = "0.1.0",
                                   .client_pack = CountingPackHash(),
@@ -882,6 +908,7 @@ void ExpectSameCommand(const SequencedCommandWire& actual, const SequencedComman
   EXPECT_EQ(actual.command.seen_fraction, SnapFraction(expected.command.seen_fraction));
 }
 
+// Requirements: NFR-20
 TEST(ProtocolTest, CommandsRoundTripWithEveryField) {
   const CommandsWire sent{.commands = {BusyCommand(41), BusyCommand(42), SequencedCommandWire{.sequence = 43}},
                           .seen_tick = 123456};
@@ -897,12 +924,14 @@ TEST(ProtocolTest, CommandsRoundTripWithEveryField) {
   }
 }
 
+// Requirements: NFR-20
 TEST(ProtocolTest, CommandsWithNoCommandsRoundTrip) {
   const auto decoded = RoundTrip(CommandsWire{});
 
   EXPECT_TRUE(std::get<CommandsWire>(decoded).commands.empty());
 }
 
+// Requirements: NFR-20
 TEST(ProtocolTest, CommandsCarryTheMostAMessageAllows) {
   CommandsWire sent;
   for (std::uint32_t i = 0; i < kMaxCommandsPerMessage; ++i) {
@@ -921,6 +950,7 @@ TEST(ProtocolTest, MoreCommandsThanAMessageAllowsIsTooLong) {
             DecodeError::kFieldTooLong);
 }
 
+// Requirements: NFR-20
 TEST(ProtocolTest, ANonFiniteNumberIsSentAsZeroOrItsNearestBound) {
   SequencedCommandWire sequenced = BusyCommand(1);
   sequenced.command.yaw = std::numeric_limits<float>::quiet_NaN();
@@ -947,6 +977,7 @@ CommandWire CommandOf(const BytesWire& payload) {
 // The angle grid's step, 2^-21 rad.
 constexpr float kAngleStep = 1.0F / 2097152.0F;
 
+// Requirements: NFR-20
 TEST(ProtocolTest, YawAndPitchTravelAsCountsOfTwoToTheMinus21Radians) {
   const CommandWire command = CommandOf(OneCommand(Cat({SignedField(5, 1), SignedField(6, -1)})));
 
@@ -954,6 +985,7 @@ TEST(ProtocolTest, YawAndPitchTravelAsCountsOfTwoToTheMinus21Radians) {
   EXPECT_EQ(command.pitch, -kAngleStep);
 }
 
+// Requirements: NFR-20
 TEST(ProtocolTest, AnAngleIsClampedWithinFourRadiansAndANaNIsZero) {
   EXPECT_EQ(SnapAngle(100.0F), 4.0F - kAngleStep);
   EXPECT_EQ(SnapAngle(-100.0F), -4.0F);
@@ -962,6 +994,7 @@ TEST(ProtocolTest, AnAngleIsClampedWithinFourRadiansAndANaNIsZero) {
 
 // Half a step: under 0.2 mm at 800 m, so the network adds no aim error a
 // weapon's spread would notice.
+// Requirements: NFR-20
 TEST(ProtocolTest, AnAnglesRoundingErrorIsAtMostHalfAStep) {
   constexpr float kMaxError = kAngleStep / 2.0F;
   static_assert(kMaxError * 800.0F < 0.0002F);
@@ -971,6 +1004,7 @@ TEST(ProtocolTest, AnAnglesRoundingErrorIsAtMostHalfAStep) {
 }
 
 // The flags in the low four bits, the stance in the two above them (ADR-0038).
+// Requirements: NFR-20
 TEST(ProtocolTest, ACommandsFlagsAndStanceShareOneBitfield) {
   const CommandWire command = CommandOf(OneCommand(VarintField(7, 0b0010'1001)));
 
@@ -981,6 +1015,7 @@ TEST(ProtocolTest, ACommandsFlagsAndStanceShareOneBitfield) {
 // What the shooter was shown (ADR-0044): the newest tick once for the whole
 // message, and each command's own as how far before it, with its fraction in
 // 256ths.
+// Requirements: NFR-20
 TEST(ProtocolTest, ACommandsSeenTimeTravelsAsItsAgeAndItsFractionAndTheMessagesSeenTick) {
   const BytesWire command = LengthField(1, Cat({VarintField(1, 1), VarintField(8, 3), VarintField(9, 192)}));
 
@@ -992,6 +1027,7 @@ TEST(ProtocolTest, ACommandsSeenTimeTravelsAsItsAgeAndItsFractionAndTheMessagesS
   EXPECT_EQ(decoded.commands.at(0).command.seen_fraction, 0.75F);
 }
 
+// Requirements: NFR-20
 TEST(ProtocolTest, ASeenTimesFractionIsHeldBelowOneAndANaNIsZero) {
   EXPECT_EQ(SnapFraction(0.5F), 0.5F);
   EXPECT_EQ(SnapFraction(1.0F), 255.0F / 256.0F);
@@ -1030,6 +1066,7 @@ TEST(ProtocolTest, ACommandsCountsPastTheirGridsAreOutOfRange) {
   EXPECT_EQ(Decode(OneCommand(VarintField(9, 256))).error(), DecodeError::kOutOfRange);
 }
 
+// Requirements: NFR-20
 TEST(ProtocolTest, AuthoritativeStateRoundTrips) {
   AuthoritativeStateWire sent{.tick = 900, .bodies = {}, .acknowledged_sequence = 875};
   for (std::uint32_t i = 0; i < 3; ++i) {
@@ -1067,12 +1104,14 @@ EntityStateWire BodyOf(const BytesWire& payload) {
 }
 
 // Where a body faces travels on the grid a command's view does (ADR-0038).
+// Requirements: NFR-20
 TEST(ProtocolTest, ABodysYawTravelsAsACountOfTheAngleGrid) {
   EXPECT_EQ(BodyOf(OneBody(SignedField(10, 2097152))).yaw, 1.0F);
 }
 
 // Where a body's view looks up or down travels on the grid its yaw does
 // (ADR-0038), over the grid's whole range.
+// Requirements: NFR-12, NFR-20
 TEST(ProtocolTest, ABodysPitchTravelsAsACountOfTheAngleGrid) {
   constexpr std::int32_t kAngleMax = (1 << 23) - 1;
   EXPECT_EQ(BodyOf(OneBody(SignedField(11, 2097152))).pitch, 1.0F);
@@ -1082,6 +1121,7 @@ TEST(ProtocolTest, ABodysPitchTravelsAsACountOfTheAngleGrid) {
 }
 
 // A pitch past the angle grid's range travels as its bound.
+// Requirements: NFR-20
 TEST(ProtocolTest, ABodysPitchAndAdsRoundTripAtBothEndsOfTheRange) {
   AuthoritativeStateWire sent;
   EntityStateWire up = BodyAt(1, 1.0F);
@@ -1106,6 +1146,7 @@ TEST(ProtocolTest, ABodysPitchAndAdsRoundTripAtBothEndsOfTheRange) {
 }
 
 // A body's Stride travels as its one byte (ADR-0038, ADR-0066), over its whole range.
+// Requirements: NFR-20
 TEST(ProtocolTest, ABodysStrideRoundTripsAtBothEndsOfItsByte) {
   AuthoritativeStateWire sent;
   EntityStateWire first = BodyAt(1, 1.0F);
@@ -1125,6 +1166,7 @@ TEST(ProtocolTest, ABodysStrideRoundTripsAtBothEndsOfItsByte) {
 }
 
 // No Stride is beyond a byte, so a count beyond one is refused (ADR-0038).
+// Requirements: NFR-12, NFR-20
 TEST(ProtocolTest, ABodysStrideBeyondAByteIsRefused) {
   EXPECT_EQ(BodyOf(OneBody(VarintField(12, 255))).body.stride, 255);
   EXPECT_EQ(Decode(OneBody(VarintField(12, 256))).error(), DecodeError::kOutOfRange);
@@ -1132,6 +1174,7 @@ TEST(ProtocolTest, ABodysStrideBeyondAByteIsRefused) {
 
 // A body's change of stance travels as its previous stance and one byte of
 // progress (ADR-0038, ADR-0066), the progress over its whole range.
+// Requirements: NFR-20
 TEST(ProtocolTest, ABodysChangeOfStanceRoundTripsAtBothEndsOfItsProgress) {
   AuthoritativeStateWire sent;
   EntityStateWire started = BodyAt(1, 1.0F);
@@ -1158,6 +1201,7 @@ TEST(ProtocolTest, ABodysChangeOfStanceRoundTripsAtBothEndsOfItsProgress) {
 // The progress travels as what is still to go of the change, so a body whose
 // change is over sends none; no count is beyond a byte, so one beyond is
 // refused (ADR-0038).
+// Requirements: NFR-12, NFR-20
 TEST(ProtocolTest, ABodysStanceProgressTravelsAsTheByteStillToGo) {
   EXPECT_EQ(BodyOf(OneBody({})).body.stance_progress, BodyStateWire::kStanceProgressOver);
   EXPECT_EQ(BodyOf(OneBody(VarintField(13, 255))).body.stance_progress, 0);
@@ -1167,6 +1211,7 @@ TEST(ProtocolTest, ABodysStanceProgressTravelsAsTheByteStillToGo) {
 
 // Each Encode builds its message on an arena local to the call, whose first
 // block is on the stack, so the payload is its one allocation (ADR-0007).
+// Requirements: NFR-01
 TEST(ProtocolTest, AnAuthoritativeStateOfAFullMatchIsEncodedInOneAllocation) {
   if (!AUGUSTA_COUNTS_ALLOCATIONS) {
     GTEST_SKIP() << "operator new is ThreadSanitizer's in this build, so allocations are not counted";
@@ -1187,6 +1232,7 @@ TEST(ProtocolTest, AnAuthoritativeStateOfAFullMatchIsEncodedInOneAllocation) {
   EXPECT_TRUE(payload.has_value());
 }
 
+// Requirements: NFR-06, NFR-20
 TEST(ProtocolTest, AuthoritativeStateWithAFullMatchRoundTrips) {
   AuthoritativeStateWire sent;
   sent.bodies.resize(kMaxPlayers);
@@ -1194,6 +1240,7 @@ TEST(ProtocolTest, AuthoritativeStateWithAFullMatchRoundTrips) {
   EXPECT_EQ(std::get<AuthoritativeStateWire>(RoundTrip(sent)).bodies.size(), kMaxPlayers);
 }
 
+// Requirements: NFR-02, NFR-20
 TEST(ProtocolTest, AnUpdateTellsItsRecipientHowManyOfItsCommandsTheServerHolds) {
   for (const std::uint8_t queued : {std::uint8_t{0}, std::uint8_t{2}, std::uint8_t{255}}) {
     const auto received = std::get<AuthoritativeStateWire>(
@@ -1207,6 +1254,7 @@ TEST(ProtocolTest, AnUpdateTellsItsRecipientHowManyOfItsCommandsTheServerHolds) 
 
 // The server's tick counts from its start and never starts over (ADR-0038), so
 // one past the last 32 bits hold travels whole in every message that carries one.
+// Requirements: NFR-20
 TEST(ProtocolTest, ATickPastThirtyTwoBitsRoundTripsInEveryMessageThatCarriesOne) {
   constexpr augusta::tick::Tick kTick = augusta::tick::Tick{std::numeric_limits<std::uint32_t>::max()} + 1;
 
@@ -1219,6 +1267,7 @@ TEST(ProtocolTest, ATickPastThirtyTwoBitsRoundTripsInEveryMessageThatCarriesOne)
 // The recipient's rifle is what it replays its commands from, so its times
 // arrive as the floats they were, off any grid, and its Recoil offset, which is
 // on the angle grid, as it was.
+// Requirements: NFR-02, NFR-20
 TEST(ProtocolTest, AnUpdateTellsItsRecipientItsOwnRifleExactly) {
   const WeaponStateWire rifle{.cooldown = 0.1F - (1.0F / 60.0F),
                               .reload_remaining = 2.4833333F,
@@ -1234,6 +1283,7 @@ TEST(ProtocolTest, AnUpdateTellsItsRecipientItsOwnRifleExactly) {
   EXPECT_EQ(received.queued_commands, 1U);
 }
 
+// Requirements: NFR-20
 TEST(ProtocolTest, AnUpdateTellsItsRecipientItsOwnHealthExactly) {
   for (const float health : {100.0F, 37.25F, 0.1F, 0.0F}) {
     const auto received = std::get<AuthoritativeStateWire>(
@@ -1246,6 +1296,7 @@ TEST(ProtocolTest, AnUpdateTellsItsRecipientItsOwnHealthExactly) {
 // A tick's update encoded once and readdressed to each recipient is, byte for
 // byte, what encoding it addressed to that recipient makes: its tick and bodies
 // kept, only the recipient's own fields its own.
+// Requirements: NFR-20
 TEST(ProtocolTest, AReaddressedUpdateIsTheUpdateEncodedForItsRecipient) {
   const AuthoritativeStateWire first{.tick = 9,
                                      .bodies = {BodyAt(1, 1.0F), BodyAt(2, -3.5F)},
@@ -1267,6 +1318,7 @@ TEST(ProtocolTest, AReaddressedUpdateIsTheUpdateEncodedForItsRecipient) {
 
 // A recipient whose own fields are all zero has none on the wire: the
 // readdressed update is its shared fields alone.
+// Requirements: NFR-20
 TEST(ProtocolTest, AnUpdateReaddressedToARecipientWithNothingOfItsOwnIsItsSharedFieldsAlone) {
   const AuthoritativeStateWire first{.tick = 9,
                                      .bodies = {BodyAt(1, 1.0F), BodyAt(2, -3.5F)},
@@ -1286,6 +1338,7 @@ TEST(ProtocolTest, AnUpdateReaddressedToARecipientWithNothingOfItsOwnIsItsShared
 // Only the payload of an Authoritative State, framed as Encode frames it, has
 // shared fields Readdress can keep: any other is the caller's broken invariant
 // (ADR-0033), refused with the payload left as it was.
+// Requirements: NFR-20
 TEST(ProtocolTest, AReaddressOfAnythingButAnUpdateIsRefused) {
   const AuthoritativeStateWire recipient{.tick = 9, .bodies = {}, .health = 1.0F, .acknowledged_sequence = 3};
   const BytesWire update = Encode(AuthoritativeStateWire{.tick = 9, .bodies = {BodyAt(1, 1.0F)}}).value();
@@ -1302,6 +1355,7 @@ TEST(ProtocolTest, AReaddressOfAnythingButAnUpdateIsRefused) {
 }
 
 // Its Recoil offset travels as counts of the angle grid's step.
+// Requirements: NFR-20
 TEST(ProtocolTest, ARecipientsRecoilOffsetTravelsAsCountsOfTheAngleGrid) {
   const BytesWire own = Cat({SignedField(9, 32768), SignedField(10, -1)});
 
@@ -1351,6 +1405,7 @@ TEST(ProtocolTest, ABodysCountsPastTheirGridsAreOutOfRange) {
   EXPECT_EQ(Decode(OneBody(VarintField(9, 65536))).error(), DecodeError::kOutOfRange);
 }
 
+// Requirements: NFR-20
 TEST(ProtocolTest, AnExhaustedBodyRoundTripsInEveryStance) {
   AuthoritativeStateWire sent;
   for (std::uint8_t stance = 0; stance < 3; ++stance) {
@@ -1370,6 +1425,7 @@ TEST(ProtocolTest, AnExhaustedBodyRoundTripsInEveryStance) {
 
 // The stance in the low two bits, the exhausted flag in the one above them
 // (ADR-0038).
+// Requirements: NFR-20
 TEST(ProtocolTest, ABodysExhaustedFlagSharesTheStanceBitfield) {
   const EntityStateWire exhausted = BodyOf(OneBody(VarintField(8, 0b110)));
   const EntityStateWire rested = BodyOf(OneBody(VarintField(8, 0b010)));
@@ -1381,6 +1437,7 @@ TEST(ProtocolTest, ABodysExhaustedFlagSharesTheStanceBitfield) {
 }
 
 // ADS in the bit above the exhausted flag (ADR-0038).
+// Requirements: NFR-20
 TEST(ProtocolTest, ABodysAdsFlagIsTheBitAboveItsExhaustedFlag) {
   const EntityStateWire aiming = BodyOf(OneBody(VarintField(8, 0b1001)));
   const EntityStateWire both = BodyOf(OneBody(VarintField(8, 0b1100)));
@@ -1392,6 +1449,7 @@ TEST(ProtocolTest, ABodysAdsFlagIsTheBitAboveItsExhaustedFlag) {
 }
 
 // The grounded flag in the bit above ADS (ADR-0038, ADR-0062).
+// Requirements: NFR-20
 TEST(ProtocolTest, ABodysGroundedFlagIsTheBitAboveItsAdsFlag) {
   const EntityStateWire grounded = BodyOf(OneBody(VarintField(8, 0b10010)));
   const EntityStateWire all = BodyOf(OneBody(VarintField(8, 0b11100)));
@@ -1403,6 +1461,7 @@ TEST(ProtocolTest, ABodysGroundedFlagIsTheBitAboveItsAdsFlag) {
 }
 
 // The previous stance in bits 5-6, numbered as the stance is (ADR-0038).
+// Requirements: NFR-12, NFR-20
 TEST(ProtocolTest, ABodysPreviousStanceIsBitsFiveAndSix) {
   const EntityStateWire from_prone = BodyOf(OneBody(VarintField(8, 0b100'0001)));
   const EntityStateWire from_crouching = BodyOf(OneBody(VarintField(8, 0b010'0000)));
@@ -1422,12 +1481,14 @@ TEST(ProtocolTest, ABodysBitsAboveItsStancesAndFlagsAreReserved) {
   }
 }
 
+// Requirements: NFR-20
 TEST(ProtocolTest, APositionTravelsAsCountsOfMillimeterSteps) {
   const EntityStateWire body = BodyOf(OneBody(Cat({SignedField(2, 1024), SignedField(3, -1)})));
 
   EXPECT_EQ(body.body.position, Vec3(1.0F, -1.0F / 1024.0F, 0.0F));
 }
 
+// Requirements: NFR-20
 TEST(ProtocolTest, ASnappedValueIsOnItsGridAndSnapsToItself) {
   for (const float value : {0.0F, 0.3F, -0.3F, 1.0F / 3.0F, 12.345F, -7.77F, 1000.001F}) {
     const Vec3 vector(value, -value, value * 0.5F);
@@ -1440,6 +1501,7 @@ TEST(ProtocolTest, ASnappedValueIsOnItsGridAndSnapsToItself) {
   }
 }
 
+// Requirements: NFR-20
 TEST(ProtocolTest, AValueBeyondItsRangeIsSentAsTheBound) {
   EXPECT_EQ(SnapPosition(Vec3(1.0e6F, -1.0e6F, 0.0F)), Vec3(8192.0F - (1.0F / 1024.0F), -8192.0F, 0.0F));
   EXPECT_EQ(SnapVelocity(Vec3(100.0F, -100.0F, 0.0F)), Vec3(64.0F - (1.0F / 512.0F), -64.0F, 0.0F));
@@ -1524,6 +1586,7 @@ TEST(ProtocolTest, AStringThatIsNotUtf8IsMalformed) {
 
 // The codec takes its counters' widths from augusta::tick, as the engine does,
 // so the wire and the engine cannot drift apart.
+// Requirements: NFR-20
 TEST(ProtocolTickTest, TheCodecsCountersAreTheTicks) {
   static_assert(std::same_as<decltype(AuthoritativeStateWire::tick), augusta::tick::Tick>);
   static_assert(std::same_as<decltype(CommandsWire::seen_tick), augusta::tick::Tick>);
@@ -1533,8 +1596,10 @@ TEST(ProtocolTickTest, TheCodecsCountersAreTheTicks) {
 }
 
 // A client repeats at least one unacknowledged command per message.
+// Requirements: NFR-02
 TEST(ProtocolTest, ACommandsMessageCarriesAtLeastOneCommand) { EXPECT_GE(kMaxCommandsPerMessage, 1U); }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, EveryErrorHasADescription) {
   for (const DecodeError error : {DecodeError::kMalformed, DecodeError::kUnknownType, DecodeError::kInvalidEnum,
                                   DecodeError::kReservedBits, DecodeError::kOutOfRange, DecodeError::kFieldTooLong}) {
@@ -1554,12 +1619,14 @@ EncodeError RefusalOf(const MessageWire& message) {
   return encoded.has_value() ? EncodeError{} : encoded.error();
 }
 
+// Requirements: NFR-20
 TEST(ProtocolEncodeTest, AnEngineVersionLongerThanAllowedIsNotEncoded) {
   const JoinRequestWire request{.engine_version = std::string(kMaxEngineVersionLength + 1, 'v'), .character = "c"};
 
   EXPECT_EQ(RefusalOf(request), EncodeError::kFieldTooLong);
 }
 
+// Requirements: NFR-20
 TEST(ProtocolEncodeTest, ACharacterLongerThanAllowedIsNotEncodedInAnyMessageThatCarriesOne) {
   const std::string too_long(augusta::protocol::kMaxCharacterNameLength + 1, 'c');
 
@@ -1570,6 +1637,7 @@ TEST(ProtocolEncodeTest, ACharacterLongerThanAllowedIsNotEncodedInAnyMessageThat
   EXPECT_EQ(RefusalOf(MatchStartWire{.players = {MatchPlayer(1, too_long, 0.0F)}}), EncodeError::kFieldTooLong);
 }
 
+// Requirements: NFR-20
 TEST(ProtocolEncodeTest, TextThatIsNotUtf8IsNotEncoded) {
   const std::string not_utf8 = "\xC3\x28";
   ReplayListingWire listing;
@@ -1585,6 +1653,7 @@ TEST(ProtocolEncodeTest, TextThatIsNotUtf8IsNotEncoded) {
   EXPECT_EQ(EncodeCaptureRecord(header).error(), EncodeError::kNotUtf8);
 }
 
+// Requirements: NFR-20
 TEST(ProtocolEncodeTest, AListLongerThanItsMessageAllowsIsNotEncoded) {
   RifleWire rifle;
   rifle.recoil_pattern.resize(augusta::limits::kMaxRecoilKicks + 1);
@@ -1602,6 +1671,7 @@ TEST(ProtocolEncodeTest, AListLongerThanItsMessageAllowsIsNotEncoded) {
   EXPECT_EQ(RefusalOf(JoinAcceptedWire{.parameters = parameters, .character = {}}), EncodeError::kFieldTooLong);
 }
 
+// Requirements: NFR-20
 TEST(ProtocolEncodeTest, AFlagBitTheFieldDoesNotHaveIsNotEncoded) {
   CommandWire command;
   command.flags = CommandWire::kReload << 1U;
@@ -1613,6 +1683,7 @@ TEST(ProtocolEncodeTest, AFlagBitTheFieldDoesNotHaveIsNotEncoded) {
   EXPECT_EQ(RefusalOf(AuthoritativeStateWire{.bodies = {body}}), EncodeError::kReservedBits);
 }
 
+// Requirements: NFR-20
 TEST(ProtocolEncodeTest, AnEnumeratedValueTheEnumerationLacksIsNotEncoded) {
   constexpr auto kNoStance = static_cast<StanceWire>(3);
   constexpr auto kNoPart = static_cast<BodyPartWire>(4);
@@ -1644,12 +1715,14 @@ int FirstFieldOf(const BytesWire& payload) {
   return static_cast<int>(tag >> 3U);
 }
 
+// Requirements: NFR-20
 TEST(ProtocolEncodeTest, EveryMessageIsTheEnvelopeMemberItsTypeNumbers) {
   for (const MessageWire& message : EveryMessage()) {
     EXPECT_EQ(static_cast<int>(augusta::protocol::TypeOf(message)), FirstFieldOf(Encode(message).value()));
   }
 }
 
+// Requirements: NFR-20
 TEST(ProtocolEncodeTest, AnEncodedMessageIsOfTheTypeItsEnvelopeMemberNames) {
   for (const MessageWire& message : EveryMessage()) {
     EXPECT_EQ(augusta::protocol::TypeOf(Encode(message).value()), augusta::protocol::TypeOf(message));
@@ -1663,6 +1736,7 @@ TEST(ProtocolEncodeTest, AnEncodedMessageIsOfTheTypeItsEnvelopeMemberNames) {
   EXPECT_EQ(augusta::protocol::TypeOf(state), MessageTypeWire::kAuthoritativeState);
 }
 
+// Requirements: NFR-20
 TEST(ProtocolEncodeTest, EveryEncodeErrorHasADescription) {
   for (const EncodeError error : {EncodeError::kFieldTooLong, EncodeError::kReservedBits, EncodeError::kInvalidEnum,
                                   EncodeError::kNotAnAuthoritativeState, EncodeError::kNotUtf8}) {

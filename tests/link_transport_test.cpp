@@ -45,6 +45,7 @@ using augusta::networking::Reliability;
 
 // A newer one supersedes each of these, so none is retransmitted: a tick's
 // Commands and an Authoritative State.
+// Requirements: NFR-02
 TEST(ReliabilityOfTest, PerTickMessagesTravelUnreliably) {
   for (const MessageType type : {MessageType::kCommands, MessageType::kAuthoritativeState}) {
     EXPECT_EQ(ReliabilityOf(type), Reliability::kUnreliable) << static_cast<int>(type);
@@ -52,6 +53,7 @@ TEST(ReliabilityOfTest, PerTickMessagesTravelUnreliably) {
 }
 
 // Each of these must arrive, or the two sides disagree.
+// Requirements: NFR-02
 TEST(ReliabilityOfTest, EveryOtherMessageTravelsReliably) {
   for (const MessageType type : {
            MessageType::kJoinRequest,
@@ -75,6 +77,7 @@ TEST(ReliabilityOfTest, EveryOtherMessageTravelsReliably) {
 
 // Every number reaches the Link's own type as the transport measured it, the
 // "not measured yet" sentinels included.
+// Requirements: NFR-07
 TEST(FromTransportTest, KeepsEveryNumberTheTransportMeasured) {
   const ConnectionStats stats = FromTransport(augusta::networking::ConnectionStats{
       .ping_ms = 42,
@@ -98,6 +101,7 @@ constexpr augusta::link::PeerId kPeer{7};
 
 // A peer's payload that is no message at all is only its bytes, and the
 // decoder's words for why, which a server logs as it judges the peer.
+// Requirements: NFR-12
 TEST(ReadFromTest, APayloadThatDecodesToNoMessageSaysWhy) {
   const std::vector<std::byte> garbage{std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF}};
   const augusta::link::PeerMessage message = augusta::link::ReadFrom(kPeer, garbage);
@@ -110,6 +114,7 @@ TEST(ReadFromTest, APayloadThatDecodesToNoMessageSaysWhy) {
 
 // A message only a server sends still has its type, which a server counts,
 // but says nothing a server takes in.
+// Requirements: NFR-12
 TEST(ReadFromTest, AServersMessageHasItsTypeAndSaysNothing) {
   const auto payload = augusta::protocol::Encode(augusta::link::ToWire(augusta::link::Shot{})).value();
   const augusta::link::PeerMessage message = augusta::link::ReadFrom(kPeer, payload);
@@ -119,6 +124,7 @@ TEST(ReadFromTest, AServersMessageHasItsTypeAndSaysNothing) {
 }
 
 // A Reenact request is a join that names its spawn, counted as its own type.
+// Requirements: NFR-20
 TEST(ReadFromTest, AClientsMessageIsWhatItSaysUnderItsOwnType) {
   const augusta::link::JoinRequest join{.engine_version = "1.2.3",
                                         .client_pack = {},
@@ -133,6 +139,7 @@ TEST(ReadFromTest, AClientsMessageIsWhatItSaysUnderItsOwnType) {
 
 // A server's message is encoded once, as the protocol has it, under its type,
 // so it is counted and sent to as many peers as need it.
+// Requirements: NFR-20
 TEST(EncodeTest, AServersMessageIsItsProtocolBytesUnderItsType) {
   const augusta::link::Shot shot{.shooter = augusta::link::EntityId{4}, .tick = 90};
   const auto encoded = augusta::link::Encode(shot);
@@ -154,6 +161,7 @@ TEST(EncodeTest, AMessageTheProtocolCannotCarryIsABrokenInvariant) {
 // A tick's Authoritative State, its bodies encoded once, readdressed to another
 // recipient is what encoding it for that recipient makes, byte for byte: every
 // recipient is sent the bytes it always was.
+// Requirements: NFR-20
 TEST(ReaddressedTest, IsTheStateEncodedForItsRecipient) {
   const augusta::link::AuthoritativeState first{
       .tick = 120,

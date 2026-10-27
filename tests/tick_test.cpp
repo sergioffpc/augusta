@@ -27,6 +27,7 @@ const Clock::time_point kStart{std::chrono::seconds{100}};
 
 // ADR-0038: a tick and a command sequence are 64 bits wide and never wrap,
 // so every receiver orders them as plain unsigned numbers.
+// Requirements: NFR-20
 TEST(TickTest, ATickAndACommandSequenceAreSixtyFourBitUnsignedCounters) {
   EXPECT_TRUE((std::same_as<Tick, std::uint64_t>));
   EXPECT_TRUE((std::same_as<Sequence, std::uint64_t>));
