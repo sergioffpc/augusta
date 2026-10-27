@@ -1329,6 +1329,32 @@ target_link_libraries(
   PRIVATE augusta_client_config augusta_server_config GTest::gtest GTest::gtest_main
 )
 
+# augustad's and augustac's binary hardening (the root CMakeLists.txt, NFR-12),
+# read off the executables the build made with LLVM's binary tools, on Linux and
+# Windows; macOS's, libc++'s hardening mode alone, leaves nothing in the binary
+# to read. A script, so it builds nothing. Each test is in its executable's
+# area. LLVM's tools sit beside clang-cl on Windows, and on PATH beside the ones
+# cmake/LlvmToolchain.cmake finds on Linux.
+if(CMAKE_SYSTEM_NAME MATCHES "^(Linux|Windows)$")
+  get_filename_component(compiler_directory ${CMAKE_CXX_COMPILER} DIRECTORY)
+  find_program(AUGUSTA_LLVM_READOBJ llvm-readobj HINTS ${compiler_directory} REQUIRED)
+  find_program(AUGUSTA_LLVM_NM llvm-nm HINTS ${compiler_directory} REQUIRED)
+  function(augusta_binary_hardening_test executable area)
+    add_test(
+      NAME ${executable}_binary_hardening
+      COMMAND
+        ${CMAKE_COMMAND} -DBINARY=$<TARGET_FILE:${executable}> -DREADOBJ=${AUGUSTA_LLVM_READOBJ} -DNM=${AUGUSTA_LLVM_NM}
+        -DSYSTEM=${CMAKE_SYSTEM_NAME} -DOPTIMISED=$<NOT:$<CONFIG:Debug>> -P
+        ${CMAKE_CURRENT_SOURCE_DIR}/binary_hardening.cmake
+    )
+    set_tests_properties(${executable}_binary_hardening PROPERTIES LABELS ${area})
+  endfunction()
+  augusta_binary_hardening_test(augustad server)
+  if(AUGUSTA_CLIENT)
+    augusta_binary_hardening_test(augustac client)
+  endif()
+endif()
+
 # Every executable here and in fuzz/, and in each tool's tests/ (kept next to
 # the tool) when AUGUSTA_TOOLS builds the tools: what ctest, the benchmarks and
 # the fuzz jobs run (cmake/TestAreas.cmake lists the directories). Each
