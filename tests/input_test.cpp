@@ -69,6 +69,7 @@ class InputTest : public ::testing::Test {
   float cursor_y_ = 0.0F;
 };
 
+// Requirements: US-04
 TEST_F(InputTest, WithNothingHeldThePlayerStandsStill) {
   const Command command = input_.Sample();
   ExpectNear(command.movement.direction, Vec3(0.0F, 0.0F, 0.0F));
@@ -161,6 +162,7 @@ TEST_F(InputTest, CtrlHeldCrouchesAndZHeldGoesProneWinningOverCtrl) {
   EXPECT_EQ(input_.Sample().movement.desired_stance, Stance::kStanding);
 }
 
+// Requirements: US-04
 TEST_F(InputTest, HandlesAPollsEventsInTheOrderTheyHappened) {
   const std::vector<Event> events{KeyEvent{.key = Key::kW, .state = KeyState::kPressed},
                                   KeyEvent{.key = Key::kW, .state = KeyState::kReleased},
@@ -171,6 +173,7 @@ TEST_F(InputTest, HandlesAPollsEventsInTheOrderTheyHappened) {
   ExpectNear(input_.Sample().movement.direction, Vec3(0.0F, 0.0F, 1.0F));
 }
 
+// Requirements: US-06
 TEST_F(InputTest, TheFirstCursorPositionTurnsNothing) {
   Handle(input_, MouseMoveEvent{.x = 640.0F, .y = 360.0F});
   const Command command = input_.Sample();
@@ -178,6 +181,7 @@ TEST_F(InputTest, TheFirstCursorPositionTurnsNothing) {
   EXPECT_FLOAT_EQ(command.pitch, 0.0F);
 }
 
+// Requirements: US-06
 TEST_F(InputTest, MovingTheMouseRightTurnsRightAndUpLooksUpAtTheSensitivity) {
   MoveMouse(0.0F, 0.0F);
   MoveMouse(10.0F, -20.0F);
@@ -186,6 +190,7 @@ TEST_F(InputTest, MovingTheMouseRightTurnsRightAndUpLooksUpAtTheSensitivity) {
   EXPECT_NEAR(command.pitch, 20.0F * kSensitivity, kTolerance);
 }
 
+// Requirements: US-06
 TEST_F(InputTest, TheViewIsKeptAcrossSamples) {
   MoveMouse(0.0F, 0.0F);
   MoveMouse(-30.0F, 0.0F);
@@ -193,6 +198,7 @@ TEST_F(InputTest, TheViewIsKeptAcrossSamples) {
   EXPECT_NEAR(input_.Sample().yaw, 30.0F * kSensitivity, kTolerance);
 }
 
+// Requirements: US-06
 TEST_F(InputTest, TheCurrentAimIsTheCommandsUntilTheMouseMovesAgain) {
   MoveMouse(0.0F, 0.0F);
   MoveMouse(-30.0F, 10.0F);
@@ -206,6 +212,7 @@ TEST_F(InputTest, TheCurrentAimIsTheCommandsUntilTheMouseMovesAgain) {
   EXPECT_EQ(aim.ads, command.ads);
 }
 
+// Requirements: US-06
 TEST_F(InputTest, TheCurrentAimTurnsWithTheMouseBetweenSamples) {
   MoveMouse(0.0F, 0.0F);
   const Command command = input_.Sample();
@@ -228,6 +235,7 @@ TEST_F(InputTest, TheCurrentAimHoldsAdsWhileItsKeyIsHeldBetweenSamples) {
   EXPECT_FALSE(input_.CurrentAim().ads);
 }
 
+// Requirements: US-07
 TEST_F(InputTest, AControlIsHeldBetweenSamplesWhileItsKeyIsDown) {
   (void)input_.Sample();
 
@@ -238,6 +246,7 @@ TEST_F(InputTest, AControlIsHeldBetweenSamplesWhileItsKeyIsDown) {
   EXPECT_FALSE(input_.IsHeld(Control::kFire));
 }
 
+// Requirements: US-06
 TEST_F(InputTest, PitchStopsShortOfStraightUpAndStraightDown) {
   MoveMouse(0.0F, 0.0F);
   MoveMouse(0.0F, -100000.0F);
@@ -248,6 +257,7 @@ TEST_F(InputTest, PitchStopsShortOfStraightUpAndStraightDown) {
   EXPECT_FLOAT_EQ(input_.Sample().pitch, -augusta::command::kMaxLookPitch);
 }
 
+// Requirements: US-06
 TEST_F(InputTest, YawWrapsSoTurningForeverStaysWithinOneTurn) {
   MoveMouse(0.0F, 0.0F);
   for (int i = 0; i < 1000; ++i) {
@@ -350,6 +360,7 @@ TEST_F(InputTest, AKeyboardKeyWhileReleasedDoesNotCaptureTheCursor) {
   EXPECT_FALSE(input_.CursorCaptured());
 }
 
+// Requirements: US-20
 TEST_F(InputTest, LettingGoClearsEveryHeldControlAndKeepsTheCursorCaptured) {
   Press(Key::kW);
   Press(Key::kLeftShift);
@@ -369,6 +380,7 @@ TEST_F(InputTest, LettingGoClearsEveryHeldControlAndKeepsTheCursorCaptured) {
   EXPECT_TRUE(input_.CursorCaptured());
 }
 
+// Requirements: US-20
 TEST_F(InputTest, AfterLettingGoTheNextCursorPositionOnlySetsABaseline) {
   MoveMouse(0.0F, 0.0F);
   MoveMouse(10.0F, 0.0F);  // Control: before letting go, the cursor turns the view.
@@ -553,6 +565,7 @@ TEST(KeymapTest, ReboundOppositeControlsStillCancelAndProneStillWins) {
   EXPECT_EQ(command.movement.desired_stance, Stance::kProne);
 }
 
+// Requirements: US-20
 TEST(KeyNameTest, EveryKeyHasANameThatNamesItBack) {
   for (std::size_t i = 0; i < augusta::window::kKeyCount; ++i) {
     const auto key = static_cast<Key>(i);
@@ -562,6 +575,7 @@ TEST(KeyNameTest, EveryKeyHasANameThatNamesItBack) {
   }
 }
 
+// Requirements: US-20
 TEST(KeyNameTest, KeysAreNamedAsAPlayerWouldWriteThem) {
   EXPECT_EQ(augusta::input::KeyNamed("W"), Key::kW);
   EXPECT_EQ(augusta::input::KeyNamed("7"), Key::k7);
@@ -578,6 +592,7 @@ TEST(KeyNameTest, AnUnknownNameIsNoKey) {
   EXPECT_FALSE(augusta::input::KeyNamed("").has_value());
 }
 
+// Requirements: US-20
 TEST(ControlNameTest, EveryControlHasANameThatNamesItBack) {
   for (std::size_t i = 0; i < augusta::input::kControlCount; ++i) {
     const auto control = static_cast<Control>(i);
@@ -591,10 +606,12 @@ TEST(ControlNameTest, EveryControlHasANameThatNamesItBack) {
   EXPECT_FALSE(augusta::input::ControlNamed("jump").has_value());
 }
 
+// Requirements: US-06
 TEST(ViewRotationTest, AnUnturnedViewLooksDownMinusZ) {
   ExpectNear(ViewRotation(0.0F, 0.0F) * Vec3(0.0F, 0.0F, -1.0F), Vec3(0.0F, 0.0F, -1.0F));
 }
 
+// Requirements: US-06
 TEST(ViewRotationTest, PositiveYawTurnsLeftAndPositivePitchLooksUp) {
   const float quarter = std::numbers::pi_v<float> / 2;
   ExpectNear(ViewRotation(quarter, 0.0F) * Vec3(0.0F, 0.0F, -1.0F), Vec3(-1.0F, 0.0F, 0.0F));
@@ -602,6 +619,7 @@ TEST(ViewRotationTest, PositiveYawTurnsLeftAndPositivePitchLooksUp) {
   ExpectNear(looking_up, Vec3(0.0F, std::sin(0.5F), -std::cos(0.5F)));
 }
 
+// Requirements: US-06
 TEST(ViewRotationTest, PitchTiltsTheViewWithoutChangingWhereItFacesAcrossTheGround) {
   const Vec3 forward = ViewRotation(1.0F, 0.7F) * Vec3(0.0F, 0.0F, -1.0F);
   const Vec3 flat_forward = ViewRotation(1.0F, 0.0F) * Vec3(0.0F, 0.0F, -1.0F);

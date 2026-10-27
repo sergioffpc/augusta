@@ -144,6 +144,7 @@ class CaptureFailureTest : public ::testing::Test {
       std::filesystem::temp_directory_path() / ("augusta_capture_failure_" + std::to_string(std::random_device{}()));
 };
 
+// Requirements: NFR-07
 TEST_F(CaptureFailureTest, AHostThatCapturesNothingHasNoCaptureHealth) {
   const auto host = MakeHost(std::nullopt);
   host->Tick(kDeltaTime);
@@ -153,6 +154,7 @@ TEST_F(CaptureFailureTest, AHostThatCapturesNothingHasNoCaptureHealth) {
 
 // The captures are stopped once the run's last tick is captured, and read so
 // for as long as the Host's metrics are collected.
+// Requirements: NFR-07
 TEST_F(CaptureFailureTest, ACapturingHostIsEnabledUntilItsCaptureIsFinishedThenStopped) {
   testing::internal::CaptureStdout();
   {
@@ -186,6 +188,7 @@ TEST_F(CaptureFailureTest, AnOptionalCaptureThatFailsDegradesWhileTheHostTicksOn
   EXPECT_EQ(host->Tick(kDeltaTime).state.tick, before + 1);
 }
 
+// Requirements: NFR-18, US-21
 TEST_F(CaptureFailureTest, AStrictCaptureThatFailsIsTheHostsFailureToStopOn) {
   faults_.Arm(Site::kCaptureFlush, "disk full", Faults::kEveryTime);
   const auto host = MakeHost(CaptureMode::kStrict);
@@ -197,6 +200,7 @@ TEST_F(CaptureFailureTest, AStrictCaptureThatFailsIsTheHostsFailureToStopOn) {
   EXPECT_EQ(CaptureHealthIn(*host), "stopped");
 }
 
+// Requirements: US-21
 TEST_F(CaptureFailureTest, AStrictCapturesLossIsKnownOnceItsRecordsAreWritten) {
   faults_.Arm(Site::kCaptureWrite, "disk full");
   const auto host = MakeHost(CaptureMode::kStrict);
@@ -209,6 +213,7 @@ TEST_F(CaptureFailureTest, AStrictCapturesLossIsKnownOnceItsRecordsAreWritten) {
   EXPECT_NE(augusta::failure::DescribeFailure(*lost).find(" step=write"), std::string::npos);
 }
 
+// Requirements: NFR-18, US-21
 TEST_F(CaptureFailureTest, AStrictCaptureThatFailsStopsTheRuntimeOnceWithItsFailure) {
   faults_.Arm(Site::kCaptureWrite, "disk full", Faults::kEveryTime);
   std::optional<augusta::failure::Failure> cause;
@@ -263,6 +268,7 @@ TEST_F(CaptureFailureTest, AnOptionalCaptureThatFailsLeavesTheRuntimeRunningUnti
 // However its Simulation loop ends - here the local transport fails - the run
 // stops its captures before Run returns, while its metrics endpoint still
 // serves, so the last scrape reads them stopped.
+// Requirements: NFR-07
 TEST_F(CaptureFailureTest, ARuntimeStopsItsCapturesBeforeRunReturns) {
   faults_.Arm(Site::kTransportReceive, "poll group gone", Faults::kEveryTime);
   constexpr std::string_view kReturned = "run_returned";
@@ -284,6 +290,7 @@ TEST_F(CaptureFailureTest, ARuntimeStopsItsCapturesBeforeRunReturns) {
 // A run whose Simulation loop never starts - here a stop came first; a worker
 // that fails before it does the same - still stops its captures before Run
 // returns.
+// Requirements: NFR-07
 TEST_F(CaptureFailureTest, ARunWhoseSimulationNeverStartsStopsItsCapturesBeforeRunReturns) {
   constexpr std::string_view kReturned = "run_returned";
   testing::internal::CaptureStdout();

@@ -36,6 +36,7 @@ std::vector<char> WithoutTrailer(const std::string& pack) {
   return bytes;
 }
 
+// Requirements: NFR-12
 TEST(PackLoadSeedsTest, EverySeedIsAGoldenPackWithoutItsTrailer) {
   for (const std::string pack : kGoldenPacks) {
     SCOPED_TRACE(pack);

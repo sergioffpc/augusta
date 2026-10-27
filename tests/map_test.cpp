@@ -82,6 +82,7 @@ class MapTest : public ::testing::Test {
   std::vector<std::filesystem::path> cleanup_;
 };
 
+// Requirements: US-22
 TEST_F(MapTest, PlacesEachColliderInWorldSpaceThroughItsParents) {
   SceneNode ground = Node("Ground", augusta::assets::kSceneNodeNoParent);
   ground.collider_path = "Ground";
@@ -100,6 +101,7 @@ TEST_F(MapTest, PlacesEachColliderInWorldSpaceThroughItsParents) {
   EXPECT_EQ((*collision)[1].indices.size(), 6U);
 }
 
+// Requirements: US-22
 TEST_F(MapTest, NodesWithoutAColliderAddNothing) {
   SceneNode ground = Node("Ground", augusta::assets::kSceneNodeNoParent);
   ground.collider_path = "Ground";
@@ -115,6 +117,7 @@ TEST_F(MapTest, NodesWithoutAColliderAddNothing) {
   EXPECT_EQ(collision->size(), 1U);
 }
 
+// Requirements: US-22
 TEST_F(MapTest, APackWithNoCollisionAtAllIsAnError) {
   SceneNode decoration = Node("Decoration", augusta::assets::kSceneNodeNoParent);
   decoration.mesh_path = "Decoration";
@@ -126,6 +129,7 @@ TEST_F(MapTest, APackWithNoCollisionAtAllIsAnError) {
   EXPECT_EQ(collision.error().code, MapErrorCode::kNoCollision);
 }
 
+// Requirements: US-22
 TEST_F(MapTest, AColliderThatIsNotInThePackNamesIt) {
   SceneNode ground = Node("Ground", augusta::assets::kSceneNodeNoParent);
   ground.collider_path = "Missing";
@@ -140,6 +144,7 @@ TEST_F(MapTest, AColliderThatIsNotInThePackNamesIt) {
   EXPECT_EQ(collision.error().resolve_error, ResolveError::kNotFound);
 }
 
+// Requirements: US-22
 TEST_F(MapTest, AnEmptyColliderIsAnErrorNamingIt) {
   SceneNode ground = Node("Ground", augusta::assets::kSceneNodeNoParent);
   ground.collider_path = "Empty";
@@ -155,6 +160,7 @@ TEST_F(MapTest, AnEmptyColliderIsAnErrorNamingIt) {
   EXPECT_EQ(collision.error().collision_mesh_error, augusta::physics::CollisionMeshError::kEmpty);
 }
 
+// Requirements: US-22
 TEST_F(MapTest, APackWithoutASceneIsAnError) {
   const Pack pack = MakePack("no_scene", {AssetEntry{AssetType::kCollision, "Ground", SquareBlob()}});
 
@@ -172,6 +178,7 @@ SceneNode SpawnPoint(const std::string& name, std::uint32_t parent_index, const 
   return node;
 }
 
+// Requirements: US-03
 TEST_F(MapTest, SpawnPointsAreInSceneOrderAndInWorldSpaceThroughTheirParents) {
   SceneNode area = Node("Area", augusta::assets::kSceneNodeNoParent);
   area.translation = Vec3(100.0F, 0.0F, 0.0F);
@@ -191,6 +198,7 @@ TEST_F(MapTest, SpawnPointsAreInSceneOrderAndInWorldSpaceThroughTheirParents) {
   EXPECT_NEAR((*spawn_points)[1].z, 5.0F, 1e-5F);
 }
 
+// Requirements: US-03
 TEST_F(MapTest, NodesThatAreNotSpawnPointsAreNotListed) {
   SceneNode ground = Node("Ground", augusta::assets::kSceneNodeNoParent);
   ground.collider_path = "Ground";
@@ -206,6 +214,7 @@ TEST_F(MapTest, NodesThatAreNotSpawnPointsAreNotListed) {
   EXPECT_EQ(spawn_points->size(), 1U);
 }
 
+// Requirements: US-22
 TEST_F(MapTest, APackWithNoSpawnPointIsAnError) {
   SceneNode ground = Node("Ground", augusta::assets::kSceneNodeNoParent);
   ground.collider_path = "Ground";
@@ -219,6 +228,7 @@ TEST_F(MapTest, APackWithNoSpawnPointIsAnError) {
   EXPECT_FALSE(augusta::map::DescribeMapError(spawn_points.error()).empty());
 }
 
+// Requirements: US-22
 TEST_F(MapTest, SpawnPointsOfAPackWithoutASceneNameTheScene) {
   const Pack pack = MakePack("spawn_points_no_scene", {AssetEntry{AssetType::kCollision, "Ground", SquareBlob()}});
 
@@ -228,6 +238,7 @@ TEST_F(MapTest, SpawnPointsOfAPackWithoutASceneNameTheScene) {
   EXPECT_EQ(spawn_points.error().code, MapErrorCode::kSceneUnresolved);
 }
 
+// Requirements: US-22
 TEST(DescribeMapErrorTest, ASceneOfTheWrongTypeIsNotDescribedAsCollisionGeometry) {
   const std::string message = augusta::map::DescribeMapError({.code = MapErrorCode::kSceneUnresolved,
                                                               .node = {},
@@ -237,6 +248,7 @@ TEST(DescribeMapErrorTest, ASceneOfTheWrongTypeIsNotDescribedAsCollisionGeometry
   EXPECT_EQ(message, "scene Scene is not a scene");
 }
 
+// Requirements: US-22
 TEST(DescribeMapErrorTest, NamesWhatWasMissing) {
   const std::string message = augusta::map::DescribeMapError({.code = MapErrorCode::kColliderUnresolved,
                                                               .node = "Ground",
@@ -264,6 +276,7 @@ CollisionMesh MeshOf(std::size_t points) {
   return CollisionMesh{.points = std::vector<Vec3>(points, Vec3(0.0F, 0.0F, 0.0F)), .indices = {}};
 }
 
+// Requirements: US-22
 TEST(AddCollisionTest, AddsEveryMeshInOrder) {
   RecordingWorld world;
 
@@ -273,6 +286,7 @@ TEST(AddCollisionTest, AddsEveryMeshInOrder) {
   EXPECT_EQ(world.added, (std::vector<std::size_t>{3, 4}));
 }
 
+// Requirements: US-22
 TEST(AddCollisionTest, StopsAtTheFirstRejectedMeshWithItsError) {
   RecordingWorld world;
 

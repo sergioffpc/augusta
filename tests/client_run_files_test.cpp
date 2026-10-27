@@ -84,6 +84,7 @@ TEST_F(RunFilesTest, ARunsFilesAreNamedByItsRunId) {
   EXPECT_EQ(GpuDumpPath(Directory(), run, 2), Directory() / "dumps" / ("augustac-" + id + "-2.nv-gpudmp"));
 }
 
+// Requirements: NFR-19
 TEST_F(RunFilesTest, ARunsFilesAreThoseNamedByItsIdInBothFolders) {
   LeaveRun(RunId(1));
   LeaveRun(RunId(2));
@@ -99,6 +100,7 @@ TEST_F(RunFilesTest, ARunsFilesAreThoseNamedByItsIdInBothFolders) {
   EXPECT_EQ(files, sorted);
 }
 
+// Requirements: NFR-19
 TEST_F(RunFilesTest, PruningKeepsTheNewestRunsFilesInBothFoldersAndDeletesTheRest) {
   constexpr std::uint8_t kRuns = 13;
   for (std::uint8_t n = 1; n <= kRuns; ++n) {
@@ -118,6 +120,7 @@ TEST_F(RunFilesTest, PruningKeepsTheNewestRunsFilesInBothFoldersAndDeletesTheRes
 
 // A Run with only a dump left, or only a log, counts as one of the Runs kept
 // all the same: the folders are pruned together, by Run ID.
+// Requirements: NFR-19
 TEST_F(RunFilesTest, PruningCountsARunOnceAcrossBothFolders) {
   for (std::uint8_t n = 1; n <= kKeptRuns; ++n) {
     Write(n % 2 == 0 ? LogPath(Directory(), RunId(n)) : MinidumpPath(Directory(), RunId(n)), "x");
@@ -131,6 +134,7 @@ TEST_F(RunFilesTest, PruningCountsARunOnceAcrossBothFolders) {
   }
 }
 
+// Requirements: NFR-19
 TEST_F(RunFilesTest, PruningLeavesAloneAFileThatIsNotARuns) {
   for (std::uint8_t n = 1; n <= kKeptRuns + 1; ++n) {
     LeaveRun(RunId(n));
@@ -160,12 +164,14 @@ TEST_F(RunFilesTest, PruningLeavesAloneAFileThatIsNotARuns) {
   }
 }
 
+// Requirements: NFR-19
 TEST_F(RunFilesTest, PruningADirectoryWithNoRunsDoesNothing) {
   EXPECT_TRUE(PruneRuns(Directory(), kKeptRuns).empty());
   EXPECT_TRUE(PruneRuns(Directory() / "missing", kKeptRuns).empty());
 }
 
 // A crash leaves the crash line, then a line per frame (ADR-0047).
+// Requirements: NFR-19
 TEST_F(RunFilesTest, ALogEndingInACrashLineIsACrashedRun) {
   const std::filesystem::path log = Directory() / "crashed.log";
   Write(log,
@@ -179,6 +185,7 @@ TEST_F(RunFilesTest, ALogEndingInACrashLineIsACrashedRun) {
   EXPECT_EQ(ReadRunEnd(log), RunEnd::kCrash);
 }
 
+// Requirements: NFR-19
 TEST_F(RunFilesTest, ALogEndingInTheTerminalEventOfAFailureIsATerminalFailure) {
   const std::filesystem::path log = Directory() / "failed.log";
   Write(log,
@@ -189,6 +196,7 @@ TEST_F(RunFilesTest, ALogEndingInTheTerminalEventOfAFailureIsATerminalFailure) {
   EXPECT_EQ(ReadRunEnd(log), RunEnd::kTerminalFailure);
 }
 
+// Requirements: NFR-19
 TEST_F(RunFilesTest, AnyOtherLastLineIsAnOrdinaryEnd) {
   const std::filesystem::path log = Directory() / "stopped.log";
   for (const std::string_view last : {
@@ -202,6 +210,7 @@ TEST_F(RunFilesTest, AnyOtherLastLineIsAnOrdinaryEnd) {
   }
 }
 
+// Requirements: NFR-19
 TEST_F(RunFilesTest, AnEmptyOrMissingLogIsAnOrdinaryEnd) {
   const std::filesystem::path log = Directory() / "empty.log";
   Write(log, "");
@@ -210,6 +219,7 @@ TEST_F(RunFilesTest, AnEmptyOrMissingLogIsAnOrdinaryEnd) {
   EXPECT_EQ(ReadRunEnd(Directory() / "missing.log"), RunEnd::kOrdinary);
 }
 
+// Requirements: NFR-19
 TEST_F(RunFilesTest, ThePreviousRunIsTheNewestBeforeThisOneWithHowItEnded) {
   LeaveRun(RunId(1));
   Write(LogPath(Directory(), RunId(2)), "2026-10-21T10:00:01Z CRITICAL subsystem=client event=crash signal=SIGSEGV\n");
@@ -226,6 +236,7 @@ TEST_F(RunFilesTest, ThePreviousRunIsTheNewestBeforeThisOneWithHowItEnded) {
   EXPECT_EQ(files, (std::vector{MinidumpPath(Directory(), RunId(2)), LogPath(Directory(), RunId(2))}));
 }
 
+// Requirements: NFR-19
 TEST_F(RunFilesTest, AFirstRunHasNoPreviousRun) {
   Write(LogPath(Directory(), RunId(3)), "2026-10-21T10:00:00Z INFO subsystem=client event=starting\n");
 
@@ -234,6 +245,7 @@ TEST_F(RunFilesTest, AFirstRunHasNoPreviousRun) {
 }
 
 // A crashed Run whose log is gone left only its dump: no line says it crashed.
+// Requirements: NFR-19
 TEST_F(RunFilesTest, APreviousRunWithNoLogEndedOrdinarily) {
   Write(MinidumpPath(Directory(), RunId(2)), "dump");
 

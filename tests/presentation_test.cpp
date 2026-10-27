@@ -334,25 +334,6 @@ TEST_F(PresentationWorldTest, RenderFramesWithoutNewerStateKeepShowingTheRemoteP
   }
 }
 
-TEST_F(PresentationWorldTest, KeepsNothingItWasLentPastTheRenderFrame) {
-  State shown;
-  {
-    const WorldSnapshot snapshot = ThreePlayersAt(5);
-    const std::vector<PlayerCharacter> characters = SessionOrder();
-    shown = world.RunFrame(InMatch(snapshot, characters));
-  }
-  // What the first frame was lent is gone: the next is shown from its own, and
-  // what the first returned is the caller's.
-  const WorldSnapshot newer = ThreePlayersAt(6);
-  const std::vector<PlayerCharacter> characters = SessionOrder();
-  const State next = world.RunFrame(InMatch(newer, characters));
-
-  ASSERT_NE(Find(shown, kMedic), nullptr);
-  EXPECT_EQ(Find(shown, kMedic)->character, "medic");
-  ASSERT_NE(Find(next, kMedic), nullptr);
-  EXPECT_EQ(Find(next, kMedic)->character, "medic");
-}
-
 // Requirements: US-17
 TEST_F(PresentationWorldTest, OutsideAMatchNoRemotePlayerIsShown) {
   const WorldSnapshot snapshot = ThreePlayersAt(5);

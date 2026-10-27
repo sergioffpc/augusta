@@ -53,6 +53,7 @@ TEST(ReplicationTest, EveryRecipientGetsEveryPlayer) {
   EXPECT_EQ(updates.bodies[1].body.position.x, 20.0F);
 }
 
+// Requirements: NFR-02
 TEST(ReplicationTest, EachRecipientGetsItsOwnAcknowledgedSequence) {
   const State state = StateOf({PlayerAt(1, 0.0F), PlayerAt(2, 0.0F)});
   const std::array<Recipient, 2> recipients = {
@@ -67,6 +68,7 @@ TEST(ReplicationTest, EachRecipientGetsItsOwnAcknowledgedSequence) {
   EXPECT_EQ(updates.recipients[1].acknowledged_sequence, 7U);
 }
 
+// Requirements: NFR-02
 TEST(ReplicationTest, EachRecipientIsToldHowManyOfItsOwnCommandsAreQueued) {
   const State state = StateOf({PlayerAt(1, 0.0F), PlayerAt(2, 0.0F)});
   const std::array<Recipient, 2> recipients = {Recipient{.entity = static_cast<EntityId>(1), .queued_commands = 3},
@@ -78,6 +80,7 @@ TEST(ReplicationTest, EachRecipientIsToldHowManyOfItsOwnCommandsAreQueued) {
   EXPECT_EQ(updates.recipients[1].queued_commands, 0U);
 }
 
+// Requirements: NFR-02
 TEST(ReplicationTest, EachRecipientIsToldItsOwnRifleAndNoOneElses) {
   EntityState firing = PlayerAt(1, 0.0F);
   firing.rifle = {.cooldown = 0.05F, .reload_remaining = 0.0F, .rounds = 12};
@@ -94,6 +97,7 @@ TEST(ReplicationTest, EachRecipientIsToldItsOwnRifleAndNoOneElses) {
   EXPECT_EQ(updates.recipients[1].rifle, firing.rifle);
 }
 
+// Requirements: US-13
 TEST(ReplicationTest, EachRecipientIsToldItsOwnHealthAndADeadOneZero) {
   EntityState hurt = PlayerAt(1, 0.0F);
   hurt.health = 30.0F;
@@ -116,6 +120,7 @@ TEST(ReplicationTest, EachRecipientIsToldItsOwnHealthAndADeadOneZero) {
 
 // Every recipient finds its own body among many, wherever it lies in the
 // state's EntityId order, and is told every body in that order.
+// Requirements: US-17, NFR-02
 TEST(ReplicationTest, EachOfAFullMatchOfRecipientsIsToldItsOwnFieldsAndEveryBodyInOrder) {
   std::vector<EntityState> bodies;
   for (std::uint32_t id = 1; id <= 8; ++id) {
@@ -150,6 +155,7 @@ TEST(ReplicationTest, EachOfAFullMatchOfRecipientsIsToldItsOwnFieldsAndEveryBody
   }
 }
 
+// Requirements: US-13
 TEST(ReplicationTest, EveryDeathOfATickIsPlannedOnceForEveryone) {
   State state = StateOf({PlayerAt(1, 0.0F)});
   state.deaths = {augusta::simulation::Death{.victim = static_cast<EntityId>(2),
@@ -175,12 +181,14 @@ TEST(ReplicationTest, EveryDeathOfATickIsPlannedOnceForEveryone) {
   EXPECT_EQ(deaths[1].part, augusta::body_part::BodyPart::kLimb);
 }
 
+// Requirements: US-17
 TEST(ReplicationTest, NobodyToSendToMeansNothingIsPlanned) {
   const State state = StateOf({PlayerAt(1, 0.0F)});
 
   EXPECT_TRUE(PlanUpdates(state, 1, {}).recipients.empty());
 }
 
+// Requirements: US-19
 TEST(ReplicationTest, EveryShotOfATickIsPlannedOnceUnderThatTick) {
   State state;
   state.shots = {{.shooter = static_cast<EntityId>(1),
@@ -201,6 +209,7 @@ TEST(ReplicationTest, EveryShotOfATickIsPlannedOnceUnderThatTick) {
   EXPECT_EQ(shots[1].tick, 42U);
 }
 
+// Requirements: US-19
 TEST(ReplicationTest, ATickWithoutFireHasNoShotToPlan) {
   EXPECT_TRUE(PlanShots(StateOf({PlayerAt(1, 0.0F)}), 1).empty());
 }
@@ -220,6 +229,7 @@ TEST(ReplicationTest, EveryRecipientIsToldWhereEachBodyFaces) {
 }
 
 // What poses a body, a pitch and ADS among it, is every recipient's (ADR-0066).
+// Requirements: US-17
 TEST(ReplicationTest, EveryRecipientIsToldWhereEachBodyLooksAndWhetherItAims) {
   EntityState aiming = PlayerAt(1, 0.0F);
   aiming.pitch = -0.5F;
@@ -236,6 +246,7 @@ TEST(ReplicationTest, EveryRecipientIsToldWhereEachBodyLooksAndWhetherItAims) {
   EXPECT_FALSE(updates.bodies[1].ads);
 }
 
+// Requirements: US-19
 TEST(ReplicationTest, EachHitIsConfirmedToItsShooterAloneWithItsTargetBodyPartAndDamage) {
   State state;
   state.hits = {{.shooter = static_cast<EntityId>(1),
@@ -263,10 +274,12 @@ TEST(ReplicationTest, EachHitIsConfirmedToItsShooterAloneWithItsTargetBodyPartAn
   EXPECT_EQ(confirmations[1].damage, 10.0F);
 }
 
+// Requirements: US-19
 TEST(ReplicationTest, ATickWithoutAHitHasNoHitConfirmationToPlan) {
   EXPECT_TRUE(PlanHitConfirmations(StateOf({PlayerAt(1, 0.0F)})).empty());
 }
 
+// Requirements: US-17
 TEST(ReplicationTest, ARecipientWithNoBodyYetStillSeesTheOthers) {
   const State state = StateOf({PlayerAt(1, 5.0F)});
   const std::array<Recipient, 1> recipients = {Recipient{.entity = static_cast<EntityId>(2)}};

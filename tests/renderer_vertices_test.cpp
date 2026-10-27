@@ -45,6 +45,7 @@ SceneMesh Square(const Vec3& color) {
           .color = color};
 }
 
+// Requirements: NFR-04
 TEST(FlatShadedVerticesTest, ExpandsEveryTriangleIntoItsOwnFaceNormalAndMeshColor) {
   const Vec3 color(0.1F, 0.2F, 0.3F);
   const std::vector<Vertex> vertices = BuildFlatShadedVertices(Scene{.meshes = {Square(color)}, .camera = {}});
@@ -60,6 +61,7 @@ TEST(FlatShadedVerticesTest, ExpandsEveryTriangleIntoItsOwnFaceNormalAndMeshColo
   }
 }
 
+// Requirements: NFR-04
 TEST(FlatShadedVerticesTest, ConcatenatesEveryMeshInOrder) {
   const std::vector<Vertex> vertices = BuildFlatShadedVertices(
       Scene{.meshes = {Square(Vec3(1.0F, 0.0F, 0.0F)), Square(Vec3(0.0F, 1.0F, 0.0F))}, .camera = {}});
@@ -69,6 +71,7 @@ TEST(FlatShadedVerticesTest, ConcatenatesEveryMeshInOrder) {
   ExpectNear(vertices[6].color, Vec3(0.0F, 1.0F, 0.0F));
 }
 
+// Requirements: NFR-04
 TEST(FlatShadedVerticesTest, ThrowsOnAnIndexPastItsMeshsPositions) {
   SceneMesh mesh = Square(Vec3(1.0F, 1.0F, 1.0F));
   mesh.indices.back() = 4;
@@ -85,6 +88,7 @@ CharacterVertices OneVertexCharacter() {
            .position = Vec3(0.0F, 2.0F, -1.0F), .normal = Vec3(0.0F, 0.0F, -1.0F), .color = Vec3(0.5F, 0.5F, 0.5F)}}}};
 }
 
+// Requirements: US-17
 TEST(RemoteVerticesTest, TurnsByYawAndPlacesAtPositionInItsOwnColor) {
   const std::vector<RemotePlayer> players{{.position = Vec3(10.0F, 0.0F, 3.0F),
                                            .yaw = std::numbers::pi_v<float> / 2.0F,
@@ -100,6 +104,7 @@ TEST(RemoteVerticesTest, TurnsByYawAndPlacesAtPositionInItsOwnColor) {
   ExpectNear(vertices[0].color, Vec3(0.9F, 0.1F, 0.1F));
 }
 
+// Requirements: US-17
 TEST(RemoteVerticesTest, SkipsAPlayerWhoseCharacterHasNoMesh) {
   const std::vector<RemotePlayer> players{{.position = Vec3(1.0F, 0.0F, 0.0F), .character = "unknown"},
                                           {.position = Vec3(5.0F, 0.0F, 0.0F), .character = "soldier"}};
@@ -120,6 +125,7 @@ void ExpectWidenedAlongX(const Tracer& tracer, const Vertex& vertex) {
   EXPECT_GT(std::abs(offset.x), 0.0F);
 }
 
+// Requirements: US-19
 TEST(EffectVerticesTest, TracerIsAQuadAcrossItsLineFacingTheCamera) {
   const Tracer tracer{.head = Vec3(0.0F, 0.0F, -10.0F), .tail = Vec3(0.0F, 0.0F, -5.0F)};
   const Camera camera{.position = Vec3(0.0F, 3.0F, 0.0F)};
@@ -139,6 +145,7 @@ TEST(EffectVerticesTest, TracerIsAQuadAcrossItsLineFacingTheCamera) {
   EXPECT_GT(std::abs(face.y), 0.0F);
 }
 
+// Requirements: US-19
 TEST(EffectVerticesTest, TracerGlowsAtItsHeadAndFadesToNothingAtItsTail) {
   const Tracer tracer{.head = Vec3(0.0F, 0.0F, -10.0F), .tail = Vec3(0.0F, 0.0F, -5.0F)};
 
@@ -151,6 +158,7 @@ TEST(EffectVerticesTest, TracerGlowsAtItsHeadAndFadesToNothingAtItsTail) {
   }
 }
 
+// Requirements: US-19
 TEST(EffectVerticesTest, GlowsAreDiamondsOfFourTriangles) {
   const CombatEffects effects{.tracers = {},
                               .impacts = {{.position = Vec3(1.0F, 2.0F, 3.0F)}},
@@ -169,8 +177,10 @@ std::vector<Vec3> ToPixels(std::span<const Vertex> vertices, std::uint32_t width
   return pixels;
 }
 
+// Requirements: US-06, US-19
 TEST(OverlayVerticesTest, NothingShowsByDefault) { EXPECT_TRUE(BuildOverlayVertices(Overlay{}, 1920, 1080).empty()); }
 
+// Requirements: US-06
 TEST(OverlayVerticesTest, CrosshairIsFourBarsAroundTheCenterOnTheAxes) {
   const std::vector<Vertex> vertices = BuildOverlayVertices(Overlay{.crosshair = true}, 1920, 1080);
 
@@ -184,6 +194,7 @@ TEST(OverlayVerticesTest, CrosshairIsFourBarsAroundTheCenterOnTheAxes) {
   }
 }
 
+// Requirements: US-06
 TEST(OverlayVerticesTest, KeepsItsSizeInPixelsWhateverTheClientAreaSize) {
   const Overlay overlay{.crosshair = true, .hit_marker = true};
 
@@ -198,6 +209,7 @@ TEST(OverlayVerticesTest, KeepsItsSizeInPixelsWhateverTheClientAreaSize) {
   }
 }
 
+// Requirements: US-19
 TEST(OverlayVerticesTest, HitMarkerIsFourDiagonalBarsInItsOwnColor) {
   const std::vector<Vertex> crosshair = BuildOverlayVertices(Overlay{.crosshair = true}, 1920, 1080);
   const std::vector<Vertex> hit_marker = BuildOverlayVertices(Overlay{.hit_marker = true}, 1920, 1080);

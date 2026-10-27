@@ -40,17 +40,20 @@ SequencedCommand Walk(augusta::tick::Sequence sequence, float x = 1.0F) {
   return sequenced;
 }
 
+// Requirements: US-15
 TEST(ValidateTest, AcceptsAWellFormedNewerCommand) {
   EXPECT_TRUE(Validate(Walk(5), 4).has_value());
   EXPECT_TRUE(Validate(Walk(1), 0).has_value());
 }
 
+// Requirements: US-15
 TEST(ValidateTest, RejectsASequenceThatIsNotStrictlyNewer) {
   EXPECT_EQ(Validate(Walk(4), 4).error(), Rejection::kStale);
   EXPECT_EQ(Validate(Walk(3), 4).error(), Rejection::kStale);
   EXPECT_EQ(Validate(Walk(0), 0).error(), Rejection::kStale);
 }
 
+// Requirements: US-15, NFR-05
 TEST(ValidateTest, RejectsNonFiniteNumbersWhereverTheyAre) {
   SequencedCommand command = Walk(1);
   command.command.movement.direction.y = kNaN;
@@ -72,6 +75,7 @@ TEST(ValidateTest, RejectsNonFiniteNumbersWhereverTheyAre) {
   EXPECT_EQ(Validate(command, 0).error(), Rejection::kNonFinite);
 }
 
+// Requirements: US-15, NFR-05
 TEST(ValidateTest, RejectsNumbersOutsideWhatAClientCanProduce) {
   EXPECT_EQ(Validate(Walk(1, kMaxMovementMagnitude + 0.5F), 0).error(), Rejection::kOutOfRange);
   EXPECT_EQ(Validate(Walk(1, 1.0e30F), 0).error(), Rejection::kOutOfRange);
@@ -87,6 +91,7 @@ TEST(ValidateTest, RejectsNumbersOutsideWhatAClientCanProduce) {
   EXPECT_EQ(Validate(command, 0).error(), Rejection::kOutOfRange);
 }
 
+// Requirements: US-15
 TEST(ValidateTest, AcceptsADiagonalAndALookStraightUp) {
   SequencedCommand command = Walk(1);
   command.command.movement.direction = Vec3(1.0F, 0.0F, 1.0F);
@@ -95,12 +100,14 @@ TEST(ValidateTest, AcceptsADiagonalAndALookStraightUp) {
   EXPECT_TRUE(Validate(command, 0).has_value());
 }
 
+// Requirements: US-15
 TEST(ValidateTest, EveryRejectionHasADescription) {
   for (const Rejection rejection : {Rejection::kStale, Rejection::kNonFinite, Rejection::kOutOfRange}) {
     EXPECT_FALSE(augusta::host::DescribeRejection(rejection).empty());
   }
 }
 
+// Requirements: NFR-02
 TEST(CommandQueueTest, HandsOutOneCommandPerTickOldestFirst) {
   CommandQueue queue{kTickRate};
   ASSERT_TRUE(queue.TryEnqueue(Walk(1, 1.0F)).has_value());
@@ -115,6 +122,7 @@ TEST(CommandQueueTest, HandsOutOneCommandPerTickOldestFirst) {
   EXPECT_EQ(second.acknowledged_sequence, 2U);
 }
 
+// Requirements: NFR-02
 TEST(CommandQueueTest, SaysHowManyCommandsAreQueuedForTheNextTicks) {
   CommandQueue queue{kTickRate};
   EXPECT_EQ(queue.Queued(), 0U);
@@ -127,6 +135,7 @@ TEST(CommandQueueTest, SaysHowManyCommandsAreQueuedForTheNextTicks) {
   EXPECT_EQ(queue.Queued(), 1U);
 }
 
+// Requirements: US-15
 TEST(CommandQueueTest, ARepeatedCommandIsTakenInOnce) {
   CommandQueue queue{kTickRate};
   ASSERT_TRUE(queue.TryEnqueue(Walk(1)).has_value());
@@ -137,6 +146,7 @@ TEST(CommandQueueTest, ARepeatedCommandIsTakenInOnce) {
   EXPECT_EQ(queue.Next().acknowledged_sequence, 1U);
 }
 
+// Requirements: US-15
 TEST(CommandQueueTest, ACommandOlderThanOneAlreadyTakenInIsDropped) {
   CommandQueue queue{kTickRate};
   ASSERT_TRUE(queue.TryEnqueue(Walk(5)).has_value());
@@ -144,6 +154,7 @@ TEST(CommandQueueTest, ACommandOlderThanOneAlreadyTakenInIsDropped) {
   EXPECT_EQ(queue.TryEnqueue(Walk(3)).error(), Rejection::kStale);
 }
 
+// Requirements: US-15
 TEST(CommandQueueTest, ADroppedCommandDoesNotAdvanceTheSequenceOrTheAcknowledgement) {
   CommandQueue queue{kTickRate};
   ASSERT_TRUE(queue.TryEnqueue(Walk(1)).has_value());
@@ -156,6 +167,7 @@ TEST(CommandQueueTest, ADroppedCommandDoesNotAdvanceTheSequenceOrTheAcknowledgem
   EXPECT_TRUE(queue.TryEnqueue(Walk(2)).has_value());
 }
 
+// Requirements: NFR-02
 TEST(CommandQueueTest, HoldsTheLastMovementForABoundThenStopsAndKeepsTheStance) {
   CommandQueue queue{kTickRate};
   SequencedCommand crouch = Walk(1);
@@ -178,6 +190,7 @@ TEST(CommandQueueTest, HoldsTheLastMovementForABoundThenStopsAndKeepsTheStance) 
   EXPECT_EQ(stopped.acknowledged_sequence, 1U);
 }
 
+// Requirements: NFR-02
 TEST(CommandQueueTest, ANewCommandRestartsTheHold) {
   CommandQueue queue{kTickRate};
   ASSERT_TRUE(queue.TryEnqueue(Walk(1)).has_value());
@@ -190,6 +203,7 @@ TEST(CommandQueueTest, ANewCommandRestartsTheHold) {
   EXPECT_EQ(queue.Next().command.movement.direction.x, 1.0F);
 }
 
+// Requirements: US-07, US-08
 TEST(CommandQueueTest, HeldAndIdleTicksNeverRepeatAOneShotAction) {
   CommandQueue queue{kTickRate};
   SequencedCommand shoot = Walk(1);
@@ -208,6 +222,7 @@ TEST(CommandQueueTest, HeldAndIdleTicksNeverRepeatAOneShotAction) {
 
 // ADR-0050: a Match capture keeps only what the client sent, never the
 // server's own held or idle movement.
+// Requirements: US-21
 TEST(CommandQueueTest, SaysWhichTicksGetACommandTheClientSent) {
   CommandQueue queue{kTickRate};
   const auto idle = queue.Next();
@@ -222,6 +237,7 @@ TEST(CommandQueueTest, SaysWhichTicksGetACommandTheClientSent) {
   EXPECT_FALSE(held.sent);
 }
 
+// Requirements: NFR-02
 TEST(CommandQueueTest, WithNothingEverReceivedAPlayerStandsStill) {
   CommandQueue queue{kTickRate};
 
@@ -231,6 +247,7 @@ TEST(CommandQueueTest, WithNothingEverReceivedAPlayerStandsStill) {
   EXPECT_EQ(idle.acknowledged_sequence, 0U);
 }
 
+// Requirements: NFR-12
 TEST(CommandQueueTest, WhenAClientRunsAheadTheOldestCommandsGo) {
   CommandQueue queue{kTickRate};
   const auto total = static_cast<std::uint32_t>(kMaxQueuedCommands + 4);
@@ -241,6 +258,7 @@ TEST(CommandQueueTest, WhenAClientRunsAheadTheOldestCommandsGo) {
   EXPECT_EQ(queue.Next().acknowledged_sequence, 5U);
 }
 
+// Requirements: NFR-12
 TEST(CommandQueueTest, EnqueuingIntoAFullQueueSaysItDroppedTheOldest) {
   CommandQueue queue{kTickRate};
   const auto full = static_cast<std::uint32_t>(kMaxQueuedCommands);
@@ -265,6 +283,7 @@ std::chrono::duration<double> HeldFor(std::uint8_t tick_rate_hz) {
   return std::chrono::duration<double>(held / static_cast<double>(tick_rate_hz));
 }
 
+// Requirements: NFR-02
 TEST(CommandQueueTest, TheLastMovementIsHeldForAboutAHundredMillisecondsAtAnyTickRate) {
   constexpr std::chrono::duration<double> kOneTickAt30Hz{1.0 / 30.0};
   for (const std::uint8_t rate : {std::uint8_t{30}, std::uint8_t{60}}) {

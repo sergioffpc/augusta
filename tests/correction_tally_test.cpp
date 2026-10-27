@@ -23,6 +23,7 @@ State StateAt(const Vec3& total_correction, std::uint32_t rifle_corrections = 0)
   return state;
 }
 
+// Requirements: NFR-02
 TEST(CorrectionTallyTest, NoMovementIsNoCorrection) {
   CorrectionTally tally;
   tally.RecordTick(StateAt({}), true);
@@ -35,6 +36,7 @@ TEST(CorrectionTallyTest, NoMovementIsNoCorrection) {
   EXPECT_EQ(corrections.rifle_count, 0U);
 }
 
+// Requirements: NFR-02
 TEST(CorrectionTallyTest, ATickWhoseTotalCorrectionMovedIsOneCorrectionOfThatLength) {
   CorrectionTally tally;
   tally.RecordTick(StateAt({}), true);
@@ -46,6 +48,7 @@ TEST(CorrectionTallyTest, ATickWhoseTotalCorrectionMovedIsOneCorrectionOfThatLen
   EXPECT_FLOAT_EQ(corrections.last_m, 0.5F);
 }
 
+// Requirements: NFR-02
 TEST(CorrectionTallyTest, ACorrectionBackTowardsWhereTheBodyWasStillCounts) {
   CorrectionTally tally;
   tally.RecordTick(StateAt(Vec3(1.0F, 0.0F, 0.0F)), true);
@@ -56,6 +59,7 @@ TEST(CorrectionTallyTest, ACorrectionBackTowardsWhereTheBodyWasStillCounts) {
   EXPECT_FLOAT_EQ(corrections.last_m, 1.0F);
 }
 
+// Requirements: NFR-02
 TEST(CorrectionTallyTest, KeepsTheLargestCorrectionAndReplacesTheLast) {
   CorrectionTally tally;
   tally.RecordTick(StateAt(Vec3(0.0F, 0.0F, 0.5F)), true);
@@ -66,6 +70,7 @@ TEST(CorrectionTallyTest, KeepsTheLargestCorrectionAndReplacesTheLast) {
   EXPECT_FLOAT_EQ(corrections.last_m, 0.2F);
 }
 
+// Requirements: NFR-02
 TEST(CorrectionTallyTest, RifleCorrectionsFollowTheirRunningTotal) {
   CorrectionTally tally;
   tally.RecordTick(StateAt({}, 1), true);
@@ -75,6 +80,7 @@ TEST(CorrectionTallyTest, RifleCorrectionsFollowTheirRunningTotal) {
   EXPECT_EQ(tally.Totals().rifle_count, 3U);
 }
 
+// Requirements: NFR-02
 TEST(CorrectionTallyTest, TicksNotCountedFollowTheTotalsButAddNothing) {
   CorrectionTally tally;
   // Control: a counted tick that moves both totals adds to the counts.
