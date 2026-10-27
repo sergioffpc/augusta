@@ -48,6 +48,7 @@ the issues is ENGINEERING.md's Milestones section.
     - [M20 — Skeleton (M)](#m20--skeleton-m)
     - [M21 — Muzzle (S)](#m21--muzzle-s)
     - [M22 — Clips & the Hitbox Pose (M)](#m22--clips--the-hitbox-pose-m)
+- [Requirements Traceability (planned)](#requirements-traceability-planned)
 - [The Image (planned)](#the-image-planned)
     - [M23 — Deferred Frame & Looks (M)](#m23--deferred-frame--looks-m)
     - [M24 — Upscaling & Graphics Settings (S)](#m24--upscaling--graphics-settings-s)
@@ -511,6 +512,18 @@ barrel enters it
 **Exercises:** ADR-0066, ADR-0061, ADR-0038 **Exit criteria:** a crouching,
 aiming player is hit where its posed arm is, and a client's pose agrees with the
 server's within the tolerance
+
+## Requirements Traceability (planned)
+
+A maintenance release, shipped as a minor ahead of the next major: every test
+names a requirement, and every met requirement is named by a test or a CI job
+(#1356). The CI jobs that check NFR-04, NFR-11 and NFR-15 name them, and the
+test report's requirements matrix shows those as checked in CI (#1357).
+
+**Exercises:** ADR-0013 **Exit criteria:**
+`scripts/requirements-matrix.py --check` enforces both directions and passes on
+`develop`, and the test report's requirements matrix shows no `vN` requirement
+as untested
 
 ## The Image (planned)
 
