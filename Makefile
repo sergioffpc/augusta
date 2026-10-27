@@ -139,14 +139,14 @@ TIDY_CHECKS := $(addprefix tidy/,$(TIDY_SOURCES))
 INCLUDE_CHECKS := $(addprefix include-cleaner/,$(INCLUDE_SOURCES))
 
 .DEFAULT_GOAL := all
-.PHONY: all help configure build test check coverage tools install uninstall clean distclean format format-check tidy tidy-prepare lint prepush docs toolchain toolchain-check
+.PHONY: all help configure build test labels check coverage tools install uninstall clean distclean format format-check tidy tidy-prepare lint prepush docs toolchain toolchain-check
 
 all: build
 
 # $(info), not echo: make prints it itself, so the parentheses reach neither
 # cmd.exe nor /bin/sh, which would read them as syntax.
 help:
-	$(info Usage: make [target] [PRESET=...] [FILES="a b ..."])
+	$(info Usage: make [target] [PRESET=...] [FILES="a b ..."] [TAGS="a b ..."])
 	$(info $()  PRESET is $(PRESET) unless set, one of this host's presets listed below:)
 	$(info $()  the shipping ones make a Shipping build, without the debug tools,)
 	$(info $()  every other one a Development build, with them (ADR-0074).)
@@ -159,7 +159,8 @@ help:
 	$(info $()  docs             the documentation site, MkDocs and Doxygen, into build/docs-site)
 	$(info )
 	$(info Test:)
-	$(info $()  test             build, then compile the tests and run ctest)
+	$(info $()  test             build, then compile the tests and run ctest, or TAGS="property ..." the tests with any of those labels alone)
+	$(info $()  labels           configure, then list the labels TAGS picks from (the GoogleTest ones once test has built them))
 	$(info $()  check            configure, then the repository's structural checks (checks/) and their pytest)
 	$(info $()  coverage         test under the linux-coverage preset, then its report into build/x64-linux-coverage/report)
 	$(info )
@@ -190,10 +191,22 @@ configure:
 build: configure
 	$(RUN) cmake --build --preset $(PRESET) $(if $(TARGETS),--target $(TARGETS))
 
+# TAGS="a b ..." narrows the run to the tests with any of those ctest labels,
+# as one anchored regex; a label no test has fails the run rather than passing
+# with nothing run.
+space := $() $()
+TAGS_REGEX = "^($(subst $(space),|,$(strip $(TAGS))))$$"
+
 # The tests are not part of build (ADR-0008): augusta_tests builds them.
 test: build
 	$(RUN) cmake --build --preset $(PRESET) --target augusta_tests
-	$(RUN) ctest --preset $(PRESET) --parallel $(JOBS)
+	$(RUN) ctest --preset $(PRESET) --parallel $(JOBS) $(if $(strip $(TAGS)),--label-regex $(TAGS_REGEX) --no-tests=error)
+
+# The labels ctest knows in this build, which TAGS picks from.
+# gtest_discover_tests labels its tests when they are built, so those show once
+# test has run.
+labels: configure
+	$(RUN) ctest --preset $(PRESET) --print-labels
 
 # The structural checks (checks/CMakeLists.txt) build nothing: configuring
 # registers them, and ctest's check label picks them alone. Then the pytest of
