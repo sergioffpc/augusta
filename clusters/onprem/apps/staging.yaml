@@ -42,7 +42,7 @@ spec:
     # (scripts/check-pack-formats.py).
     servers:
       firebase:
-        packVersion: "a7b2faca718e"
+        packVersion: "d5bda568e4f3"
         packFormat: 7
         # Pinned so this server has a stable address for LAN clients.
         nodePort: 30800
