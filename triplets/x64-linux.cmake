@@ -33,6 +33,14 @@ if(PORT STREQUAL "boost-uuid")
   list(APPEND VCPKG_CMAKE_CONFIGURE_OPTIONS -DBOOST_UUID_LINK_LIBATOMIC=OFF)
 endif()
 
+# mimalloc links its users to libatomic wherever -latomic links, needed or not,
+# and the server image has none: the cached result of that check, preset to
+# fail, keeps it off. Its atomics are lock-free here (and on arm64, which it
+# builds for armv8.1-a), so a reference to libatomic would fail the link.
+if(PORT STREQUAL "mimalloc")
+  list(APPEND VCPKG_CMAKE_CONFIGURE_OPTIONS -Dmi_has_libatomic=OFF)
+endif()
+
 # jemalloc's configure finds strerror_r's return type by linking C programs
 # with -Werror, which the LLVM toolchain's -static-libstdc++ fails: clang
 # reports it unused when it links C. That warning alone is turned off.
