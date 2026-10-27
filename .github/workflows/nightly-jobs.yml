@@ -48,6 +48,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ env.NIGHTLY_REF }}
           submodules: true
       - uses: ./.github/actions/setup-linux-build
@@ -103,6 +104,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ env.NIGHTLY_REF }}
           submodules: true
       - uses: ./.github/actions/setup-linux-build
@@ -177,6 +179,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ env.NIGHTLY_REF }}
           submodules: true
       - uses: ./.github/actions/setup-linux-build
@@ -220,6 +223,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ env.NIGHTLY_REF }}
           submodules: true
       - uses: ./.github/actions/setup-linux-build
@@ -256,6 +260,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ env.NIGHTLY_REF }}
           submodules: true
       - uses: ./.github/actions/setup-linux-build
@@ -310,6 +315,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ env.NIGHTLY_REF }}
           submodules: true
       - uses: ./.github/actions/setup-linux-build
@@ -428,6 +434,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ env.NIGHTLY_REF }}
           submodules: true
       - name: Bootstrap the platform
@@ -494,6 +501,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # The one checkout that keeps its credentials: Start the history
+          # below pushes the benchmarks branch's first commit with git.
+          persist-credentials: true
           ref: ${{ env.NIGHTLY_REF }}
           submodules: true
       - uses: ./.github/actions/setup-linux-build
@@ -585,6 +595,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ env.NIGHTLY_REF }}
       # grype.
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
@@ -640,6 +651,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ env.NIGHTLY_REF }}
       # By pattern, so a job that uploaded nothing leaves its part empty
       # rather than failing the download.
