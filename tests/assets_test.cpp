@@ -336,7 +336,7 @@ TEST_F(PackTest, AScriptLargerThanTheLimitIsTooLargeToEncodeAndCorruptToResolve)
 
 // A scenario's character list rides in both packs (ADR-0042): the character
 // index N names element N-1, so the order the cooker wrote is the order resolved.
-// Requirements: US-22
+// Requirements: US-16, US-22
 TEST_F(PackTest, EncodesAndResolvesTheCharacterListInOrder) {
   const auto pack_path = MakePackPath("augusta_assets_test_characters");
   const auto keys = GenerateEd25519KeyPair();
@@ -518,7 +518,7 @@ TEST(CharacterEyePathTest, ACharactersEyeIsTheEyeChildOfItsRootPrim) {
   EXPECT_EQ(augusta::assets::CharacterEyePath("soldier"), "soldier/Character/Eye");
 }
 
-// Requirements: US-22
+// Requirements: US-17, US-22
 TEST(CharacterMeshPathTest, ACharactersMeshIsTheVisualChildOfItsRootPrim) {
   EXPECT_EQ(augusta::assets::CharacterMeshPath("soldier"), "soldier/Character/Visual");
 }
@@ -609,7 +609,7 @@ TEST_F(PackTest, ARifleMissingAMarkerIsCorrupt) {
 
 // A character's weapon socket (ADR-0066): its right hand's Joint and its frame
 // there, and its left hand's Joint, found under the character's path.
-// Requirements: US-22
+// Requirements: US-11, US-22
 TEST_F(PackTest, EncodesAndResolvesAWeaponSocket) {
   const auto pack_path = MakePackPath("augusta_assets_test_weapon_socket");
   const auto keys = GenerateEd25519KeyPair();
@@ -698,7 +698,7 @@ class HitboxPackTest : public PackTest {
   }
 };
 
-// Requirements: US-22
+// Requirements: US-11, US-22
 TEST_F(HitboxPackTest, AHitboxResolvesToItsBodyPartJointAndGeometry) {
   const auto pack = Write({Hitbox("soldier/Character/Head", augusta::assets::BodyPart::kHead, 1.8F)});
 
@@ -712,7 +712,7 @@ TEST_F(HitboxPackTest, AHitboxResolvesToItsBodyPartJointAndGeometry) {
   EXPECT_EQ(hitbox->mesh.indices, (std::vector<std::uint32_t>{0, 1, 2}));
 }
 
-// Requirements: US-22
+// Requirements: US-11, US-22
 TEST_F(HitboxPackTest, ACharactersHitboxesResolveTogetherInPathOrderAndNoOtherCharacters) {
   const auto pack = Write({
       Hitbox("soldier/Character/Torso", augusta::assets::BodyPart::kTorso, 1.3F),
@@ -747,7 +747,7 @@ TEST_F(HitboxPackTest, AHitboxOfAnUnknownBodyPartIsCorrupt) {
 
 // A character's hitbox is cooked in its Joint's space (ADR-0061), and resolves
 // as it was cooked: placing it is its Joint's business.
-// Requirements: US-22
+// Requirements: US-11, US-22
 TEST_F(HitboxPackTest, ACharactersHitboxesResolveInTheirJointsSpace) {
   const auto pack = Write({
       Skeleton("soldier", Vec3(0.0F, 1.0F, 0.0F)),
@@ -807,7 +807,7 @@ void ExpectNear(const Vec3& actual, const Vec3& expected) {
   EXPECT_NEAR(actual.z, expected.z, kTolerance);
 }
 
-// Requirements: US-22
+// Requirements: US-11, US-22
 TEST_F(SkeletonPackTest, ACharactersSkeletonResolvesItsJointsAndTheirParents) {
   const auto pack = Write({Soldier()});
 
@@ -822,7 +822,7 @@ TEST_F(SkeletonPackTest, ACharactersSkeletonResolvesItsJointsAndTheirParents) {
 
 // Each Joint's world transform is composed once, at load, from the local ones
 // the pack stores: the Head sits where the turned Spine's +X points, -Z.
-// Requirements: US-22
+// Requirements: US-11, US-22
 TEST_F(SkeletonPackTest, ACharactersSkeletonResolvesEachJointsRestTransformInTheCharactersSpace) {
   const auto skeleton = ResolveSoldier();
 
@@ -840,7 +840,7 @@ TEST_F(SkeletonPackTest, ACharacterWithoutASkeletonResolvesNone) {
 }
 
 // Every Joint name is resolved once, at load, into the Joint it names.
-// Requirements: US-22
+// Requirements: US-11, US-22
 TEST_F(SkeletonPackTest, EachHitboxIsPairedWithTheJointItNames) {
   const auto skeleton = ResolveSoldier();
 
@@ -868,7 +868,7 @@ TEST_F(SkeletonPackTest, AHitboxNamingAJointTheSkeletonLacksIsRefusedNamingThatJ
   EXPECT_EQ(bound.error().joint, "Head");
 }
 
-// Requirements: US-22
+// Requirements: US-11, US-22
 TEST(FirstMissingBodyPartTest, NamesTheFirstBodyPartNoHitboxStandsFor) {
   using augusta::assets::BodyPart;
   using augusta::assets::FirstMissingBodyPart;
@@ -883,7 +883,7 @@ TEST(FirstMissingBodyPartTest, NamesTheFirstBodyPartNoHitboxStandsFor) {
   EXPECT_EQ(FirstMissingBodyPart({}), BodyPart::kHead);
 }
 
-// Requirements: US-22
+// Requirements: US-11, US-22
 TEST(CharacterAnimationPathsTest, ACharactersClipsAreAddressedUnderItsClipsPrim) {
   EXPECT_EQ(augusta::assets::CharacterAnimationSkeletonPath("soldier"), "soldier/Character/Skeleton.ozz");
   EXPECT_EQ(augusta::assets::CharacterClipPath("soldier", "standing/forward"),
@@ -895,7 +895,7 @@ TEST(CharacterAnimationPathsTest, ACharactersClipsAreAddressedUnderItsClipsPrim)
 // carries without reading.
 std::vector<std::byte> MakeArchive() { return {std::byte{0x6F}, std::byte{0x7A}, std::byte{0x7A}, std::byte{0x00}}; }
 
-// Requirements: US-22
+// Requirements: US-11, US-22
 TEST(ClipBlobTest, AClipDecodesToItsStrideLengthFootContactsAndArchive) {
   using augusta::assets::Foot;
   const augusta::assets::ClipData clip{
@@ -917,7 +917,7 @@ TEST(ClipBlobTest, AClipDecodesToItsStrideLengthFootContactsAndArchive) {
   EXPECT_EQ(decoded->archive, MakeArchive());
 }
 
-// Requirements: US-22
+// Requirements: US-22, NFR-12
 TEST(ClipBlobTest, AClipWithANegativeStrideOrAFootContactOutsideItIsRefused) {
   using augusta::assets::EncodeError;
   using augusta::assets::Foot;
@@ -945,7 +945,7 @@ TEST(ClipBlobTest, AClipOfAnUnknownFootIsCorrupt) {
   EXPECT_FALSE(augusta::assets::DecodeClipBlob(*blob).has_value());
 }
 
-// Requirements: US-22
+// Requirements: US-11, US-22
 TEST(StanceTransitionsBlobTest, EachPairOfStancesDecodesToItsDuration) {
   const auto blob = augusta::assets::EncodeStanceTransitionsBlob(
       {.standing_crouching = 0.25F, .standing_prone = 0.75F, .crouching_prone = 0.5F});
@@ -959,7 +959,7 @@ TEST(StanceTransitionsBlobTest, EachPairOfStancesDecodesToItsDuration) {
   EXPECT_FLOAT_EQ(decoded->crouching_prone, 0.5F);
 }
 
-// Requirements: US-22
+// Requirements: US-22, NFR-12
 TEST(StanceTransitionsBlobTest, ADurationThatIsNotPositiveIsRefused) {
   const auto blob = augusta::assets::EncodeStanceTransitionsBlob(
       {.standing_crouching = 0.25F, .standing_prone = 0.0F, .crouching_prone = 0.5F});
@@ -967,7 +967,7 @@ TEST(StanceTransitionsBlobTest, ADurationThatIsNotPositiveIsRefused) {
   EXPECT_EQ(blob.error(), augusta::assets::EncodeError::kInvalidAnimation);
 }
 
-// Requirements: US-22
+// Requirements: US-11, US-22
 TEST(AnimationSkeletonBlobTest, AnAnimationSkeletonDecodesToItsArchive) {
   const auto blob = augusta::assets::EncodeAnimationSkeletonBlob(MakeArchive());
   ASSERT_TRUE(blob.has_value());
@@ -977,7 +977,7 @@ TEST(AnimationSkeletonBlobTest, AnAnimationSkeletonDecodesToItsArchive) {
 
 // A pack holding a character's animation loads, and resolves each part of it
 // by the character's name and, for a Clip, its role.
-// Requirements: US-22
+// Requirements: US-11, US-22
 TEST_F(PackTest, APackHoldingACharactersAnimationResolvesItsSkeletonClipsAndTransitions) {
   const auto pack_path = MakePackPath("augusta_assets_test_animation");
   const auto keys = GenerateEd25519KeyPair();
@@ -1017,7 +1017,7 @@ TEST_F(PackTest, APackHoldingACharactersAnimationResolvesItsSkeletonClipsAndTran
   EXPECT_EQ(pack->ResolveStanceTransitions("medic").error(), augusta::assets::ResolveError::kNotFound);
 }
 
-// Requirements: US-22
+// Requirements: US-16, US-22
 TEST_F(PackTest, AnEmptyCharacterListResolvesAsEmpty) {
   const auto pack_path = MakePackPath("augusta_assets_test_no_characters");
   const auto keys = GenerateEd25519KeyPair();

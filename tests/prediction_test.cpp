@@ -77,6 +77,7 @@ TEST(PredictionWorldTest, StartPutsTheLocalPlayerAtTheSpawnPointOnTheFloor) {
   EXPECT_NEAR(state.local_body.position.z, 7.0F, 0.05F);
 }
 
+// Requirements: US-05, US-22
 TEST(PredictionWorldTest, StartReplacesTheStaminaRulesTheWorldWasBuiltWith) {
   World world(augusta::clips_fixture::TestClips());
   Command sprint = Walking();
@@ -102,6 +103,7 @@ int StrideDistance(int a, int b) {
 // the distance walked over its Character's Clips' stride length, 30 ticks at
 // 3 m/s walking half of the forward Clip's 3 m. Each tick's advance is rounded
 // to a whole step, so a tick may be up to half a step off.
+// Requirements: US-11, NFR-02
 TEST(PredictionWorldTest, WalkingAdvancesTheLocalPlayersStrideByItsCharactersClips) {
   World world(augusta::clips_fixture::TestClips());
   ASSERT_TRUE(world.AddCollisionMesh(Floor()).has_value());
@@ -125,6 +127,7 @@ TEST(PredictionWorldTest, WalkingAdvancesTheLocalPlayersStrideByItsCharactersCli
 // The local player's change of stance advances as SimulationWorld advances a
 // player's: over its Character's Clips' transition duration, 0.25 s from
 // standing to crouching, 17 steps of 255 a tick.
+// Requirements: US-11, NFR-02
 TEST(PredictionWorldTest, ACrouchsProgressAdvancesOverTheLocalCharactersTransitionDuration) {
   World world(augusta::clips_fixture::TestClips());
   ASSERT_TRUE(world.AddCollisionMesh(Floor()).has_value());
@@ -487,6 +490,7 @@ TEST_F(WeaponPredictionTest, AMatchStartsWithAFullMagazineOfTheServersRifle) {
   EXPECT_EQ(state.rounds_fired, 0);
 }
 
+// Requirements: NFR-02
 TEST(PredictionWorldTest, BeforeAMatchStartsNothingFires) {
   World world(augusta::clips_fixture::TestClips());
 

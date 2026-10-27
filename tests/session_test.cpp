@@ -345,6 +345,7 @@ TEST_F(JoinTest, SessionIdsFromTwoHostsNeverCollide) {
 
 // The admission line ties the client's Run ID to the Session it is admitted
 // as (ADR-0038).
+// Requirements: NFR-19
 TEST_F(JoinTest, AnAdmittedClientIsLoggedWithTheRunIdItSentAndItsSession) {
   augusta::logging::Init();
   const boost::uuids::uuid run = boost::uuids::time_generator_v7{}();
@@ -1748,6 +1749,7 @@ bool EndMatchIntoTheLobby(Host& host, const std::vector<Session*>& sessions) {
 }
 
 // A Match ID names one Match on every client of it, and each Match afresh (ADR-0043).
+// Requirements: NFR-19
 TEST_F(MatchCycleTest, EveryClientOfAMatchIsToldTheSameMatchIdAndTheNextMatchIsNamedByANewOne) {
   Session& first = Join();
   Session& second = Join();
@@ -1764,6 +1766,7 @@ TEST_F(MatchCycleTest, EveryClientOfAMatchIsToldTheSameMatchIdAndTheNextMatchIsN
 }
 
 // Who played with whom is read off the server's Match start line (ADR-0029).
+// Requirements: NFR-19
 TEST_F(MatchCycleTest, TheServersMatchLinesNameTheMatchIdAndItsStartLineEveryPlayersSession) {
   augusta::logging::Init();
   Session& first = Join();
@@ -1791,6 +1794,7 @@ TEST_F(MatchCycleTest, TheServersMatchLinesNameTheMatchIdAndItsStartLineEveryPla
 // A Session tells its owner of its Match (SessionConfig::on_match), which the
 // client holds in its logging context (ADR-0029): the Match ID at Match start,
 // the nil ID at Match end.
+// Requirements: NFR-10
 TEST_F(MatchCycleTest, ASessionTellsItsOwnerOfItsMatchAtItsStartAndOfNoneAtItsEnd) {
   std::vector<boost::uuids::uuid> told;
   SessionConfig config = TestSessionConfig(host_.ListenEndpoint());
@@ -1810,6 +1814,7 @@ TEST_F(MatchCycleTest, ASessionTellsItsOwnerOfItsMatchAtItsStartAndOfNoneAtItsEn
 // A Session outside the client, as each of the Agent's many is, sets no Match
 // in the process-wide logging context: its Match is told to no one, so another
 // Session's lines never carry it.
+// Requirements: NFR-10
 TEST_F(MatchCycleTest, ASessionWithNoOwnerToTellPutsNoMatchInTheLogContext) {
   augusta::logging::Init();
   augusta::logging::SetLogLevel(augusta::logging::Severity::kInfo);

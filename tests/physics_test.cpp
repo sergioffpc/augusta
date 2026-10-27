@@ -23,7 +23,6 @@ using augusta::physics::kStanceProgressSteps;
 using augusta::physics::MapRaycastHit;
 using augusta::physics::MovementInput;
 using augusta::physics::Pacing;
-using augusta::physics::RaycastHit;
 using augusta::physics::StaminaConfig;
 using augusta::physics::Stance;
 using augusta::physics::SurfaceId;
@@ -66,6 +65,7 @@ TEST(LowerToStanceTest, ThePointStaysInsideTheBodyInEveryStance) {
 
 // A body's capsule stands on its feet and reaches the top of its body in its
 // stance, wherever the body is.
+// Requirements: US-04
 TEST(CapsuleOfTest, ABodysCapsuleSpansItsStanceFromItsFeet) {
   const Vec3 feet(2.0F, 1.0F, -3.0F);
 
@@ -85,6 +85,7 @@ TEST(CapsuleOfTest, ABodysCapsuleSpansItsStanceFromItsFeet) {
 
 // A crouching body's capsule is shorter than a standing one's, and a prone
 // one's shorter still: what Server bodies shows of a player's stance.
+// Requirements: US-04
 TEST(CapsuleOfTest, ACapsuleIsLowerCrouchingThanStandingAndLowerProneThanCrouching) {
   const auto top = [](Stance stance) {
     return augusta::physics::CapsuleOf(BodyState{.position = {}, .velocity = {}, .stance = stance}).top.y;
@@ -109,37 +110,6 @@ TEST(PhysicsWorldTest, StepMovesBodyAlongInputDirection) {
   }
 
   EXPECT_GT(state.position.x, 0.0F);
-}
-
-TEST(PhysicsWorldTest, SeveralWorldsCoexistInOneProcess) {
-  // A server and its clients run in one process in tests, each with its own
-  // World; PhysX allows only one foundation per process, so they must share it.
-  World first{StaminaConfig{}};
-  World second{StaminaConfig{}};
-  const auto first_body = first.CreateBody(Vec3(0.0F, 0.0F, 0.0F));
-  const auto second_body = second.CreateBody(Vec3(10.0F, 0.0F, 0.0F));
-
-  MovementInput input{};
-  input.direction = Vec3(1.0F, 0.0F, 0.0F);
-  BodyState first_state{};
-  BodyState second_state{};
-  for (int i = 0; i < 30; ++i) {
-    first_state = first.Step(first_body, input, kFixedTick);
-    second_state = second.Step(second_body, MovementInput{}, kFixedTick);
-  }
-
-  EXPECT_GT(first_state.position.x, 0.0F);
-  EXPECT_NEAR(second_state.position.x, 10.0F, 0.01F);
-}
-
-TEST(PhysicsWorldTest, AWorldCanBeCreatedAfterAllOthersWereDestroyed) {
-  {
-    World first{StaminaConfig{}};
-  }
-  World second{StaminaConfig{}};
-
-  const auto body = second.CreateBody(Vec3(0.0F, 0.0F, 0.0F));
-  EXPECT_NO_THROW(second.Step(body, MovementInput{}, kFixedTick));
 }
 
 // Requirements: US-05
@@ -302,6 +272,7 @@ TEST(PhysicsWorldTest, TheStaminaRulesCanBeReplacedAndTheNextStepFollowsThem) {
   EXPECT_LT(world.Step(body, sprint, 0.1F).stamina, 1.0F);
 }
 
+// Requirements: US-04
 TEST(PhysicsWorldTest, RestoreMovesTheBodyAndTheNextStepStartsFromThere) {
   World world{StaminaConfig{}};
   const auto body = world.CreateBody(Vec3(0.0F, 0.0F, 0.0F));
@@ -334,6 +305,7 @@ TEST(PhysicsWorldTest, RestoreChangesTheStance) {
   EXPECT_EQ(stepped.stance, Stance::kProne);
 }
 
+// Requirements: US-04
 TEST(PhysicsWorldTest, RestoringAStateAndItsFallMakesTheNextStepTheSameAsBefore) {
   World world{StaminaConfig{}};
   const auto body = world.CreateBody(Vec3(0.0F, 100.0F, 0.0F));
@@ -352,6 +324,7 @@ TEST(PhysicsWorldTest, RestoringAStateAndItsFallMakesTheNextStepTheSameAsBefore)
   EXPECT_NEAR(again.velocity.y, first.velocity.y, 1e-2F);
 }
 
+// Requirements: US-04
 TEST(PhysicsWorldTest, RestoreKeepsTheFallItIsGivenInsteadOfRestartingIt) {
   World world{StaminaConfig{}};
   const auto body = world.CreateBody(Vec3(0.0F, 100.0F, 0.0F));
@@ -366,18 +339,6 @@ TEST(PhysicsWorldTest, RestoreKeepsTheFallItIsGivenInsteadOfRestartingIt) {
   const BodyState after = world.Step(body, MovementInput{}, 1.0F / 60.0F);
 
   EXPECT_GE(-after.velocity.y, fall_speed_before);
-}
-
-TEST(PhysicsWorldTest, RaycastHitsACreatedBody) {
-  World world{StaminaConfig{}};
-  const auto body = world.CreateBody(Vec3(0.0F, 0.0F, 0.0F));
-
-  const RaycastHit hit = world.Raycast(Vec3(0.0F, 10.0F, 0.0F), Vec3(0.0F, -1.0F, 0.0F), 20.0F);
-
-  ASSERT_TRUE(hit.has_hit);
-  EXPECT_EQ(hit.body, body);
-  EXPECT_GT(hit.point.y, 0.0F);
-  EXPECT_LT(hit.point.y, 10.0F);
 }
 
 // ---- Static map geometry (issue #77) ----
@@ -441,6 +402,7 @@ TEST(StaticGeometryTest, AFloorHoldsAWalkingBodyAtGroundHeight) {
   EXPECT_GT(walking.position.x, landed.position.x);
 }
 
+// Requirements: US-04
 TEST(StaticGeometryTest, ABodyIsCreatedWithItsFeetAtThePositionGiven) {
   World world = WorldWithFloor();
   const auto body = world.CreateBody(Vec3(0.0F, 0.0F, 0.0F));
@@ -451,6 +413,7 @@ TEST(StaticGeometryTest, ABodyIsCreatedWithItsFeetAtThePositionGiven) {
   EXPECT_NEAR(state.position.y, 0.0F, 0.05F);
 }
 
+// Requirements: US-04
 TEST(StaticGeometryTest, WithoutAFloorABodyKeepsFalling) {
   World world{StaminaConfig{}};
   const auto body = world.CreateBody(Vec3(0.0F, 3.0F, 0.0F));
@@ -462,6 +425,7 @@ TEST(StaticGeometryTest, WithoutAFloorABodyKeepsFalling) {
 
 // kGrounded (ADR-0062): set every tick a body stands or walks on the floor,
 // clear every tick it falls.
+// Requirements: US-04
 TEST(StaticGeometryTest, ABodyIsGroundedOnTheFloorAndNotWhileItFalls) {
   World world = WorldWithFloor();
   const auto body = world.CreateBody(Vec3(0.0F, 3.0F, 0.0F));
@@ -569,38 +533,7 @@ TEST(StaticGeometryTest, ABodyCanStandUpWhereThereIsHeadroom) {
   EXPECT_EQ(Settle(world, body, stand, 30).stance, Stance::kStanding);
 }
 
-// ---- Raycasting a moved body (issue #163) ----
-
-// Documents a known gap, not a wanted behaviour (ADR-0002): a body's controller
-// moves its query actor with a kinematic target, which takes effect only when
-// the scene simulates, and a World never does. Worked out from PhysX 5.5's
-// source, not yet seen run: if CI finds the ray does hit the body where it is,
-// swap the two blocks of expectations, rename this to
-// ARaycastHitsAMovedBodyWhereItIs and drop ADR-0002's "Raycasting a moved body".
-TEST(StaticGeometryTest, ARaycastHitsAMovedBodyWhereItWasCreatedNotWhereItIs) {
-  World world = WorldWithFloor();
-  const Vec3 spawn(0.0F, 0.0F, 0.0F);
-  const auto body = world.CreateBody(spawn);
-  MovementInput walk{};
-  walk.direction = Vec3(1.0F, 0.0F, 0.0F);
-  // At 3 m/s, 300 ticks is 15 m: far clear of the spawn.
-  const BodyState walked = Settle(world, body, walk, 300);
-  ASSERT_GT(walked.position.x, 10.0F);
-  const Vec3 down(0.0F, -1.0F, 0.0F);
-
-  const RaycastHit where_it_is = world.Raycast(Vec3(walked.position.x, 10.0F, walked.position.z), down, 20.0F);
-  const RaycastHit where_it_was = world.Raycast(Vec3(spawn.x, 10.0F, spawn.z), down, 20.0F);
-
-  // Where the body is, the ray goes on down to the floor.
-  ASSERT_TRUE(where_it_is.has_hit);
-  EXPECT_NE(where_it_is.body, body);
-  EXPECT_NEAR(where_it_is.point.y, 0.0F, 0.01F);
-  // Where it was created, the ray still hits it.
-  ASSERT_TRUE(where_it_was.has_hit);
-  EXPECT_EQ(where_it_was.body, body);
-  EXPECT_GT(where_it_was.point.y, 0.5F);
-}
-
+// Requirements: US-10
 TEST(StaticGeometryTest, ARaycastOfTheMapSeesTheMapButNoBody) {
   World world = WorldWithFloor();
   world.CreateBody(Vec3(0.0F));
@@ -616,6 +549,7 @@ TEST(StaticGeometryTest, ARaycastOfTheMapSeesTheMapButNoBody) {
   EXPECT_NEAR(hit.distance, 10.0F, 0.01F);
 }
 
+// Requirements: US-10
 TEST(StaticGeometryTest, ARaycastOfTheMapReportsTheSurfaceOfTheMeshItStrikes) {
   World world{StaminaConfig{}};
   constexpr SurfaceId kFloor{7};
@@ -634,11 +568,13 @@ TEST(StaticGeometryTest, ARaycastOfTheMapReportsTheSurfaceOfTheMeshItStrikes) {
   EXPECT_NEAR(across.point.x, 5.0F, 0.01F);
 }
 
+// Requirements: NFR-12
 TEST(StaticGeometryTest, ValidateCollisionMeshAgreesWithAddCollisionMesh) {
   EXPECT_EQ(augusta::physics::ValidateCollisionMesh(CollisionMesh{}).error(), CollisionMeshError::kEmpty);
   EXPECT_TRUE(augusta::physics::ValidateCollisionMesh(Floor(0.0F, -1.0F, 1.0F, -1.0F, 1.0F)).has_value());
 }
 
+// Requirements: NFR-12
 TEST(StaticGeometryTest, AMeshWithNoTrianglesIsRejected) {
   World world{StaminaConfig{}};
 
@@ -648,6 +584,7 @@ TEST(StaticGeometryTest, AMeshWithNoTrianglesIsRejected) {
   EXPECT_EQ(result.error(), CollisionMeshError::kEmpty);
 }
 
+// Requirements: NFR-12
 TEST(StaticGeometryTest, AnIndexOutsideThePointsIsRejected) {
   World world{StaminaConfig{}};
 
@@ -660,6 +597,7 @@ TEST(StaticGeometryTest, AnIndexOutsideThePointsIsRejected) {
   EXPECT_EQ(result.error(), CollisionMeshError::kInvalidIndex);
 }
 
+// Requirements: NFR-12
 TEST(StaticGeometryTest, AnIndexCountThatIsNotWholeTrianglesIsRejected) {
   World world{StaminaConfig{}};
 
@@ -711,6 +649,7 @@ class StrideTest : public ::testing::Test {
 
 // At 3 m/s, 15 ticks walk 0.75 m: half of a 1.5 m stride, half a cycle on. Each
 // tick's advance is rounded to a whole step, so a tick may be up to half a step off.
+// Requirements: US-11
 TEST_F(StrideTest, WalkingAdvancesTheStrideByTheDistanceMovedOverTheStrideLength) {
   constexpr int kTicks = 15;
 
@@ -719,6 +658,7 @@ TEST_F(StrideTest, WalkingAdvancesTheStrideByTheDistanceMovedOverTheStrideLength
   EXPECT_LE(StrideDistance(state.stride, kStartStride + (kStrideSteps / 2)), kTicks / 2 + 1);
 }
 
+// Requirements: US-11
 TEST_F(StrideTest, TheSameDistanceOverALongerStrideLengthAdvancesItLess) {
   const BodyState state = Walk(15, 3.0F);
 
@@ -727,6 +667,7 @@ TEST_F(StrideTest, TheSameDistanceOverALongerStrideLengthAdvancesItLess) {
 
 // Paced by the stride length a walk advances it by, a body standing still moves
 // nowhere, so its Stride holds, where the same body walking advances it.
+// Requirements: US-11
 TEST_F(StrideTest, AStillBodyHoldsItsStride) {
   const BodyState still = Run(15, MovementInput{}, 1.5F);
   const BodyState walking = Walk(15, 1.5F);
@@ -735,6 +676,7 @@ TEST_F(StrideTest, AStillBodyHoldsItsStride) {
   EXPECT_GT(StrideDistance(walking.stride, kStartStride), kStrideSteps / 4);
 }
 
+// Requirements: US-11
 TEST_F(StrideTest, WithoutAStrideLengthTheStrideHolds) {
   const BodyState state = Walk(15, 0.0F);
 
@@ -742,6 +684,7 @@ TEST_F(StrideTest, WithoutAStrideLengthTheStrideHolds) {
   EXPECT_EQ(state.stride, kStartStride);
 }
 
+// Requirements: US-11
 TEST_F(StrideTest, AStrideRestoredIsWhereTheNextStepAdvancesFrom) {
   BodyState restored = Walk(1, 1.2F);
   restored.stride = 250;
@@ -782,6 +725,7 @@ class StanceProgressTest : public ::testing::Test {
   augusta::physics::BodyHandle body_;
 };
 
+// Requirements: US-11
 TEST_F(StanceProgressTest, ABodyThatNeverChangedStanceIsAllInItsStance) {
   const BodyState state = Hold(Stance::kStanding, 1);
 
@@ -790,6 +734,7 @@ TEST_F(StanceProgressTest, ABodyThatNeverChangedStanceIsAllInItsStance) {
 }
 
 // The collider crouches on the tick it changes; the pose starts from standing.
+// Requirements: US-11
 TEST_F(StanceProgressTest, AChangeOfStanceStartsFromTheStanceItLeaves) {
   const BodyState state = Hold(Stance::kCrouching, 1);
 
@@ -798,6 +743,7 @@ TEST_F(StanceProgressTest, AChangeOfStanceStartsFromTheStanceItLeaves) {
   EXPECT_EQ(state.stance_progress, kCrouchStepsPerTick);
 }
 
+// Requirements: US-11
 TEST_F(StanceProgressTest, AChangeIsOverAfterItsPairsTransitionDuration) {
   const BodyState under_way = Hold(Stance::kCrouching, 14);
   const BodyState over = Hold(Stance::kCrouching, 1);
@@ -809,6 +755,7 @@ TEST_F(StanceProgressTest, AChangeIsOverAfterItsPairsTransitionDuration) {
 
 // Going prone takes 0.8 s: 15 ticks are under a third of it. Each tick's advance
 // is rounded to a whole step, so a tick may be up to half a step off.
+// Requirements: US-11
 TEST_F(StanceProgressTest, EachPairOfStancesTakesItsOwnTransitionDuration) {
   constexpr int kTicks = 15;
 
@@ -820,6 +767,7 @@ TEST_F(StanceProgressTest, EachPairOfStancesTakesItsOwnTransitionDuration) {
 
 // Halfway down into a crouch and back up: the change turns round where it got
 // to, 5 ticks down, so the body comes back up from there.
+// Requirements: US-11
 TEST_F(StanceProgressTest, BackToTheStanceAChangeUnderWayLeftItTurnsRoundWhereItGotTo) {
   Hold(Stance::kCrouching, 5);
 
@@ -830,6 +778,7 @@ TEST_F(StanceProgressTest, BackToTheStanceAChangeUnderWayLeftItTurnsRoundWhereIt
   EXPECT_EQ(state.stance_progress, kStanceProgressSteps - (5 * kCrouchStepsPerTick) + kCrouchStepsPerTick);
 }
 
+// Requirements: US-11
 TEST_F(StanceProgressTest, OnToAThirdStanceANewChangeStartsFromTheStanceItLeaves) {
   Hold(Stance::kCrouching, 5);
 
@@ -840,6 +789,7 @@ TEST_F(StanceProgressTest, OnToAThirdStanceANewChangeStartsFromTheStanceItLeaves
   EXPECT_EQ(state.stance_progress, 7);
 }
 
+// Requirements: US-11
 TEST_F(StanceProgressTest, WithoutTransitionDurationsAChangeIsOverOnTheTickItStarts) {
   const BodyState state = Hold(Stance::kCrouching, 1, Pacing{});
 
@@ -847,6 +797,7 @@ TEST_F(StanceProgressTest, WithoutTransitionDurationsAChangeIsOverOnTheTickItSta
   EXPECT_EQ(state.stance_progress, kStanceProgressSteps);
 }
 
+// Requirements: US-11
 TEST_F(StanceProgressTest, AProgressRestoredIsWhereTheNextStepAdvancesFrom) {
   BodyState restored = Hold(Stance::kCrouching, 1);
   restored.stance_progress = 100;

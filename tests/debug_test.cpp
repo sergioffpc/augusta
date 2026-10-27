@@ -34,6 +34,7 @@ Triangle TriangleAt(float z, bool through_walls) {
           .through_walls = through_walls};
 }
 
+// Requirements: US-30
 TEST(TessellateTest, DrawsASegmentAsOneLineInItsColour) {
   Shapes shapes;
   shapes.segments.push_back(
@@ -47,6 +48,7 @@ TEST(TessellateTest, DrawsASegmentAsOneLineInItsColour) {
   EXPECT_TRUE(tessellation.depth_tested.triangles.empty());
 }
 
+// Requirements: US-30
 TEST(TessellateTest, DrawsATriangleAsOneTriangleInItsColour) {
   Shapes shapes;
   shapes.triangles.push_back(TriangleAt(-2.0F, false));
@@ -104,6 +106,7 @@ std::optional<Edges> EdgesBetween(const std::array<math::Vec3, 8>& corners, cons
   return edges;
 }
 
+// Requirements: US-30
 TEST(TessellateTest, DrawsAWireBoxAsItsTwelveEdgesAtItsCornersAfterRotation) {
   Shapes shapes;
   // A quarter turn about Y takes the box's X half extent onto Z and its Z
@@ -149,6 +152,7 @@ bool CoversTheBoxFaces(const std::array<math::Vec3, 8>& corners, const Vertices&
   return std::ranges::all_of(triangles_per_face, [](int count) { return count == 2; });
 }
 
+// Requirements: US-30
 TEST(TessellateTest, DrawsAFilledBoxAsTwoTrianglesOnEachFace) {
   Shapes shapes;
   shapes.boxes.push_back({.center = {0.0F, 1.0F, 0.0F},
@@ -167,6 +171,7 @@ TEST(TessellateTest, DrawsAFilledBoxAsTwoTrianglesOnEachFace) {
   EXPECT_TRUE(tessellation.depth_tested.lines.empty());
 }
 
+// Requirements: US-30
 TEST(TessellateTest, DrawsAVoxelAsACubeOfItsEdgeOnItsCentre) {
   Shapes shapes;
   shapes.voxels.push_back({.center = {2.0F, 3.0F, 4.0F}, .edge = 0.5F, .style = Style::kWireframe});
@@ -208,6 +213,7 @@ float ReachAlong(const Vertices& vertices, const math::Vec3& origin, const math:
   return reach;
 }
 
+// Requirements: US-30
 TEST(TessellateTest, DrawsASphereWithEveryVertexOnItsSurface) {
   constexpr math::Vec3 kCenter{1.0F, 2.0F, 3.0F};
   constexpr float kRadius = 0.75F;
@@ -233,6 +239,7 @@ TEST(TessellateTest, DrawsASphereWithEveryVertexOnItsSurface) {
   }
 }
 
+// Requirements: US-30
 TEST(TessellateTest, DrawsACapsuleWithEveryVertexOnItsSurface) {
   constexpr math::Vec3 kFrom{0.0F, 0.0F, 0.0F};
   constexpr math::Vec3 kTo{1.0F, 1.0F, 1.0F};
@@ -257,6 +264,7 @@ TEST(TessellateTest, DrawsACapsuleWithEveryVertexOnItsSurface) {
   }
 }
 
+// Requirements: US-30
 TEST(TessellateTest, KeepsEachOfBoxesSpheresCapsulesAndVoxelsThatShowThroughWallsApartFromTheRest) {
   std::array<Shapes, 4> each_shape;
   each_shape[0].boxes.push_back({.half_extents = {1.0F, 1.0F, 1.0F}, .style = Style::kFilled, .through_walls = true});
@@ -273,6 +281,7 @@ TEST(TessellateTest, KeepsEachOfBoxesSpheresCapsulesAndVoxelsThatShowThroughWall
   }
 }
 
+// Requirements: US-30
 TEST(TessellateTest, DrawsNothingForNoShapes) {
   const Tessellation tessellation = Tessellate({});
 
@@ -282,6 +291,7 @@ TEST(TessellateTest, DrawsNothingForNoShapes) {
   EXPECT_TRUE(tessellation.through_walls.triangles.empty());
 }
 
+// Requirements: US-30
 TEST(TessellateTest, KeepsShapesThatShowThroughWallsApartFromTheRest) {
   Shapes shapes;
   shapes.segments = {SegmentAt(1.0F, true), SegmentAt(2.0F, false)};
@@ -309,6 +319,7 @@ Shapes ASphereAt(float x) {
   return shapes;
 }
 
+// Requirements: US-30
 TEST(AppendTest, AppendsEachKindAfterWhatIsThere) {
   Shapes to;
   to.segments.push_back(SegmentAt(0.0F, false));
@@ -325,6 +336,7 @@ TEST(AppendTest, AppendsEachKindAfterWhatIsThere) {
   EXPECT_TRUE(to.boxes.empty());
 }
 
+// Requirements: US-30
 TEST(KeptShapesTest, ReturnsShapesKeptUntilATimeBeforeThatTime) {
   KeptShapes kept;
   Shapes shapes = ASphereAt(1.0F);
@@ -334,6 +346,7 @@ TEST(KeptShapesTest, ReturnsShapesKeptUntilATimeBeforeThatTime) {
   EXPECT_EQ(kept.Alive(kStart + seconds{2}), shapes);
 }
 
+// Requirements: US-30
 TEST(KeptShapesTest, ReturnsShapesKeptUntilDifferentTimesTogether) {
   KeptShapes kept;
   kept.Keep(ASphereAt(1.0F), kStart + seconds{3});
@@ -344,6 +357,7 @@ TEST(KeptShapesTest, ReturnsShapesKeptUntilDifferentTimesTogether) {
   EXPECT_EQ(kept.Alive(kStart + seconds{1}), both);
 }
 
+// Requirements: US-30
 TEST(KeptShapesTest, ReturnsNothingOnceItsTimeComes) {
   KeptShapes kept;
   kept.Keep(ASphereAt(1.0F), kStart + seconds{3});
@@ -352,6 +366,7 @@ TEST(KeptShapesTest, ReturnsNothingOnceItsTimeComes) {
   EXPECT_EQ(kept.Alive(kStart + seconds{3}), Shapes{});
 }
 
+// Requirements: US-30
 TEST(KeptShapesTest, DropsShapesWhoseTimeHasComeFromTheStore) {
   KeptShapes kept;
   kept.Keep(ASphereAt(1.0F), kStart + seconds{3});
@@ -362,6 +377,7 @@ TEST(KeptShapesTest, DropsShapesWhoseTimeHasComeFromTheStore) {
   EXPECT_EQ(kept.Alive(kStart + seconds{1}), ASphereAt(2.0F));
 }
 
+// Requirements: US-30
 TEST(KeptShapesTest, KeepsAtMostItsCapacityDroppingTheFirstKept) {
   KeptShapes kept(2);
   kept.Keep(ASphereAt(1.0F), kStart + seconds{9});
@@ -374,6 +390,7 @@ TEST(KeptShapesTest, KeepsAtMostItsCapacityDroppingTheFirstKept) {
   EXPECT_EQ(kept.Count(), 2U);
 }
 
+// Requirements: US-30
 TEST(KeptShapesTest, CountsWhatTheLastAliveLeftKept) {
   KeptShapes kept;
   kept.Keep(ASphereAt(1.0F), kStart + seconds{3});

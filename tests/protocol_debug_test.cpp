@@ -73,6 +73,7 @@ ShotJudgementWire AHeadshot() {
                            .flags = 0};
 }
 
+// Requirements: US-30, NFR-20
 TEST(ProtocolDebugTest, ADebugSubscribeIsTheEnvelopesEighteenthMember) {
   EXPECT_EQ(static_cast<int>(MessageTypeWire::kDebugSubscribe), 18);
   EXPECT_EQ(augusta::protocol::TypeOf(MessageWire{DebugSubscribeWire{}}), MessageTypeWire::kDebugSubscribe);
@@ -80,6 +81,7 @@ TEST(ProtocolDebugTest, ADebugSubscribeIsTheEnvelopesEighteenthMember) {
 
 // Every bit of the byte travels, a bit no stream uses yet included: the server
 // ignores those, so a later stream's bit is never a malformed message.
+// Requirements: US-30, NFR-20
 TEST(ProtocolDebugTest, ADebugSubscribeRoundTripsAnyByteOfFlags) {
   for (const std::uint8_t flags :
        {std::uint8_t{0}, DebugSubscribeWire::kShotJudgements, std::uint8_t{0x80}, std::uint8_t{0xFF}}) {
@@ -91,6 +93,7 @@ TEST(ProtocolDebugTest, ADebugSubscribeRoundTripsAnyByteOfFlags) {
   }
 }
 
+// Requirements: US-30, NFR-20
 TEST(ProtocolDebugTest, ADebugSubscribesFlagsAreItsFirstField) {
   EXPECT_EQ(Encode(DebugSubscribeWire{.flags = DebugSubscribeWire::kShotJudgements}).value(),
             Envelope(MessageTypeWire::kDebugSubscribe, VarintField(1, 1)));
@@ -112,11 +115,13 @@ TEST(ProtocolDebugTest, EveryTruncationOfADebugSubscribeIsMalformedNotACrash) {
   }
 }
 
+// Requirements: US-30, NFR-20
 TEST(ProtocolDebugTest, AShotJudgementIsTheEnvelopesNineteenthMember) {
   EXPECT_EQ(static_cast<int>(MessageTypeWire::kShotJudgement), 19);
   EXPECT_EQ(augusta::protocol::TypeOf(MessageWire{ShotJudgementWire{}}), MessageTypeWire::kShotJudgement);
 }
 
+// Requirements: US-30, NFR-20
 TEST(ProtocolDebugTest, AShotJudgementWithNoEntriesRoundTrips) {
   for (const StruckWire struck : {StruckWire::kNothing, StruckWire::kMap, StruckWire::kProp, StruckWire::kHitbox}) {
     ShotJudgementWire judgement = AHeadshot();
@@ -126,6 +131,7 @@ TEST(ProtocolDebugTest, AShotJudgementWithNoEntriesRoundTrips) {
   }
 }
 
+// Requirements: US-30, NFR-20
 TEST(ProtocolDebugTest, AShotJudgementWithEveryEntryItHoldsRoundTrips) {
   ShotJudgementWire judgement = AHeadshot();
   for (std::size_t i = 0; i < kMaxShotJudgementEntries; ++i) {
@@ -139,6 +145,7 @@ TEST(ProtocolDebugTest, AShotJudgementWithEveryEntryItHoldsRoundTrips) {
 
 // The bitfield ADR-0038 gives it: what it struck in bits 0-1, the Body part
 // in bits 2-3, the entries left out in bit 4.
+// Requirements: US-30, NFR-20
 TEST(ProtocolDebugTest, AShotJudgementsDelayStruckAndPartTravelAsADR0038Says) {
   ShotJudgementWire judgement = AHeadshot();
   judgement.flags = ShotJudgementWire::kEntriesLeftOut;
@@ -198,6 +205,7 @@ TEST(ProtocolDebugTest, AShotJudgementWithMoreEntriesOrPlayersThanItHoldsIsRefus
   EXPECT_EQ(Decode(Envelope(MessageTypeWire::kShotJudgement, seventeen)).error(), DecodeError::kFieldTooLong);
 }
 
+// Requirements: US-30, NFR-20
 TEST(ProtocolDebugTest, AShotJudgementsFlagsAndEnumerationsTheProtocolLacksAreNotEncoded) {
   ShotJudgementWire flags = AHeadshot();
   flags.flags = ShotJudgementWire::kEntriesLeftOut << 1U;
@@ -228,6 +236,7 @@ TEST(ProtocolDebugTest, EveryTruncationOfAShotJudgementIsMalformedNotACrash) {
 
 // Its 16 entries, each crossing every player a Match holds, with every number
 // at its widest, still fit one payload.
+// Requirements: US-30, NFR-20
 TEST(ProtocolDebugTest, TheLargestShotJudgementFitsTheProtocolsMessageSizeLimit) {
   const augusta::math::Grid& position = augusta::math::kPositionGrid;
   const float far = augusta::math::FromSteps(position.min, position);

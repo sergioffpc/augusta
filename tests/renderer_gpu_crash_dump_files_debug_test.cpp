@@ -12,6 +12,7 @@ namespace {
 
 using augusta::renderer::GpuCrashDumpFiles;
 
+// Requirements: NFR-10
 TEST(GpuCrashDumpFilesDirectoryTest, IsTheOneTheNextDumpLandsIn) {
   const std::filesystem::path dumps = std::filesystem::temp_directory_path() / "dumps";
   const GpuCrashDumpFiles files([&dumps](std::uint32_t n) { return dumps / std::format("run-{}.nv-gpudmp", n); });
@@ -19,12 +20,14 @@ TEST(GpuCrashDumpFilesDirectoryTest, IsTheOneTheNextDumpLandsIn) {
   EXPECT_EQ(files.Directory(), dumps);
 }
 
+// Requirements: NFR-10
 TEST(GpuCrashDumpFilesDirectoryTest, IsTheWorkingDirectoryForANamingWithoutAFolder) {
   const GpuCrashDumpFiles files([](std::uint32_t n) { return std::filesystem::path(std::format("dump-{}", n)); });
 
   EXPECT_EQ(files.Directory(), std::filesystem::current_path());
 }
 
+// Requirements: NFR-10
 TEST(GpuCrashDumpFilesDirectoryTest, MakesARelativeFolderAbsolute) {
   const GpuCrashDumpFiles files(
       [](std::uint32_t n) { return std::filesystem::path("dumps") / std::format("dump-{}", n); });

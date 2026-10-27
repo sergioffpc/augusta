@@ -26,9 +26,7 @@ where it stands.
 This was read from the PhysX 5.5.0 source the vcpkg port builds (tag
 `106.4-physx-5.5.0`: `CctController.cpp`, `CctCharacterController.cpp`,
 `CctCapsuleController.cpp`, `PxRigidDynamic.h`, `PxRigidBody.h`), not seen run:
-the confidence is high, but it is not verified.
-`StaticGeometryTest.ARaycastHitsAMovedBodyWhereItWasCreatedNotWhereItIs` asserts
-it for a World that has not simulated, and says what to change if CI disagrees.
+the confidence is high, but it is not verified. Nothing calls `World::Raycast`.
 
 Player hit detection (M4, US-11) does not test against these actors: it tests a
 shot against each player's hitboxes as they were the Shooter's delay ago, kept

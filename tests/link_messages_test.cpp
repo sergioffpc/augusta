@@ -92,6 +92,7 @@ void ExpectSameBody(const BodyState& actual, const BodyState& expected) {
   EXPECT_EQ(actual.stance_progress, expected.stance_progress);
 }
 
+// Requirements: NFR-20
 TEST(LinkMessagesTest, ACommandTheClientSendsReachesTheServerUnchanged) {
   for (const Stance stance : {Stance::kStanding, Stance::kCrouching, Stance::kProne}) {
     augusta::command::Command sent;
@@ -124,6 +125,7 @@ TEST(LinkMessagesTest, ACommandTheClientSendsReachesTheServerUnchanged) {
 
 // A message's commands were sampled a tick apart, each with its own Seen time:
 // every one reaches the server with the tick it named.
+// Requirements: NFR-20
 TEST(LinkMessagesTest, EachCommandOfAMessageReachesTheServerWithTheSeenTimeItWasSampledOn) {
   std::vector<SequencedCommand> sent(4);
   for (std::size_t i = 0; i < sent.size(); ++i) {
@@ -143,6 +145,7 @@ TEST(LinkMessagesTest, EachCommandOfAMessageReachesTheServerWithTheSeenTimeItWas
 
 // The server's ticks never start over (ADR-0038): commands sampled either side
 // of the last tick 32 bits hold reach the server with the Seen times they named.
+// Requirements: NFR-20
 TEST(LinkMessagesTest, SeenTimesEitherSideOfThirtyTwoBitsReachTheServerAsTheyWereSampled) {
   constexpr augusta::tick::Tick kLastOf32Bits = std::numeric_limits<std::uint32_t>::max();
   std::vector<SequencedCommand> sent(4);
@@ -162,6 +165,7 @@ TEST(LinkMessagesTest, SeenTimesEitherSideOfThirtyTwoBitsReachTheServerAsTheyWer
 // A command's Seen time travels as how far before the message's newest it is, in a
 // byte: one further back arrives as far back as a byte tells, which is already
 // beyond what the server judges a shot against.
+// Requirements: NFR-20
 TEST(LinkMessagesTest, ASeenTimeTooFarBeforeTheMessagesNewestReachesTheServerAsTheOldestAByteTells) {
   std::vector<SequencedCommand> sent(2);
   sent[0].command.seen_tick = 100;
@@ -174,6 +178,7 @@ TEST(LinkMessagesTest, ASeenTimeTooFarBeforeTheMessagesNewestReachesTheServerAsT
 }
 
 // An age the message's Seen tick cannot go back by names the first tick there is.
+// Requirements: NFR-20
 TEST(LinkMessagesTest, ASeenAgeBeyondTheMessagesSeenTickIsTheFirstTick) {
   augusta::protocol::CommandsWire message{.commands = {{.sequence = 1}}, .seen_tick = 3};
   message.commands[0].command.seen_age = 10;
@@ -181,6 +186,7 @@ TEST(LinkMessagesTest, ASeenAgeBeyondTheMessagesSeenTickIsTheFirstTick) {
   EXPECT_EQ(FromWire(ThroughTheWire(message)).at(0).command.seen_tick, 0U);
 }
 
+// Requirements: NFR-20
 TEST(LinkMessagesTest, EachFlagOfACommandReachesTheServerAsItselfAlone) {
   for (int flag = 0; flag < 4; ++flag) {
     augusta::command::Command sent;
@@ -198,6 +204,7 @@ TEST(LinkMessagesTest, EachFlagOfACommandReachesTheServerAsItselfAlone) {
   }
 }
 
+// Requirements: NFR-20
 TEST(LinkMessagesTest, TheCommandsTheClientSendsReachTheServerInOrder) {
   std::vector<SequencedCommand> sent(3);
   for (std::size_t i = 0; i < sent.size(); ++i) {
@@ -214,6 +221,7 @@ TEST(LinkMessagesTest, TheCommandsTheClientSendsReachTheServerInOrder) {
   }
 }
 
+// Requirements: NFR-20
 TEST(LinkMessagesTest, AsManyCommandsAsAMessageCarriesAllTravel) {
   const std::vector<SequencedCommand> sent = Commands(kMaxCommandsPerMessage);
 
@@ -227,6 +235,7 @@ TEST(LinkMessagesTest, AsManyCommandsAsAMessageCarriesAllTravel) {
 // More unacknowledged commands than a message carries: the tick's one message
 // carries the newest within the protocol's bound, oldest first, and the older
 // ones are never sent.
+// Requirements: NFR-02
 TEST(LinkMessagesTest, CommandsBeyondWhatAMessageCarriesLeaveOnlyTheNewest) {
   const std::vector<SequencedCommand> sent = Commands((2 * kMaxCommandsPerMessage) + 1, 30);
 
@@ -242,12 +251,14 @@ TEST(LinkMessagesTest, CommandsBeyondWhatAMessageCarriesLeaveOnlyTheNewest) {
 
 // The message's Seen tick is the newest of the commands it carries, as it was
 // before any was left out.
+// Requirements: NFR-02
 TEST(LinkMessagesTest, AMessageOfTheNewestCommandsIsSeenAsOfTheNewest) {
   const std::vector<SequencedCommand> sent = Commands(kMaxCommandsPerMessage + 3);
 
   EXPECT_EQ(ToWire(sent).seen_tick, sent.back().command.seen_tick);
 }
 
+// Requirements: NFR-02
 TEST(LinkMessagesTest, WhatTheMessageCarriesIsAllASenderNeedKeep) {
   const std::vector<SequencedCommand> few = Commands(2);
   const std::vector<SequencedCommand> many = Commands(kMaxCommandsPerMessage + 3);
@@ -257,6 +268,7 @@ TEST(LinkMessagesTest, WhatTheMessageCarriesIsAllASenderNeedKeep) {
   EXPECT_EQ(augusta::link::Carried(many).front().sequence, many[3].sequence);
 }
 
+// Requirements: NFR-20
 TEST(LinkMessagesTest, AnExhaustedBodyReachesTheClientStillExhausted) {
   BodyState exhausted = Body(1.0F, Stance::kStanding);
   exhausted.stamina = 0.1F;
@@ -278,6 +290,7 @@ TEST(LinkMessagesTest, AnExhaustedBodyReachesTheClientStillExhausted) {
 // The grounded flag (ADR-0062) reaches every client beside the exhausted and
 // ADS flags it shares a bitfield with, so a client poses a body in the air as
 // the server did.
+// Requirements: NFR-20
 TEST(LinkMessagesTest, AGroundedBodyReachesTheClientStillGroundedAndOneInTheAirStillInIt) {
   BodyState grounded = Body(1.0F, Stance::kStanding);
   grounded.grounded = true;
@@ -299,6 +312,7 @@ TEST(LinkMessagesTest, AGroundedBodyReachesTheClientStillGroundedAndOneInTheAirS
 
 // Pitch and ADS reach every client in the body state, beside the exhausted
 // flag ADS shares a bitfield with (ADR-0038).
+// Requirements: NFR-20
 TEST(LinkMessagesTest, ABodysPitchAndAdsReachTheClient) {
   BodyState exhausted = Body(1.0F, Stance::kStanding);
   exhausted.exhausted = true;
@@ -320,6 +334,7 @@ TEST(LinkMessagesTest, ABodysPitchAndAdsReachTheClient) {
   EXPECT_FALSE(received.bodies[1].body.exhausted);
 }
 
+// Requirements: NFR-20
 TEST(LinkMessagesTest, AnAuthoritativeStateTheServerSendsReachesTheClientUnchanged) {
   const augusta::link::AuthoritativeState sent{
       .tick = 42,
@@ -350,6 +365,7 @@ TEST(LinkMessagesTest, AnAuthoritativeStateTheServerSendsReachesTheClientUnchang
 // The recipient's rifle's times are off every grid: they reach the client as
 // the exact floats the server stepped them to, and its Recoil offset, which
 // weapon::Step keeps on the angle grid, as the server had it.
+// Requirements: NFR-02, NFR-20
 TEST(LinkMessagesTest, TheRecipientsRifleReachesTheClientExactly) {
   const augusta::link::AuthoritativeState sent{
       .tick = 7,
@@ -369,6 +385,7 @@ TEST(LinkMessagesTest, TheRecipientsRifleReachesTheClientExactly) {
 
 // One message, its bodies converted once, is addressed to each recipient in
 // turn: each is sent its own fields alone, and every body.
+// Requirements: NFR-20
 TEST(LinkMessagesTest, AnAddressedStateCarriesItsRecipientsOwnFieldsAndEveryBody) {
   const augusta::link::AuthoritativeState first{
       .tick = 9,
@@ -429,6 +446,7 @@ TEST(LinkMessagesTest, TheParametersAJoinAcceptedCarriesReachTheClientUnchanged)
   EXPECT_EQ(received_parameters.player_count, parameters.player_count);
 }
 
+// Requirements: US-16, NFR-20
 TEST(LinkMessagesTest, TheRosterTheServerSendsReachesTheClientUnchanged) {
   const augusta::link::Lobby sent{
       .version = 7,
@@ -444,6 +462,7 @@ TEST(LinkMessagesTest, TheRosterTheServerSendsReachesTheClientUnchanged) {
   }
 }
 
+// Requirements: NFR-20
 TEST(LinkMessagesTest, AMatchStartReachesTheClientWithItsMatchId) {
   const boost::uuids::uuid match = boost::uuids::time_generator_v7{}();
 
@@ -453,6 +472,7 @@ TEST(LinkMessagesTest, AMatchStartReachesTheClientWithItsMatchId) {
   EXPECT_EQ(received.match, match);
 }
 
+// Requirements: US-16, NFR-20
 TEST(LinkMessagesTest, AMatchStartTheServerSendsReachesTheClientUnchangedWithItsFirstTick) {
   const augusta::link::MatchStart sent{
       .players =
@@ -472,6 +492,7 @@ TEST(LinkMessagesTest, AMatchStartTheServerSendsReachesTheClientUnchangedWithIts
   }
 }
 
+// Requirements: NFR-20
 TEST(LinkMessagesTest, AJoinRequestTheClientSendsReachesTheServerUnchanged) {
   augusta::assets::PackHash client_pack{};
   client_pack.front() = std::byte{0xAB};
@@ -513,6 +534,7 @@ TEST(LinkMessagesTest, AJoinThatNamesASpawnTravelsAsAReenactRequestAndReachesThe
   EXPECT_EQ(received.run, sent.run);
 }
 
+// Requirements: US-21, NFR-20
 TEST(LinkMessagesTest, AReplayRequestTheClientSendsReachesTheServerUnchanged) {
   augusta::assets::PackHash client_pack{};
   client_pack.back() = std::byte{0x7F};
@@ -529,6 +551,7 @@ TEST(LinkMessagesTest, AReplayRequestTheClientSendsReachesTheServerUnchanged) {
   EXPECT_EQ(received.run, sent.run);
 }
 
+// Requirements: US-01, US-22, NFR-20
 TEST(LinkMessagesTest, TheAdmissionTheServerSendsReachesTheClientUnchanged) {
   augusta::parameters::Parameters parameters;
   parameters.player_count = 2;
@@ -543,6 +566,7 @@ TEST(LinkMessagesTest, TheAdmissionTheServerSendsReachesTheClientUnchanged) {
   EXPECT_EQ(received.parameters.player_count, parameters.player_count);
 }
 
+// Requirements: US-01, NFR-20
 TEST(LinkMessagesTest, EveryRefusalTheServerSendsReachesTheClientAsTheSameReason) {
   using augusta::link::JoinRefusal;
   for (const JoinRefusal sent :
@@ -555,6 +579,7 @@ TEST(LinkMessagesTest, EveryRefusalTheServerSendsReachesTheClientAsTheSameReason
   }
 }
 
+// Requirements: US-19, NFR-20
 TEST(LinkMessagesTest, AShotTheServerAnnouncesReachesTheClientUnchanged) {
   // Numbers on their grids, as SimulationWorld fires a Shot (ADR-0038).
   const augusta::link::Shot sent{
@@ -574,6 +599,7 @@ TEST(LinkMessagesTest, AShotTheServerAnnouncesReachesTheClientUnchanged) {
   EXPECT_EQ(received.pitch, sent.pitch);
 }
 
+// Requirements: US-19, NFR-20
 TEST(LinkMessagesTest, AHitConfirmationTheServerSendsReachesTheClientUnchanged) {
   using augusta::body_part::BodyPart;
   for (const BodyPart part : {BodyPart::kHead, BodyPart::kTorso, BodyPart::kLimb}) {
@@ -587,6 +613,7 @@ TEST(LinkMessagesTest, AHitConfirmationTheServerSendsReachesTheClientUnchanged) 
   }
 }
 
+// Requirements: US-14, NFR-20
 TEST(LinkMessagesTest, AMatchEndTheServerSendsReachesTheClientWithItsWinnerOrAsADraw) {
   const augusta::link::MatchEnd won{.winner = Session(5)};
   const augusta::link::MatchEnd drawn{.winner = std::nullopt};
@@ -598,6 +625,7 @@ TEST(LinkMessagesTest, AMatchEndTheServerSendsReachesTheClientWithItsWinnerOrAsA
   EXPECT_FALSE(drawn_received.winner.has_value());
 }
 
+// Requirements: US-13, NFR-20
 TEST(LinkMessagesTest, ADeathTheServerTellsReachesTheClientUnchanged) {
   using augusta::body_part::BodyPart;
   for (const BodyPart part : {BodyPart::kHead, BodyPart::kTorso, BodyPart::kLimb}) {
@@ -620,6 +648,7 @@ TEST(LinkMessagesTest, ADeathTheServerTellsReachesTheClientUnchanged) {
   }
 }
 
+// Requirements: US-21, NFR-20
 TEST(LinkMessagesTest, AReplayListTheReplayServerSendsReachesTheClientUnchanged) {
   const std::vector<augusta::link::ReplayListing> sent{
       {.name = "first.acap",
@@ -661,7 +690,7 @@ TEST(LinkMessagesTest, AMessageThatCannotBeEncodedIsAnInvariantFailureNamingItsT
 // A refusal no case of ToWire names is a corrupted one: it travels on as a
 // value the protocol lacks, which Encode refuses, rather than as undefined
 // behaviour.
-// Requirements: NFR-18
+// Requirements: NFR-18, NFR-20
 TEST(LinkMessagesTest, ACorruptedRefusalIsNotEncoded) {
   const auto corrupted = static_cast<augusta::link::JoinRefusal>(99);
 
@@ -671,6 +700,7 @@ TEST(LinkMessagesTest, ACorruptedRefusalIsNotEncoded) {
   EXPECT_EQ(encoded.error().code, augusta::failure::Code::kInvariantViolated);
 }
 
+// Requirements: NFR-20
 TEST(LinkMessagesTest, AnEncodedMessageIsOfTheTypeItsEnvelopeSays) {
   EXPECT_EQ(augusta::link::TypeOf(augusta::link::EncodeToSend(augusta::protocol::ReadyWire{.version = 1}).value()),
             augusta::link::MessageType::kReady);
@@ -678,11 +708,13 @@ TEST(LinkMessagesTest, AnEncodedMessageIsOfTheTypeItsEnvelopeSays) {
             augusta::link::MessageType::kShot);
 }
 
+// Requirements: NFR-20
 TEST(LinkMessagesTest, AReadyTheClientSendsReachesTheServerWithItsVersion) {
   EXPECT_EQ(ToWire(augusta::link::Ready{.version = 7}), augusta::protocol::ReadyWire{.version = 7});
 }
 
 // What a client takes in is what a server says, each as the engine's type of it.
+// Requirements: NFR-20
 TEST(LinkMessagesTest, AServerMessageReachesTheClientAsWhatItSays) {
   const auto refused = augusta::link::ServerMessageFromWire(
       augusta::protocol::JoinRefusedWire{.reason = ToWire(augusta::link::JoinRefusal::kLobbyFull)});
@@ -694,6 +726,7 @@ TEST(LinkMessagesTest, AServerMessageReachesTheClientAsWhatItSays) {
   EXPECT_TRUE(std::get<std::vector<augusta::link::ReplayListing>>(*list).empty());
 }
 
+// Requirements: NFR-12
 TEST(LinkMessagesTest, AMessageOnlyAClientSendsIsNoServerMessage) {
   EXPECT_FALSE(augusta::link::ServerMessageFromWire(augusta::protocol::ReadyWire{.version = 1}).has_value());
   EXPECT_FALSE(augusta::link::ServerMessageFromWire(augusta::protocol::ReplayListRequestWire{}).has_value());
@@ -701,6 +734,7 @@ TEST(LinkMessagesTest, AMessageOnlyAClientSendsIsNoServerMessage) {
 
 // What a server takes in is what a client asks, each as the engine's type of
 // it: a Reenact request is a join that names its spawn (ADR-0050).
+// Requirements: NFR-20
 TEST(LinkMessagesTest, AClientMessageReachesTheServerAsWhatItSays) {
   const auto ready = augusta::link::ClientMessageFromWire(augusta::protocol::ReadyWire{.version = 7});
   ASSERT_TRUE(ready.has_value());
@@ -721,6 +755,7 @@ TEST(LinkMessagesTest, AClientMessageReachesTheServerAsWhatItSays) {
   EXPECT_TRUE(augusta::link::ClientMessageFromWire(augusta::protocol::ReplayListRequestWire{}).has_value());
 }
 
+// Requirements: NFR-12
 TEST(LinkMessagesTest, AMessageOnlyAServerSendsIsNoClientMessage) {
   EXPECT_FALSE(augusta::link::ClientMessageFromWire(ToWire(augusta::link::Shot{})).has_value());
   EXPECT_FALSE(augusta::link::ClientMessageFromWire(augusta::protocol::ReplayListWire{}).has_value());

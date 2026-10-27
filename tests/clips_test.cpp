@@ -214,6 +214,7 @@ class ClipsTest : public ::testing::Test {
   std::filesystem::path path_;
 };
 
+// Requirements: US-11
 TEST_F(ClipsTest, ACharactersClipsLoadByRoleWithTheirStrideLengths) {
   const auto clips = Load();
 
@@ -231,6 +232,7 @@ TEST_F(ClipsTest, ACharactersClipsLoadByRoleWithTheirStrideLengths) {
   EXPECT_EQ(clips->air.animation.num_tracks(), 5);
 }
 
+// Requirements: US-11
 TEST_F(ClipsTest, AnOptionalClipACharacterLacksIsNone) {
   entries_.push_back(ClipEntry("standing/forward_left", 1.3F, ClipArchive(Soldier().joints.size())));
 
@@ -244,6 +246,7 @@ TEST_F(ClipsTest, AnOptionalClipACharacterLacksIsNone) {
   EXPECT_FALSE(clips->Of(Stance::kCrouching).sprint.has_value());
 }
 
+// Requirements: US-11
 TEST_F(ClipsTest, EachPairOfStancesTakesItsTransitionDuration) {
   const auto clips = Load();
 
@@ -255,6 +258,7 @@ TEST_F(ClipsTest, EachPairOfStancesTakesItsTransitionDuration) {
 
 // ozz-animation keeps the Joints depth first: each is mapped to the Character's
 // Skeleton by name.
+// Requirements: US-11
 TEST_F(ClipsTest, EachJointOfTheAnimationSkeletonIsFoundInTheCharactersSkeleton) {
   const auto clips = Load();
 
@@ -267,6 +271,7 @@ TEST_F(ClipsTest, EachJointOfTheAnimationSkeletonIsFoundInTheCharactersSkeleton)
   EXPECT_EQ(clips->joints, (std::vector<std::uint32_t>{0, 1, 3, 2, 4}));
 }
 
+// Requirements: US-22
 TEST_F(ClipsTest, AMissingRequiredClipIsRefusedNamingIt) {
   RemoveClip("crouching/right");
 
@@ -279,6 +284,7 @@ TEST_F(ClipsTest, AMissingRequiredClipIsRefusedNamingIt) {
   EXPECT_EQ(augusta::animation::DescribeClipLoadError(clips.error()), "clip crouching/right: not found");
 }
 
+// Requirements: NFR-12
 TEST_F(ClipsTest, AClipThatIsNoAnimationIsRefusedNamingIt) {
   Replace("standing/aim_up", SkeletonArchiveOf(Soldier().joints));
 
@@ -289,6 +295,7 @@ TEST_F(ClipsTest, AClipThatIsNoAnimationIsRefusedNamingIt) {
   EXPECT_EQ(clips.error().cause, ClipLoadCause::kNotAnArchive);
 }
 
+// Requirements: US-22
 TEST_F(ClipsTest, AClipOfAnotherSkeletonIsRefusedNamingIt) {
   Replace("prone/idle", ClipArchive(3));
 
@@ -303,6 +310,7 @@ TEST_F(ClipsTest, AClipOfAnotherSkeletonIsRefusedNamingIt) {
             "clip prone/idle: has 3 tracks for a skeleton of 5 joints");
 }
 
+// Requirements: US-22
 TEST_F(ClipsTest, ACharacterWithoutAnAnimationSkeletonIsRefused) {
   Remove(augusta::assets::CharacterAnimationSkeletonPath(kCharacter));
 
@@ -312,6 +320,7 @@ TEST_F(ClipsTest, ACharacterWithoutAnAnimationSkeletonIsRefused) {
   EXPECT_EQ(clips.error().part, ClipPart::kSkeleton);
 }
 
+// Requirements: US-22
 TEST_F(ClipsTest, AnAnimationSkeletonWhoseJointsAreNotTheCharactersIsRefused) {
   Remove(augusta::assets::CharacterAnimationSkeletonPath(kCharacter));
   auto joints = Soldier().joints;
@@ -334,6 +343,7 @@ TEST_F(ClipsTest, AnAnimationSkeletonWhoseJointsAreNotTheCharactersIsRefused) {
 
 // The socket's Joints by their index in the Character's Skeleton: the hand
 // fifth, the foot fourth.
+// Requirements: US-11
 TEST_F(ClipsTest, TheWeaponSocketLoadsOnItsJointWithTheLeftHand) {
   const auto clips = Load();
 
@@ -345,6 +355,7 @@ TEST_F(ClipsTest, TheWeaponSocketLoadsOnItsJointWithTheLeftHand) {
 
 // The arm that holds the rifle hangs from the hand's grandparent: the hand on
 // the spine, on the root.
+// Requirements: US-11
 TEST_F(ClipsTest, TheShoulderOfTheWeaponSocketIsItsRightHandsGrandparent) {
   const auto clips = Load();
 
@@ -352,6 +363,7 @@ TEST_F(ClipsTest, TheShoulderOfTheWeaponSocketIsItsRightHandsGrandparent) {
   EXPECT_EQ(augusta::animation::ShoulderOf(Soldier(), clips->weapon_socket), 0U);
 }
 
+// Requirements: US-22
 TEST_F(ClipsTest, ACharacterWithoutAWeaponSocketIsRefused) {
   Remove(augusta::assets::CharacterWeaponSocketPath(kCharacter));
 
@@ -363,6 +375,7 @@ TEST_F(ClipsTest, ACharacterWithoutAWeaponSocketIsRefused) {
 }
 
 // The leg's parent is the root, which has none: no arm to bend.
+// Requirements: US-22
 TEST_F(ClipsTest, ALeftHandWithoutAnArmIsRefused) {
   Remove(augusta::assets::CharacterWeaponSocketPath(kCharacter));
   entries_.push_back(WeaponSocketEntry("Root/LeftLeg"));
@@ -379,6 +392,7 @@ TEST_F(ClipsTest, ALeftHandWithoutAnArmIsRefused) {
 
 // The spine's parent is the root, which has none: no shoulder for the segment
 // to the Muzzle a Muzzle in a wall is found by (ADR-0044).
+// Requirements: US-22
 TEST_F(ClipsTest, ARightHandWithoutAnArmIsRefused) {
   Remove(augusta::assets::CharacterWeaponSocketPath(kCharacter));
   entries_.push_back(WeaponSocketEntry("Root/LeftLeg/Foot", "Root/Spine"));
@@ -393,6 +407,7 @@ TEST_F(ClipsTest, ARightHandWithoutAnArmIsRefused) {
             "weapon socket: right hand Root/Spine has no arm: a parent and a grandparent");
 }
 
+// Requirements: US-22
 TEST_F(ClipsTest, ACharacterWithoutStanceTransitionsIsRefused) {
   Remove(augusta::assets::CharacterStanceTransitionsPath(kCharacter));
 

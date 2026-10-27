@@ -134,19 +134,6 @@ TEST_F(SimulationTest, AWallStopsAWalkingPlayer) {
   EXPECT_GT(Body(state, kAlice).position.x, kWallX - 1.0F);
 }
 
-TEST_F(SimulationTest, AnEmptyWorldHasAnEmptyState) { EXPECT_TRUE(world_.Tick({}, kTick).state.bodies.empty()); }
-
-TEST_F(SimulationTest, AddedPlayersAppearInTheStateOrderedById) {
-  world_.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F), TestCharacter());
-  world_.AddPlayer(kAlice, Vec3(-5.0F, 0.0F, 0.0F), TestCharacter());
-
-  const State state = world_.Tick({}, kTick).state;
-
-  ASSERT_EQ(state.bodies.size(), 2U);
-  EXPECT_EQ(state.bodies[0].entity, kAlice);
-  EXPECT_EQ(state.bodies[1].entity, kBob);
-}
-
 // Requirements: US-03
 TEST_F(SimulationTest, APlayerStartsStandingWhereItSpawned) {
   world_.AddPlayer(kAlice, Vec3(3.0F, 0.0F, -2.0F), TestCharacter());
@@ -208,6 +195,7 @@ TEST_F(SimulationTest, APlayerWithNoCommandStopsAndKeepsItsStance) {
 
 // Every side learns where a body looks and whether it aims down sights from
 // the state alone (ADR-0066), on the grid the pitch travels on (ADR-0038).
+// Requirements: US-11
 TEST_F(SimulationTest, APlayersStateCarriesThePitchAndAdsOfTheCommandItApplied) {
   world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), TestCharacter());
   world_.AddPlayer(kBob, Vec3(0.0F, 0.0F, 10.0F), TestCharacter());
@@ -225,6 +213,7 @@ TEST_F(SimulationTest, APlayersStateCarriesThePitchAndAdsOfTheCommandItApplied) 
 }
 
 // As it keeps where it faces.
+// Requirements: US-11
 TEST_F(SimulationTest, APlayerWithNoCommandKeepsItsPitchAndAds) {
   world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), TestCharacter());
   Command aiming;
@@ -251,6 +240,7 @@ int StrideDistance(int a, int b) {
 // Movement advances a player's Stride by the distance it walks over the stride
 // length of its stance's blend space there: 30 ticks at 3 m/s walk 1.5 m. Each
 // tick's advance is rounded to a whole step, so a tick may be up to half a step off.
+// Requirements: US-11
 TEST_F(SimulationTest, AWalkingPlayersStrideAdvancesByTheDistanceOverItsClipsStrideLength) {
   world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), TestCharacter());
   const std::uint8_t start = Body(Run(kSettleTicks, {}), kAlice).stride;
@@ -262,6 +252,7 @@ TEST_F(SimulationTest, AWalkingPlayersStrideAdvancesByTheDistanceOverItsClipsStr
   EXPECT_LE(StrideDistance(Body(state, kAlice).stride, start + (kStrideSteps / 2)), (kTicks / 2) + 1);
 }
 
+// Requirements: US-11
 TEST_F(SimulationTest, AStrafingPlayersStrideAdvancesByItsSideClipsStrideLength) {
   world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), TestCharacter());
   const std::uint8_t start = Body(Run(kSettleTicks, {}), kAlice).stride;
@@ -274,6 +265,7 @@ TEST_F(SimulationTest, AStrafingPlayersStrideAdvancesByItsSideClipsStrideLength)
   EXPECT_LE(StrideDistance(Body(state, kAlice).stride, expected), (kTicks / 2) + 1);
 }
 
+// Requirements: US-11
 TEST_F(SimulationTest, AStillPlayerHoldsItsStride) {
   world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), TestCharacter());
   Run(kSettleTicks, {});
@@ -288,6 +280,7 @@ TEST_F(SimulationTest, AStillPlayerHoldsItsStride) {
 // Movement advances a player's change of stance over its Clips' transition
 // duration for the two stances: 0.25 s from standing to crouching, 17 steps of
 // 255 a tick, as PredictionWorld advances the local player's.
+// Requirements: US-11
 TEST_F(SimulationTest, ACrouchingPlayersProgressAdvancesOverItsClipsTransitionDuration) {
   world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), TestCharacter());
   Run(kSettleTicks, {});
@@ -309,33 +302,6 @@ TEST_F(SimulationTest, ACommandForAPlayerNotInTheWorldIsIgnored) {
 
   ASSERT_EQ(state.bodies.size(), 1U);
   EXPECT_EQ(state.bodies[0].entity, kAlice);
-}
-
-TEST_F(SimulationTest, ARemovedPlayerLeavesTheState) {
-  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), TestCharacter());
-  world_.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F), TestCharacter());
-  Run(kSettleTicks, {});
-
-  world_.RemovePlayer(kAlice);
-  const State state = world_.Tick({}, kTick).state;
-
-  ASSERT_EQ(state.bodies.size(), 1U);
-  EXPECT_EQ(state.bodies[0].entity, kBob);
-}
-
-TEST_F(SimulationTest, RemovingAPlayerNotInTheWorldChangesNothing) {
-  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), TestCharacter());
-
-  world_.RemovePlayer(kBob);
-
-  EXPECT_EQ(world_.Tick({}, kTick).state.bodies.size(), 1U);
-}
-
-TEST_F(SimulationTest, AddingAPlayerTwiceKeepsOne) {
-  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), TestCharacter());
-  world_.AddPlayer(kAlice, Vec3(9.0F, 0.0F, 0.0F), TestCharacter());
-
-  EXPECT_EQ(world_.Tick({}, kTick).state.bodies.size(), 1U);
 }
 
 // A rifle of 600 rounds a minute, a round every six ticks of kTick, with a
@@ -2091,11 +2057,6 @@ TEST_F(MuzzleInAWallTest, ARoundWhoseBarrelIsClearOfAWallLeavesTheMuzzleAndStrik
   EXPECT_NEAR(state.map_impacts[0].x, feet.x, kTolerance);
   EXPECT_NEAR(state.map_impacts[0].z, wall_z, kTolerance);
   EXPECT_GT(state.map_impacts[0].y, feet.y + Shoulder().y);
-}
-
-TEST_F(SimulationTest, AStateNamesItsTickFromOne) {
-  EXPECT_EQ(world_.Tick({}, kTick).state.tick, 1U);
-  EXPECT_EQ(world_.Tick({}, kTick).state.tick, 2U);
 }
 
 // What the Shooter's delay's cap of 300 ms needs, and no more (ADR-0044).

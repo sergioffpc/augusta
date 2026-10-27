@@ -49,6 +49,7 @@ float WeightOf(std::span<const ClipWeight> weights, const Clip& clip) {
   return weight;
 }
 
+// Requirements: US-11
 TEST_F(LocomotionTest, MovingForwardAtTheForwardClipsSpeedIsTheForwardClipAlone) {
   const auto blend = BlendSpace(Standing(), Vec3(0.0F, 0.0F, -fixture::kStandingForward));
 
@@ -56,6 +57,7 @@ TEST_F(LocomotionTest, MovingForwardAtTheForwardClipsSpeedIsTheForwardClipAlone)
   EXPECT_NEAR(WeightOf(blend.Weights(), Standing().idle), 0.0F, kTolerance);
 }
 
+// Requirements: US-11
 TEST_F(LocomotionTest, StillIsTheIdleClipAlone) {
   const auto blend = BlendSpace(Standing(), Vec3(0.0F, 0.0F, 0.0F));
 
@@ -64,6 +66,7 @@ TEST_F(LocomotionTest, StillIsTheIdleClipAlone) {
   EXPECT_NEAR(blend.Weights()[0].weight, 1.0F, kTolerance);
 }
 
+// Requirements: US-11
 TEST_F(LocomotionTest, BelowAClipsSpeedTheIdleClipMakesUpTheRest) {
   const auto blend = BlendSpace(Standing(), Vec3(0.0F, 0.0F, -fixture::kStandingForward / 4.0F));
 
@@ -71,6 +74,7 @@ TEST_F(LocomotionTest, BelowAClipsSpeedTheIdleClipMakesUpTheRest) {
   EXPECT_NEAR(WeightOf(blend.Weights(), Standing().idle), 0.75F, kTolerance);
 }
 
+// Requirements: US-11
 TEST_F(LocomotionTest, BetweenTwoDirectionsTheirClipsShareTheWeightByAngle) {
   // A third of the way from forward to the right, as fast as the two Clips
   // move there: neither idle nor sprint.
@@ -82,6 +86,7 @@ TEST_F(LocomotionTest, BetweenTwoDirectionsTheirClipsShareTheWeightByAngle) {
   EXPECT_NEAR(WeightOf(blend.Weights(), *Standing().right), 1.0F / 3.0F, kTolerance);
 }
 
+// Requirements: US-11
 TEST_F(LocomotionTest, TheWeightsAlwaysSumToOne) {
   for (const Vec3& velocity : {Vec3(0.3F, 0.0F, 0.1F), Vec3(-2.0F, 0.0F, 5.0F), Vec3(0.0F, 0.0F, -4.0F)}) {
     float sum = 0.0F;
@@ -93,6 +98,7 @@ TEST_F(LocomotionTest, TheWeightsAlwaysSumToOne) {
   }
 }
 
+// Requirements: US-11
 TEST_F(LocomotionTest, EachDirectionsStrideLengthIsItsClips) {
   EXPECT_NEAR(StrideLength(Standing(), Vec3(0.0F, 0.0F, -3.0F)), fixture::kStandingForward, kTolerance);
   EXPECT_NEAR(StrideLength(Standing(), Vec3(0.0F, 0.0F, 2.0F)), fixture::kStandingBackward, kTolerance);
@@ -100,6 +106,7 @@ TEST_F(LocomotionTest, EachDirectionsStrideLengthIsItsClips) {
   EXPECT_NEAR(StrideLength(Standing(), Vec3(2.0F, 0.0F, 0.0F)), fixture::kStandingRight, kTolerance);
 }
 
+// Requirements: US-11
 TEST_F(LocomotionTest, TheStrideLengthIsTheMovingClipsBlendedWithoutTheIdle) {
   // Halfway between forward and right, well below their speed.
   const float slow = 0.5F;
@@ -108,30 +115,36 @@ TEST_F(LocomotionTest, TheStrideLengthIsTheMovingClipsBlendedWithoutTheIdle) {
               (fixture::kStandingForward + fixture::kStandingRight) / 2.0F, kTolerance);
 }
 
+// Requirements: US-11
 TEST_F(LocomotionTest, StillTheStrideLengthIsTheForwardClips) {
   EXPECT_NEAR(StrideLength(Standing(), Vec3(0.0F, 0.0F, 0.0F)), fixture::kStandingForward, kTolerance);
 }
 
+// Requirements: US-11
 TEST_F(LocomotionTest, AtTheSprintClipsSpeedTheStrideLengthIsTheSprintClips) {
   EXPECT_NEAR(StrideLength(Standing(), Vec3(0.0F, 0.0F, -fixture::kStandingSprint)), fixture::kStandingSprint,
               kTolerance);
 }
 
+// Requirements: US-11
 TEST_F(LocomotionTest, BetweenTheWalkAndTheSprintSpeedTheStrideLengthIsBetweenTheirs) {
   const float halfway = (fixture::kStandingForward + fixture::kStandingSprint) / 2.0F;
 
   EXPECT_NEAR(StrideLength(Standing(), Vec3(0.0F, 0.0F, -halfway)), halfway, kTolerance);
 }
 
+// Requirements: US-11
 TEST_F(LocomotionTest, WithoutSideClipsMovingSidewaysBlendsForwardAndBackward) {
   EXPECT_NEAR(StrideLength(Prone(), Vec3(0.3F, 0.0F, 0.0F)), (fixture::kProneForward + fixture::kProneBackward) / 2.0F,
               kTolerance);
 }
 
+// Requirements: US-11
 TEST_F(LocomotionTest, AVerticalVelocityDoesNotCount) {
   EXPECT_NEAR(StrideLength(Standing(), Vec3(0.0F, -9.0F, -3.0F)), fixture::kStandingForward, kTolerance);
 }
 
+// Requirements: US-11
 TEST_F(LocomotionTest, ABodysStrideLengthIsItsStancesAtItsVelocityInTheSpaceItFaces) {
   // Turned a quarter left, -X is ahead of it.
   const float yaw = std::numbers::pi_v<float> / 2.0F;
