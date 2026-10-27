@@ -1080,6 +1080,15 @@ if(AUGUSTA_CLIENT)
   )
   gtest_discover_tests(augusta_client_run_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS client)
 
+  # augustac as built runs on mimalloc (ADR-0078), as augustad does: it checks
+  # the allocator before it reads its command line, so its --version exits 0
+  # only when mimalloc serves it, a broken link or redirect failing it. Not
+  # under a sanitizer, whose own allocator serves.
+  if(NOT AUGUSTA_SANITIZER_ALLOCATOR)
+    add_test(NAME augustac_version COMMAND augustac --version)
+    set_tests_properties(augustac_version PROPERTIES LABELS client)
+  endif()
+
   add_executable(augusta_client_phases_tests client_phases_test.cpp)
   target_link_libraries(
     augusta_client_phases_tests
