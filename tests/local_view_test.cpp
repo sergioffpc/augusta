@@ -51,6 +51,7 @@ State At(const Vec3& position, Stance stance = Stance::kStanding) {
   return state;
 }
 
+// Requirements: US-04
 TEST(BlendTicksTest, TheBlendedPositionIsTheLerpOfTheTwoTicksAtTheFraction) {
   const State previous = At(Vec3(1.0F, 0.0F, -2.0F));
   const State latest = At(Vec3(2.0F, 0.5F, 4.0F));
@@ -61,6 +62,7 @@ TEST(BlendTicksTest, TheBlendedPositionIsTheLerpOfTheTwoTicksAtTheFraction) {
   }
 }
 
+// Requirements: US-04
 TEST(BlendTicksTest, AtZeroItIsThePreviousTickAndAtOneTheLatest) {
   const State previous = At(Vec3(1.0F, 0.0F, -2.0F), Stance::kStanding);
   const State latest = At(Vec3(2.0F, 0.5F, 4.0F), Stance::kCrouching);
@@ -74,6 +76,7 @@ TEST(BlendTicksTest, AtZeroItIsThePreviousTickAndAtOneTheLatest) {
   EXPECT_EQ(at_one.local_body.stance, Stance::kCrouching);
 }
 
+// Requirements: NFR-02
 TEST(BlendTicksTest, AJumpInTheLatestTickIsBlendedInWithItsCorrection) {
   // The body stood still, but reconciliation moved it 1 m in the latest tick.
   const State previous = At(Vec3(0.0F, 0.0F, 0.0F));
@@ -86,6 +89,7 @@ TEST(BlendTicksTest, AJumpInTheLatestTickIsBlendedInWithItsCorrection) {
   ExpectNear(blended.local_body.position - blended.total_correction, Vec3(0.0F, 0.0F, 0.0F));
 }
 
+// Requirements: US-09
 TEST(BlendTicksTest, TheRecoilOffsetIsBlendedBetweenTheTwoTicks) {
   State previous;
   previous.rifle.recoil = RecoilOffset{.pitch = 0.02F, .yaw = -0.01F};
@@ -98,6 +102,7 @@ TEST(BlendTicksTest, TheRecoilOffsetIsBlendedBetweenTheTwoTicks) {
   EXPECT_NEAR(blended.yaw, -0.005F, kTolerance);
 }
 
+// Requirements: US-04
 TEST(LocalCameraTest, TheCameraFollowsTheBodysStance) {
   const Vec3 feet(3.0F, 1.0F, -4.0F);
 
@@ -111,6 +116,7 @@ TEST(LocalCameraTest, TheCameraFollowsTheBodysStance) {
   EXPECT_LT(crouching.position.y, standing.position.y);
 }
 
+// Requirements: US-06
 TEST(LocalCameraTest, TheCameraTurnsByTheViewHandedToTheFrame) {
   const Aim aim{.yaw = 0.7F, .pitch = -0.2F, .ads = false};
 
@@ -121,6 +127,7 @@ TEST(LocalCameraTest, TheCameraTurnsByTheViewHandedToTheFrame) {
 
 // The view shows where the next round goes: a rifle climbing by its recoil
 // takes the camera with it, off the view the player holds.
+// Requirements: US-09
 TEST(LocalCameraTest, TheCameraLooksWhereTheNextRoundLeaves) {
   augusta::weapon::Rifle rifle;
   rifle.magazine_capacity = 30;
