@@ -500,7 +500,17 @@ target_link_libraries(augusta_transport_events_tests PRIVATE augusta_networking 
 # Links GameNetworkingSockets, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_transport_events_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS networking)
 
-add_executable(augusta_physics_tests physics_test.cpp)
+add_executable(augusta_physics_tests physics_test.cpp physx_allocator_test.cpp)
+# The allocator PhysX is given is private to the physics module, tested through
+# its header the same way. That header includes PhysX's own, whose libraries
+# reach the test through augusta_physics already, so only their headers are
+# added here: linking the SDK again would bypass the module's link group on Linux.
+target_include_directories(augusta_physics_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/physics)
+target_include_directories(
+  augusta_physics_tests
+  SYSTEM
+  PRIVATE $<TARGET_PROPERTY:unofficial::omniverse-physx-sdk::sdk,INTERFACE_INCLUDE_DIRECTORIES>
+)
 target_link_libraries(augusta_physics_tests PRIVATE augusta_physics GTest::gtest GTest::gtest_main)
 # DISCOVERY_TIMEOUT above the 5s default, same reason as the networking tests
 # above: the PhysX DLLs make a fresh build's first launch slow under Windows Defender.

@@ -1,6 +1,8 @@
 #include "physx_state.h"
 
+#include <cstddef>
 #include <mutex>
+#include <new>
 #include <stdexcept>
 
 // The headers this file uses, not PxPhysicsAPI.h: that one also pulls in
@@ -20,6 +22,9 @@
 namespace augusta::physics {
 
 namespace {
+
+// The alignment PhysX requires of every block its allocator returns.
+constexpr std::align_val_t kPhysxAlignment{16};
 
 PhysxHandles AcquirePhysx() {
   PhysxProcessState& state = GlobalState();
@@ -46,6 +51,14 @@ void LogErrorCallback::reportError(physx::PxErrorCode::Enum code, const char* me
   LOG_ERROR("subsystem=physics event=physx_error code={} message=\"{}\" file={} line={}", static_cast<int>(code),
             message, file, line);
 }
+
+// Null on failure, as PxDefaultAllocator's malloc gave, rather than a throw
+// through PhysX's own code.
+void* AlignedAllocator::allocate(std::size_t size, const char* /*type_name*/, const char* /*file*/, int /*line*/) {
+  return ::operator new(size, kPhysxAlignment, std::nothrow);
+}
+
+void AlignedAllocator::deallocate(void* ptr) { ::operator delete(ptr, kPhysxAlignment); }
 
 PhysxProcessState& GlobalState() {
   static PhysxProcessState state;
