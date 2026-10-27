@@ -433,11 +433,23 @@ Given a Development server with debug.reenactments on, on the capture's packs
 When I run augustac --reenact with the capture, once per player, all at once
 Then each player spawns where the capture has it and its Commands reach the
      server on their ticks, each Seen time keeping its captured delay
+
+Given augustad.yaml sets max_files, max_mib or both under
+      simulation.capture_retention
+When a Match starts, and while it is captured
+Then the oldest captures in the directory are deleted until the rest stay
+     within both limits; the Match in progress is never deleted, and if it
+     alone passes max_mib its capture stops
+
+Given augustad.yaml sets simulation.capture_mode to strict
+When the capture loses a record
+Then the server stops with that failure, naming the Match and what was lost
 ```
 
 A capture that stops early, because its disk fell behind or a write failed,
-keeps every whole record before that point and never holds the tick up
-(ADR-0050, ADR-0051).
+keeps every whole record before that point and never holds the tick up. In the
+default, optional mode a lost record leaves the server running and the next
+Match is captured afresh (ADR-0050, ADR-0051).
 
 ### US-22: Compose and Tune a Scenario
 
