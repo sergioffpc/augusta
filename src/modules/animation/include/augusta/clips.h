@@ -27,7 +27,7 @@
 ///
 /// The ozz-animation types are held as they are. ozz's SIMD values must never be
 /// held in a standard template instantiated on one (std::array<SimdFloat4, N>):
-/// clang-cl aligns those to 8 bytes only, the #pragma pack(8) MSVC's standard
+/// clang-cl aligns those to 8 bytes only, the `#pragma pack(8)` MSVC's standard
 /// library declares them under, and an aligned SSE load of an element crashes.
 namespace augusta::animation {
 
