@@ -108,8 +108,8 @@ one with fire pressed: whether a Command fires a round is the server's to decide
 
 - **Player hits are not tested against the physics scene's current bodies.** A
   shot is tested against the hitbox history at the Shooter's delay, and against
-  the Map and Props through physics. ADR-0002's note on raycasting a moved body
-  therefore does not decide player hit detection.
+  the Map and Props through physics. Where ADR-0002 says the scene holds a moved
+  body therefore does not decide player hit detection.
 - **Ballistics is shared, in `augusta_gameplay`.** Its trajectory integration is
   used by the client's presentation as well; its hit testing and the outcome it
   reports stay server-side. Placing a player's Hitboxes from a Hitbox pose and

@@ -441,36 +441,6 @@ BodyState World::Restore(BodyHandle handle, const BodyState& state, const FallSt
   return on_grid;
 }
 
-RaycastHit World::Raycast(const math::Vec3& origin, const math::Vec3& direction, float max_distance) const {
-  RaycastHit result;
-  const float length = math::Length(direction);
-  if (length <= 0.0F || max_distance <= 0.0F) {
-    return result;
-  }
-  const math::Vec3 dir = direction / length;
-
-  PxRaycastBuffer hit;
-  const bool has_hit = impl_->scene->raycast(ToPx(origin), ToPx(dir), max_distance, hit);
-  if (!has_hit || !hit.hasBlock) {
-    return result;
-  }
-
-  result.has_hit = true;
-  result.point = FromPx(hit.block.position);
-  result.distance = hit.block.distance;
-  // A controller creates its own PxRigidDynamic actor internally
-  // (PxController::getActor()), which is what the query reports back -
-  // there is no PhysX-side mapping from actor to BodyHandle, so this
-  // does a linear scan over this World's (currently few) bodies.
-  for (const auto& [handle, record] : impl_->bodies) {
-    if (record.controller->getActor() == hit.block.actor) {
-      result.body = handle;
-      break;
-    }
-  }
-  return result;
-}
-
 MapRaycastHit World::RaycastMap(const math::Vec3& origin, const math::Vec3& direction, float max_distance) const {
   MapRaycastHit result;
   const float length = math::Length(direction);
