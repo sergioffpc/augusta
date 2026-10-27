@@ -292,12 +292,14 @@ TEST(ProtocolTest, JoinRequestWithAnEmptyVersionRoundTrips) {
 }
 
 // The client's Run ID, which the server logs at admission (ADR-0038).
+// Requirements: NFR-19
 TEST(ProtocolTest, AJoinRequestCarriesItsRunId) {
   const auto decoded = RoundTrip(JoinRequestWire{.engine_version = "0.1.0", .character = "", .run = CountingRunId()});
 
   EXPECT_EQ(std::get<JoinRequestWire>(decoded).run, CountingRunId());
 }
 
+// Requirements: NFR-19
 TEST(ProtocolTest, AJoinRequestsRunIdIsItsFourthFieldsSixteenBytes) {
   const auto decoded = Decode(Envelope(MessageTypeWire::kJoinRequest, TextField(4, CountingRunIdBytes())));
 
@@ -305,12 +307,14 @@ TEST(ProtocolTest, AJoinRequestsRunIdIsItsFourthFieldsSixteenBytes) {
             MessageWire(JoinRequestWire{.engine_version = "", .character = "", .run = CountingRunId()}));
 }
 
+// Requirements: NFR-19
 TEST(ProtocolTest, AJoinRequestWithNoRunIdReadsAsTheNilOne) {
   const auto decoded = Decode(Envelope(MessageTypeWire::kJoinRequest, TextField(1, "0.1.0")));
 
   EXPECT_TRUE(std::get<JoinRequestWire>(decoded.value()).run.is_nil());
 }
 
+// Requirements: NFR-12
 TEST(ProtocolTest, ARunIdOfAnyOtherLengthThanSixteenBytesIsOutOfRange) {
   const std::string bytes = CountingRunIdBytes();
 
@@ -522,6 +526,7 @@ TEST(ProtocolTest, MatchStartRoundTripsWithEveryPlayersCharacterAndSpawnPoint) {
   EXPECT_EQ(received.first_tick, sent.first_tick);
 }
 
+// Requirements: NFR-19
 TEST(ProtocolTest, MatchStartRoundTripsWithItsMatchId) {
   const auto decoded = RoundTrip(MatchStartWire{.players = {}, .first_tick = 0, .match = CountingMatchId()});
 
@@ -529,6 +534,7 @@ TEST(ProtocolTest, MatchStartRoundTripsWithItsMatchId) {
 }
 
 // A Match ID is 16 bytes, or absent; any other length is none a server writes.
+// Requirements: NFR-12
 TEST(ProtocolTest, AMatchIdOfAnyOtherLengthThanSixteenBytesIsOutOfRange) {
   const BytesWire fifteen(15, std::byte{1});
   const BytesWire seventeen(17, std::byte{1});
@@ -578,7 +584,7 @@ TEST(ProtocolTest, AMatchEndThatIsADrawNamesTheNilSession) {
 }
 
 // A Session ID travels as its 16 bytes, in RFC 9562's order (ADR-0038).
-// Requirements: NFR-20
+// Requirements: NFR-19, NFR-20
 TEST(ProtocolTest, ASessionIdTravelsAsItsSixteenBytes) {
   EXPECT_EQ(Decode(Envelope(MessageTypeWire::kMatchEnd, LengthField(2, BytesOf(Session(0x2A))))).value(),
             MessageWire(MatchEndWire{.winner = Session(0x2A)}));
@@ -856,6 +862,7 @@ TEST(ProtocolTest, AReplayRequestRoundTripsItsVersionPackCaptureAndRunId) {
 }
 
 // A Replay viewer's Run ID, as a Join request's (ADR-0051).
+// Requirements: NFR-19
 TEST(ProtocolTest, AReplayRequestsRunIdIsItsFourthField) {
   const auto decoded = Decode(Envelope(MessageTypeWire::kReplayRequest, TextField(4, CountingRunIdBytes())));
 

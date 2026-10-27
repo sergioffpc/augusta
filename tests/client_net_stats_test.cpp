@@ -12,11 +12,13 @@ using augusta::client::PacketLossPercent;
 
 constexpr float kTolerance = 1e-4F;
 
+// Requirements: US-29
 TEST(PacketLossPercentTest, IsFromTheWorseOfTheTwoDirections) {
   EXPECT_NEAR(*PacketLossPercent({.quality_local = 0.9F, .quality_remote = 0.75F}), 25.0F, kTolerance);
   EXPECT_NEAR(*PacketLossPercent({.quality_local = 1.0F, .quality_remote = 1.0F}), 0.0F, kTolerance);
 }
 
+// Requirements: US-29
 TEST(PacketLossPercentTest, IgnoresADirectionNotMeasuredYet) {
   EXPECT_NEAR(*PacketLossPercent({.quality_local = 0.8F, .quality_remote = -1.0F}), 20.0F, kTolerance);
   EXPECT_FALSE(PacketLossPercent({.quality_local = -1.0F, .quality_remote = -1.0F}).has_value());

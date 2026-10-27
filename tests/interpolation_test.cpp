@@ -706,6 +706,7 @@ TEST(ServerClockTest, ResetForgetsTheAlignment) {
 
 // The interpolation buffer's slack: how far the newest update leads the point
 // remote players are sampled at, kInterpolationDelay behind the clock.
+// Requirements: US-29
 TEST(ServerClockTest, HasNoSlackUntilTheFirstUpdate) {
   ServerClock clock;
   clock.Advance(1.0);
@@ -718,6 +719,7 @@ TEST(ServerClockTest, HasNoSlackUntilTheFirstUpdate) {
 
 // An update in step with the clock leaves it running at real time, so the
 // newest update's lead shrinks by each frame's elapsed time.
+// Requirements: US-29
 TEST(ServerClockTest, WithAnUpdateWaitingTheSlackIsTheNewestUpdatesLead) {
   ServerClock clock;
   clock.Observe(ServerTime(100));
@@ -730,6 +732,7 @@ TEST(ServerClockTest, WithAnUpdateWaitingTheSlackIsTheNewestUpdatesLead) {
   EXPECT_NEAR(clock.Slack().value(), 0.1, 1e-9);
 }
 
+// Requirements: US-29
 TEST(ServerClockTest, PastTheNewestUpdateTheSlackIsZeroOrBelow) {
   ServerClock clock;
   clock.Observe(ServerTime(100));
@@ -741,6 +744,7 @@ TEST(ServerClockTest, PastTheNewestUpdateTheSlackIsZeroOrBelow) {
   EXPECT_NEAR(clock.Slack().value(), -0.05, 1e-9);
 }
 
+// Requirements: US-29
 TEST(ServerClockTest, ResetForgetsTheSlack) {
   ServerClock clock;
   clock.Observe(ServerTime(100));

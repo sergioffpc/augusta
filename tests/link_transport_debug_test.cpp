@@ -14,14 +14,14 @@ using augusta::networking::Reliability;
 
 // A lost one would leave the server sending a stream nobody looks at, or
 // none to the overlay that asked for it.
-// Requirements: NFR-02
+// Requirements: US-30, NFR-02
 TEST(ReliabilityOfDebugTest, ADebugSubscribeTravelsReliably) {
   EXPECT_EQ(ReliabilityOf(MessageType::kDebugSubscribe), Reliability::kReliable);
 }
 
 // Each is sent once, when its round's flight ends: a lost one is a round the
 // overlay never shows.
-// Requirements: NFR-02
+// Requirements: US-30, NFR-02
 TEST(ReliabilityOfDebugTest, AShotJudgementTravelsReliably) {
   EXPECT_EQ(ReliabilityOf(MessageType::kShotJudgement), Reliability::kReliable);
 }

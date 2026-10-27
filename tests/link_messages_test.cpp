@@ -671,6 +671,7 @@ std::string ContextOf(const augusta::failure::Failure& failure, std::string_view
 
 // A message the protocol cannot carry is the broken invariant that stops the
 // sender's runtime (ADR-0033), naming the message's type.
+// Requirements: NFR-18
 TEST(LinkMessagesTest, AMessageThatCannotBeEncodedIsAnInvariantFailureNamingItsType) {
   const augusta::protocol::LobbyWire too_long{
       .version = 1, .roster = {{.character = std::string(augusta::protocol::kMaxCharacterNameLength + 1, 'c')}}};
@@ -688,7 +689,7 @@ TEST(LinkMessagesTest, AMessageThatCannotBeEncodedIsAnInvariantFailureNamingItsT
 // A refusal no case of ToWire names is a corrupted one: it travels on as a
 // value the protocol lacks, which Encode refuses, rather than as undefined
 // behaviour.
-// Requirements: NFR-20
+// Requirements: NFR-18, NFR-20
 TEST(LinkMessagesTest, ACorruptedRefusalIsNotEncoded) {
   const auto corrupted = static_cast<augusta::link::JoinRefusal>(99);
 

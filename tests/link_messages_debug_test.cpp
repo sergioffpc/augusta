@@ -63,7 +63,7 @@ ShotJudgementEntry CrossingTwo(std::uint16_t ticks_after_shot) {
                                                      .yaw = -0.75F}}};
 }
 
-// Requirements: NFR-20
+// Requirements: US-30, NFR-20
 TEST(LinkMessagesDebugTest, ADebugSubscribeTheClientSendsReachesTheServerWithItsFlags) {
   for (const std::uint8_t flags : {std::uint8_t{0}, DebugSubscribe::kShotJudgements, std::uint8_t{0xFF}}) {
     const auto received = augusta::link::ClientMessageFromWire(ThroughTheWire(ToWire(DebugSubscribe{.flags = flags})));
@@ -74,24 +74,24 @@ TEST(LinkMessagesDebugTest, ADebugSubscribeTheClientSendsReachesTheServerWithIts
   }
 }
 
-// Requirements: NFR-20
+// Requirements: US-30, NFR-20
 TEST(LinkMessagesDebugTest, ADebugSubscribesShotJudgementsBitIsTheProtocols) {
   EXPECT_EQ(DebugSubscribe::kShotJudgements, augusta::protocol::DebugSubscribeWire::kShotJudgements);
 }
 
-// Requirements: NFR-12
+// Requirements: US-30, NFR-12
 TEST(LinkMessagesDebugTest, ADebugSubscribeIsNoServerMessage) {
   EXPECT_FALSE(augusta::link::ServerMessageFromWire(ToWire(DebugSubscribe{})).has_value());
 }
 
-// Requirements: NFR-20
+// Requirements: US-30, NFR-20
 TEST(LinkMessagesDebugTest, ADebugSubscribeIsOfItsOwnType) {
   EXPECT_EQ(augusta::link::TypeOf(augusta::link::EncodeToSend(ToWire(DebugSubscribe{})).value()),
             augusta::link::MessageType::kDebugSubscribe);
   EXPECT_EQ(augusta::link::NameOf(augusta::link::MessageType::kDebugSubscribe), "debug_subscribe");
 }
 
-// Requirements: NFR-20
+// Requirements: US-30, NFR-20
 TEST(LinkMessagesDebugTest, AShotJudgementWithNoEntriesReachesItsShooterAsTheServerJudgedIt) {
   for (const Struck struck : {Struck::kNothing, Struck::kMap, Struck::kProp, Struck::kHitbox}) {
     ShotJudgement judgement = AHeadshot();
@@ -101,7 +101,7 @@ TEST(LinkMessagesDebugTest, AShotJudgementWithNoEntriesReachesItsShooterAsTheSer
   }
 }
 
-// Requirements: NFR-20
+// Requirements: US-30, NFR-20
 TEST(LinkMessagesDebugTest, AShotJudgementWithSixteenEntriesAndSomeLeftOutReachesItsShooterWhole) {
   ShotJudgement judgement = AHeadshot();
   for (std::uint16_t i = 0; i < 16; ++i) {
@@ -113,7 +113,7 @@ TEST(LinkMessagesDebugTest, AShotJudgementWithSixteenEntriesAndSomeLeftOutReache
 }
 
 // The entity 0 names no body: what the wire carries for a round that struck none.
-// Requirements: NFR-20
+// Requirements: US-30, NFR-20
 TEST(LinkMessagesDebugTest, AShotJudgementThatStruckNoBodyOrPropNamesNoTarget) {
   ShotJudgement judgement = AHeadshot();
   judgement.struck = Struck::kMap;
@@ -125,7 +125,7 @@ TEST(LinkMessagesDebugTest, AShotJudgementThatStruckNoBodyOrPropNamesNoTarget) {
 
 // The whole ticks travel as a byte, the fraction on the Seen fraction grid
 // (ADR-0038): a delay beyond either is held to the most they carry.
-// Requirements: NFR-20
+// Requirements: US-30, NFR-20
 TEST(LinkMessagesDebugTest, AShotJudgementsShootersDelayTravelsAsWholeTicksAndAFraction) {
   ShotJudgement judgement = AHeadshot();
   judgement.shooters_delay = 18.25F;
@@ -140,7 +140,7 @@ TEST(LinkMessagesDebugTest, AShotJudgementsShootersDelayTravelsAsWholeTicksAndAF
   EXPECT_FLOAT_EQ(ToWire(judgement).delay_fraction, 0.0F);
 }
 
-// Requirements: NFR-12, NFR-20
+// Requirements: US-30, NFR-12, NFR-20
 TEST(LinkMessagesDebugTest, AShotJudgementIsNoClientMessageAndIsOfItsOwnType) {
   EXPECT_FALSE(augusta::link::ClientMessageFromWire(ToWire(AHeadshot())).has_value());
   EXPECT_EQ(augusta::link::TypeOf(augusta::link::EncodeToSend(ToWire(AHeadshot())).value()),

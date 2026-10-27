@@ -43,6 +43,7 @@ DebugInteraction Entered() {
   return interaction;
 }
 
+// Requirements: US-29
 TEST(DebugInteractionTest, StartsOutWithEveryEventGoingToTheGame) {
   DebugInteraction interaction(kKeys);
   const std::vector<Event> events{Press(Key::kW), MouseMoveEvent{.x = 3.0F, .y = 4.0F}, Release(Key::kW)};
@@ -56,6 +57,7 @@ TEST(DebugInteractionTest, StartsOutWithEveryEventGoingToTheGame) {
   EXPECT_FALSE(routing.entered);
 }
 
+// Requirements: US-29
 TEST(DebugInteractionTest, F1FromOutEnters) {
   DebugInteraction interaction(kKeys);
   const std::vector<Event> events{Press(Key::kF1)};
@@ -66,6 +68,7 @@ TEST(DebugInteractionTest, F1FromOutEnters) {
   EXPECT_TRUE(routing.entered);
 }
 
+// Requirements: US-29
 TEST(DebugInteractionTest, F1FromInLeavesNotByEscape) {
   DebugInteraction interaction = Entered();
   const std::vector<Event> events{Press(Key::kF1)};
@@ -77,6 +80,7 @@ TEST(DebugInteractionTest, F1FromInLeavesNotByEscape) {
   EXPECT_FALSE(routing.left_by_leave_key);
 }
 
+// Requirements: US-29
 TEST(DebugInteractionTest, EventsBeforeF1GoToTheGameAndAfterItToThePanels) {
   DebugInteraction interaction(kKeys);
   const std::vector<Event> events{Press(Key::kW), Press(Key::kF1), Press(Key::kMouseLeft)};
@@ -87,6 +91,7 @@ TEST(DebugInteractionTest, EventsBeforeF1GoToTheGameAndAfterItToThePanels) {
   EXPECT_EQ(KeysOf(routing.panels), (std::vector<Key>{Key::kMouseLeft}));
 }
 
+// Requirements: US-29
 TEST(DebugInteractionTest, NeitherF1NorEscapeReachesTheGameOrThePanels) {
   DebugInteraction interaction(kKeys);
   // In and out by F1, in again, then out by Escape, with every release.
@@ -99,6 +104,7 @@ TEST(DebugInteractionTest, NeitherF1NorEscapeReachesTheGameOrThePanels) {
   EXPECT_TRUE(KeysOf(routing.panels).empty());
 }
 
+// Requirements: US-20, US-29
 TEST(DebugInteractionTest, EscapeLeavesAndSaysSo) {
   DebugInteraction interaction = Entered();
   const std::vector<Event> events{Press(Key::kEscape)};
@@ -109,6 +115,7 @@ TEST(DebugInteractionTest, EscapeLeavesAndSaysSo) {
   EXPECT_TRUE(routing.left_by_leave_key);
 }
 
+// Requirements: US-20
 TEST(DebugInteractionTest, EscapeOutOfDebugInteractionGoesToTheGame) {
   DebugInteraction interaction(kKeys);
   const std::vector<Event> events{Press(Key::kEscape), Release(Key::kEscape)};
@@ -120,6 +127,7 @@ TEST(DebugInteractionTest, EscapeOutOfDebugInteractionGoesToTheGame) {
   EXPECT_EQ(KeysOf(routing.game), (std::vector<Key>{Key::kEscape, Key::kEscape}));
 }
 
+// Requirements: US-29
 TEST(DebugInteractionTest, LeavingLetsGoOfWhatThePanelsHoldAndTakesTheCursorOffThem) {
   DebugInteraction interaction = Entered();
   const std::vector<Event> held{Press(Key::kMouseLeft), MouseMoveEvent{.x = 5.0F, .y = 6.0F}, Press(Key::kA),
@@ -139,6 +147,7 @@ TEST(DebugInteractionTest, LeavingLetsGoOfWhatThePanelsHoldAndTakesTheCursorOffT
   EXPECT_EQ(move->y, kCursorOffPanels.y);
 }
 
+// Requirements: US-20, US-29
 TEST(DebugInteractionTest, TheCursorIsLockedOnlyWhenCapturedAndOut) {
   const DebugInteraction out(kKeys);
   const DebugInteraction in = Entered();

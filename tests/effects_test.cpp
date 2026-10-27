@@ -27,6 +27,7 @@ TEST(AgeTest, AnEffectShowsUntilItsLifetimeIsUp) {
   EXPECT_TRUE(effects.empty());
 }
 
+// Requirements: US-19
 TEST(AgeTest, OnlyTheEffectsWhoseTimeIsUpGo) {
   std::vector<Effect> effects{{.position = Vec3(), .age = 0.9F}, {.position = Vec3(), .age = 0.1F}};
 

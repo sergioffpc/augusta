@@ -20,12 +20,14 @@ using augusta::client::ToPresentation;
 using augusta::math::Vec3;
 using augusta::physics::Stance;
 
+// Requirements: US-30
 TEST(FrameMappingTest, AShotKeepsTheTickItWasFiredOn) {
   const augusta::harness::Shot shot{.shooter = augusta::harness::EntityId{3}, .tick = 41, .origin = {}};
 
   EXPECT_EQ(ToPresentation(shot).tick, 41U);
 }
 
+// Requirements: US-30
 TEST(FrameMappingTest, AShotJudgementKeepsEverythingTheOverlayDrawsFrom) {
   const augusta::harness::ShotJudgement judgement{
       .shot_tick = 120,
@@ -60,6 +62,7 @@ TEST(FrameMappingTest, AShotJudgementKeepsEverythingTheOverlayDrawsFrom) {
   EXPECT_TRUE(converted.entries_left_out);
 }
 
+// Requirements: US-30
 TEST(FrameMappingTest, EachWayARoundCanEndKeepsItsName) {
   using augusta::link::Struck;
   namespace presentation = augusta::presentation;

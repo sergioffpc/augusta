@@ -79,6 +79,7 @@ std::string Captured() {
   return bytes;
 }
 
+// Requirements: NFR-12
 TEST(CaptureReadSeedsTest, TheSeedIsWhatACapturerWrites) {
   std::ifstream in(kSeedPath, std::ios::binary);
   const std::string seed{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};

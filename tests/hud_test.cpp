@@ -20,28 +20,34 @@ NetStats MeasuredNet() {
       .rtt_ms = 12, .jitter_ms = 0.4F, .loss_percent = 0.0F, .in_bytes_per_sec = 1228.8F, .out_bytes_per_sec = 512.0F};
 }
 
+// Requirements: US-29
 TEST(LinesTest, ReadsDashesBeforeAnyFrameAndWhileNotConnected) {
   EXPECT_EQ(Lines(0.0, std::nullopt, false), Text{"FPS: -- | RTT: --"});
 }
 
+// Requirements: US-29
 TEST(LinesTest, ReadsTheFrameRateAndFrameTime) {
   EXPECT_EQ(Lines(1.0 / 144.0, std::nullopt, false), Text{"FPS: 144 (6.9ms) | RTT: --"});
 }
 
+// Requirements: US-29
 TEST(LinesTest, ReadsTheConnectionsNumbers) {
   EXPECT_EQ(Lines(0.0, MeasuredNet(), false),
             Text{"FPS: -- | RTT: 12ms | Jitter: 0.4ms | Loss: 0.0% | In: 1.2KB/s | Out: 512B/s"});
 }
 
+// Requirements: US-29
 TEST(LinesTest, EndsTheNetworkLineInImpairedWhileTheLinkIsImpaired) {
   EXPECT_EQ(Lines(0.0, MeasuredNet(), true),
             Text{"FPS: -- | RTT: 12ms | Jitter: 0.4ms | Loss: 0.0% | In: 1.2KB/s | Out: 512B/s | IMPAIRED"});
 }
 
+// Requirements: US-29
 TEST(LinesTest, EndsTheNetworkLineInImpairedWhileTheLinkIsImpairedAndNotConnected) {
   EXPECT_EQ(Lines(0.0, std::nullopt, true), Text{"FPS: -- | RTT: -- | IMPAIRED"});
 }
 
+// Requirements: US-29
 TEST(LinesTest, ReadsDashesForWhatIsNotMeasuredYet) {
   NetStats net = MeasuredNet();
   net.jitter_ms.reset();
@@ -50,6 +56,7 @@ TEST(LinesTest, ReadsDashesForWhatIsNotMeasuredYet) {
   EXPECT_EQ(Lines(0.0, net, false), Text{"FPS: -- | RTT: 12ms | Jitter: -- | Loss: -- | In: 1.2KB/s | Out: 512B/s"});
 }
 
+// Requirements: US-29
 TEST(LinesTest, ReadsMegabytesPerSecond) {
   NetStats net = MeasuredNet();
   net.in_bytes_per_sec = 3.5F * 1024.0F * 1024.0F;
@@ -58,6 +65,7 @@ TEST(LinesTest, ReadsMegabytesPerSecond) {
             Text{"FPS: -- | RTT: 12ms | Jitter: 0.4ms | Loss: 0.0% | In: 3.5MB/s | Out: 512B/s"});
 }
 
+// Requirements: US-29
 TEST(FormatBytesTest, ReadsBytesKilobytesAndMegabytesInStepsOf1024) {
   EXPECT_EQ(FormatBytes(300.0), "300B");
   EXPECT_EQ(FormatBytes(2048.0), "2.0KB");
@@ -65,6 +73,7 @@ TEST(FormatBytesTest, ReadsBytesKilobytesAndMegabytesInStepsOf1024) {
   EXPECT_EQ(FormatRate(512.0), "512B/s");
 }
 
+// Requirements: US-29
 TEST(FrameTimeWindowTest, AveragesNothingBeforeTheFirstFrameEnds) {
   FrameTimeWindow window;
   window.Tick(FrameTimeWindow::Clock::time_point());
@@ -72,6 +81,7 @@ TEST(FrameTimeWindowTest, AveragesNothingBeforeTheFirstFrameEnds) {
   EXPECT_EQ(window.Average(), 0.0);
 }
 
+// Requirements: US-29
 TEST(FrameTimeWindowTest, AveragesTheFramesSoFar) {
   FrameTimeWindow window;
   FrameTimeWindow::Clock::time_point now;
@@ -82,6 +92,7 @@ TEST(FrameTimeWindowTest, AveragesTheFramesSoFar) {
   EXPECT_DOUBLE_EQ(window.Average(), 0.015);
 }
 
+// Requirements: US-29
 TEST(FrameTimeWindowTest, ForgetsFramesOlderThanItsWindow) {
   FrameTimeWindow window;
   FrameTimeWindow::Clock::time_point now;

@@ -19,24 +19,28 @@ constexpr int kFunctionKeyCount = 12;
 
 Key KeyAfter(Key first, int offset) { return static_cast<Key>(static_cast<int>(first) + offset); }
 
+// Requirements: US-20
 TEST(GlfwKeysTest, MapsEveryLetter) {
   for (int i = 0; i < kLetterCount; ++i) {
     EXPECT_EQ(KeyFromGlfw(GLFW_KEY_A + i), KeyAfter(Key::kA, i)) << "letter " << i;
   }
 }
 
+// Requirements: US-20
 TEST(GlfwKeysTest, MapsEveryTopRowDigit) {
   for (int i = 0; i < kDigitCount; ++i) {
     EXPECT_EQ(KeyFromGlfw(GLFW_KEY_0 + i), KeyAfter(Key::k0, i)) << "digit " << i;
   }
 }
 
+// Requirements: US-20
 TEST(GlfwKeysTest, MapsF1ToF12) {
   for (int i = 0; i < kFunctionKeyCount; ++i) {
     EXPECT_EQ(KeyFromGlfw(GLFW_KEY_F1 + i), KeyAfter(Key::kF1, i)) << "F" << (i + 1);
   }
 }
 
+// Requirements: US-20
 TEST(GlfwKeysTest, MapsTheNamedKeys) {
   const std::array<std::pair<int, Key>, 15> named = {{
       {GLFW_KEY_SPACE, Key::kSpace},
@@ -60,6 +64,7 @@ TEST(GlfwKeysTest, MapsTheNamedKeys) {
   }
 }
 
+// Requirements: US-20
 TEST(GlfwKeysTest, MapsNothingElse) {
   EXPECT_EQ(KeyFromGlfw(GLFW_KEY_UNKNOWN), std::nullopt);
   EXPECT_EQ(KeyFromGlfw(GLFW_KEY_KP_0), std::nullopt);
@@ -78,6 +83,7 @@ std::size_t KeyboardKeyCount() {
   return count;
 }
 
+// Requirements: US-20
 TEST(GlfwKeysTest, ReachesEveryKeyButTheMouseButtons) {
   std::set<Key> reached;
   for (int glfw_key = GLFW_KEY_UNKNOWN; glfw_key <= GLFW_KEY_LAST; ++glfw_key) {
@@ -90,6 +96,7 @@ TEST(GlfwKeysTest, ReachesEveryKeyButTheMouseButtons) {
   EXPECT_EQ(reached.size(), KeyboardKeyCount());
 }
 
+// Requirements: US-20
 TEST(GlfwKeysTest, MapsTheLeftRightAndMiddleMouseButtons) {
   EXPECT_EQ(MouseButtonFromGlfw(GLFW_MOUSE_BUTTON_LEFT), Key::kMouseLeft);
   EXPECT_EQ(MouseButtonFromGlfw(GLFW_MOUSE_BUTTON_RIGHT), Key::kMouseRight);
@@ -97,6 +104,7 @@ TEST(GlfwKeysTest, MapsTheLeftRightAndMiddleMouseButtons) {
   EXPECT_EQ(MouseButtonFromGlfw(GLFW_MOUSE_BUTTON_4), std::nullopt);
 }
 
+// Requirements: US-20
 TEST(GlfwKeysTest, TakesPressAndReleaseButNotRepeat) {
   EXPECT_EQ(KeyStateFromGlfw(GLFW_PRESS), KeyState::kPressed);
   EXPECT_EQ(KeyStateFromGlfw(GLFW_RELEASE), KeyState::kReleased);

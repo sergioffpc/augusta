@@ -166,6 +166,7 @@ Slider SliderOf(const Panel& panel, std::string_view id) { return ControlOf<Slid
 
 Button ButtonOf(const Panel& panel, std::string_view id) { return ControlOf<Button>(panel, id); }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, IsTheNetworkPanel) {
   const NetworkPanel network;
 
@@ -175,6 +176,7 @@ TEST(NetworkPanelTest, IsTheNetworkPanel) {
   EXPECT_EQ(panel.title, "Network");
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, TheConnectionGroupShowsTheReading) {
   NetworkPanel network;
 
@@ -192,6 +194,7 @@ TEST(NetworkPanelTest, TheConnectionGroupShowsTheReading) {
 
 // The Debug HUD's jitter is the peak over HudNetStats::kJitterWindow, a
 // second; the panel's line shows the same, while its plot keeps each sample's.
+// Requirements: US-29
 TEST(NetworkPanelTest, TheJitterIsThePeakOverTheLastSecondAsTheHudShowsIt) {
   NetworkPanel network;
   ConnectionStats stats = Measured();
@@ -209,6 +212,7 @@ TEST(NetworkPanelTest, TheJitterIsThePeakOverTheLastSecondAsTheHudShowsIt) {
   EXPECT_EQ(Plot(panel, "Jitter (ms)").values, (std::vector<float>{7.0F, 2.0F, 3.0F}));
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, AValueNotMeasuredYetReadsDashes) {
   NetworkPanel network;
   EXPECT_TRUE(HasText(network.BuildPanel(), "RTT: --"));
@@ -224,6 +228,7 @@ TEST(NetworkPanelTest, AValueNotMeasuredYetReadsDashes) {
   EXPECT_TRUE(HasText(panel, "RTT: 0ms"));
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, NoConnectionReadsDashes) {
   NetworkPanel network;
   network.Sample(Connected(Measured()), kStart);
@@ -237,6 +242,7 @@ TEST(NetworkPanelTest, NoConnectionReadsDashes) {
   EXPECT_TRUE(HasText(panel, "Pending: -- (peak 300B)"));
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, PeaksAreKeptUntilReset) {
   NetworkPanel network;
   ConnectionStats busy = Measured();
@@ -254,6 +260,7 @@ TEST(NetworkPanelTest, PeaksAreKeptUntilReset) {
   EXPECT_TRUE(HasText(network.BuildPanel(), "Quality local: 99.0% (worst 99.0%)"));
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, HasAResetPeaksButton) {
   const NetworkPanel network;
 
@@ -267,6 +274,7 @@ TEST(NetworkPanelTest, HasAResetPeaksButton) {
   EXPECT_EQ(std::get<Button>(*button).label, "Reset peaks");
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, AnotherPanelsEventResetsNothing) {
   NetworkPanel network;
   ConnectionStats busy = Measured();
@@ -282,6 +290,7 @@ TEST(NetworkPanelTest, AnotherPanelsEventResetsNothing) {
   EXPECT_TRUE(HasText(network.BuildPanel(), "Pending: 300B (peak 300B)"));
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, TheTrafficTableHasARowPerMessageTypeZerosIncluded) {
   NetworkPanel network;
   network.Sample(Connected(Measured()), kStart);
@@ -297,6 +306,7 @@ TEST(NetworkPanelTest, TheTrafficTableHasARowPerMessageTypeZerosIncluded) {
   }
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, TrafficRatesReadDashesUntilTwoSamples) {
   NetworkPanel network;
 
@@ -306,6 +316,7 @@ TEST(NetworkPanelTest, TrafficRatesReadDashesUntilTwoSamples) {
             (std::vector<std::string>{"commands", "--", "--", "--", "--"}));
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, TrafficRatesComeFromTheCountsOverTheLastSecond) {
   NetworkPanel network;
   network.Sample(Connected(Measured(), CommandsSent(0, 0)), kStart);
@@ -318,6 +329,7 @@ TEST(NetworkPanelTest, TrafficRatesComeFromTheCountsOverTheLastSecond) {
             (std::vector<std::string>{"commands", "0.0 (0.0)", "0B/s (0B/s)", "60.0 (90.0)", "600B/s (900B/s)"}));
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, TrafficRatesStartOverWhenTheCountsDo) {
   NetworkPanel network;
   network.Sample(Connected(Measured(), CommandsSent(90, 900)), kStart);
@@ -330,6 +342,7 @@ TEST(NetworkPanelTest, TrafficRatesStartOverWhenTheCountsDo) {
   EXPECT_EQ(RowOf(network.BuildPanel(), MessageType::kCommands).at(3), "100.0 (100.0)");
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, AuthoritativeStateArrivalsComeFromTheCountsOverTheLastSecond) {
   NetworkPanel network;
   network.Sample(Received(UpdatesReceived(0)), kStart);
@@ -341,6 +354,7 @@ TEST(NetworkPanelTest, AuthoritativeStateArrivalsComeFromTheCountsOverTheLastSec
   EXPECT_TRUE(HasText(network.BuildPanel(), "Updates: 25.0/s (peak 40.0/s), tick rate 30Hz"));
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, AuthoritativeStateSizesAreTheLastTheAverageAndTheLargestEachWithItsPeak) {
   NetworkPanel network;
   network.Sample(Received(UpdatesReceived(2, {.total_bytes = 4096, .last_bytes = 3072, .largest_bytes = 3072})),
@@ -356,6 +370,7 @@ TEST(NetworkPanelTest, AuthoritativeStateSizesAreTheLastTheAverageAndTheLargestE
   EXPECT_TRUE(HasText(panel, "Largest size: 3.0KB (peak 3.0KB)"));
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, AuthoritativeStateSizesReadDashesBeforeTheFirstUpdate) {
   NetworkPanel network;
 
@@ -367,6 +382,7 @@ TEST(NetworkPanelTest, AuthoritativeStateSizesReadDashesBeforeTheFirstUpdate) {
   EXPECT_TRUE(HasText(panel, "Largest size: --"));
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, TicksMissingAndOutOfOrderAreRatesEachWithItsPeak) {
   NetworkPanel network;
   network.Sample(Received(UpdatesReceived(0)), kStart);
@@ -383,6 +399,7 @@ TEST(NetworkPanelTest, TicksMissingAndOutOfOrderAreRatesEachWithItsPeak) {
   EXPECT_TRUE(HasText(panel, "Ticks out of order: 0.0/s (peak 2.0/s)"));
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, AReplayViewerReadsDashesForTheAuthoritativeStateGroup) {
   NetworkPanel network;
   NetworkSample replay = Received(UpdatesReceived(10, {.total_bytes = 1000, .last_bytes = 100, .ticks_missing = 1}));
@@ -403,6 +420,7 @@ TEST(NetworkPanelTest, AReplayViewerReadsDashesForTheAuthoritativeStateGroup) {
   EXPECT_TRUE(HasText(panel, "RTT: 42ms"));
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, AuthoritativeStateRatesStartOverWhenTheCountsDo) {
   NetworkPanel network;
   network.Sample(Received(UpdatesReceived(40, {.ticks_missing = 9})), kStart);
@@ -416,6 +434,7 @@ TEST(NetworkPanelTest, AuthoritativeStateRatesStartOverWhenTheCountsDo) {
   EXPECT_TRUE(HasText(network.BuildPanel(), "Ticks missing: 10.0/s (peak 10.0/s)"));
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, ATickRateNotKnownYetReadsDashes) {
   NetworkPanel network;
   NetworkSample sample = Received(UpdatesReceived(0));
@@ -427,6 +446,7 @@ TEST(NetworkPanelTest, ATickRateNotKnownYetReadsDashes) {
   EXPECT_TRUE(HasText(network.BuildPanel(), "Updates: 0.0/s (peak 0.0/s), tick rate --"));
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, AuthoritativeStatePeaksAreKeptUntilReset) {
   NetworkPanel network;
   network.Sample(Received(UpdatesReceived(0)), kStart);
@@ -449,6 +469,7 @@ TEST(NetworkPanelTest, AuthoritativeStatePeaksAreKeptUntilReset) {
   EXPECT_TRUE(HasText(panel, "Ticks out of order: 0.0/s (peak 0.0/s)"));
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, PlotsTheConnectionsNumbers) {
   NetworkPanel network;
 
@@ -462,6 +483,7 @@ TEST(NetworkPanelTest, PlotsTheConnectionsNumbers) {
   EXPECT_EQ(Plot(panel, "Out (B/s)").values, std::vector<float>{512.0F});
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, APlotKeepsTheLastHundredPointsOldestDropped) {
   NetworkPanel network;
   ConnectionStats stats = Measured();
@@ -477,6 +499,7 @@ TEST(NetworkPanelTest, APlotKeepsTheLastHundredPointsOldestDropped) {
   EXPECT_EQ(rtt.back(), 104.0F);
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, ClosingDropsThePlotsAndThePeaks) {
   NetworkPanel network;
   ConnectionStats busy = Measured();
@@ -494,6 +517,7 @@ TEST(NetworkPanelTest, ClosingDropsThePlotsAndThePeaks) {
   EXPECT_TRUE(HasText(network.BuildPanel(), "Pending: 300B (peak 300B)"));
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, ASampleIsDueEachFrameThatCrossesAHundredMillisecondBoundary) {
   NetworkPanel network;
   ASSERT_TRUE(network.SampleDue(kStart));
@@ -508,6 +532,7 @@ TEST(NetworkPanelTest, ASampleIsDueEachFrameThatCrossesAHundredMillisecondBounda
   EXPECT_TRUE(network.SampleDue(kStart + milliseconds(200)));
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, ClosingMakesTheNextSampleDue) {
   NetworkPanel network;
   network.Sample(NetworkSample{}, kStart);
@@ -518,6 +543,7 @@ TEST(NetworkPanelTest, ClosingMakesTheNextSampleDue) {
   EXPECT_TRUE(network.SampleDue(kStart + milliseconds(50)));
 }
 
+// Requirements: US-29
 TEST(NetworkPanelImpairmentTest, WantsTheRealNetworkUntilImpaired) {
   const NetworkPanel network;
 
@@ -535,6 +561,7 @@ struct ProfileCase {
 
 class NetworkPanelProfileTest : public ::testing::TestWithParam<ProfileCase> {};
 
+// Requirements: US-29
 TEST_P(NetworkPanelProfileTest, AProfileWantsTheImpairedLinkTestsConditionsBothWays) {
   NetworkPanel network;
 
@@ -572,6 +599,7 @@ INSTANTIATE_TEST_SUITE_P(
                                                  .applies_to = SimulatedTraffic::kSentAndReceived}}),
     [](const ::testing::TestParamInfo<ProfileCase>& info) { return std::string(info.param.button); });
 
+// Requirements: US-29
 TEST(NetworkPanelImpairmentTest, OffWantsTheRealNetwork) {
   NetworkPanel network;
   network.Update(Press("profile_worst_case"));
@@ -583,6 +611,7 @@ TEST(NetworkPanelImpairmentTest, OffWantsTheRealNetwork) {
   EXPECT_FALSE(network.Impaired());
 }
 
+// Requirements: US-29
 TEST(NetworkPanelImpairmentTest, EachSliderSetsItsValueBothWays) {
   NetworkPanel network;
 
@@ -603,6 +632,7 @@ TEST(NetworkPanelImpairmentTest, EachSliderSetsItsValueBothWays) {
   EXPECT_TRUE(network.Impaired());
 }
 
+// Requirements: US-29
 TEST(NetworkPanelImpairmentTest, ASliderMovedWhileAProfileIsAppliedChangesOnlyThatValue) {
   NetworkPanel network;
   network.Update(Press("profile_nfr02"));
@@ -618,6 +648,7 @@ TEST(NetworkPanelImpairmentTest, ASliderMovedWhileAProfileIsAppliedChangesOnlyTh
                                                              .applies_to = SimulatedTraffic::kSentAndReceived}));
 }
 
+// Requirements: US-29
 TEST(NetworkPanelImpairmentTest, EverySliderBackAtZeroWantsTheRealNetwork) {
   NetworkPanel network;
   network.Update(Drag("latency_ms", 30.0F));
@@ -632,6 +663,7 @@ TEST(NetworkPanelImpairmentTest, EverySliderBackAtZeroWantsTheRealNetwork) {
   EXPECT_FALSE(network.Impaired());
 }
 
+// Requirements: US-29
 TEST(NetworkPanelImpairmentTest, ASliderKeepsWithinItsRange) {
   NetworkPanel network;
 
@@ -642,6 +674,7 @@ TEST(NetworkPanelImpairmentTest, ASliderKeepsWithinItsRange) {
   EXPECT_EQ(network.WantedConditions().loss_percent, 0.0F);
 }
 
+// Requirements: US-29
 TEST(NetworkPanelImpairmentTest, TheSlidersShowTheWantedValuesWithinTheirRanges) {
   NetworkPanel network;
   network.Update(Press("profile_broadband"));
@@ -665,6 +698,7 @@ TEST(NetworkPanelImpairmentTest, TheSlidersShowTheWantedValuesWithinTheirRanges)
   EXPECT_EQ(SliderOf(panel, "reorder_delay_ms").max, 100.0F);
 }
 
+// Requirements: US-29
 TEST(NetworkPanelImpairmentTest, HasAButtonPerProfileAndOff) {
   const NetworkPanel network;
 
@@ -676,6 +710,7 @@ TEST(NetworkPanelImpairmentTest, HasAButtonPerProfileAndOff) {
   EXPECT_EQ(ButtonOf(panel, "impairment_off").label, "Off");
 }
 
+// Requirements: US-29
 TEST(NetworkPanelImpairmentTest, TheGroupShowsTheMeasuredRtt) {
   NetworkPanel network;
   EXPECT_TRUE(HasText(network.BuildPanel(), "Measured RTT: --"));
@@ -685,6 +720,7 @@ TEST(NetworkPanelImpairmentTest, TheGroupShowsTheMeasuredRtt) {
   EXPECT_TRUE(HasText(network.BuildPanel(), "Measured RTT: 42ms"));
 }
 
+// Requirements: US-29
 TEST(NetworkPanelImpairmentTest, AnotherPanelsEventImpairsNothing) {
   NetworkPanel network;
 
@@ -696,6 +732,7 @@ TEST(NetworkPanelImpairmentTest, AnotherPanelsEventImpairsNothing) {
   EXPECT_TRUE(network.Impaired());
 }
 
+// Requirements: US-29
 TEST(NetworkPanelImpairmentTest, OutlivesClosingThePanel) {
   NetworkPanel network;
   network.Update(Press("profile_nfr02"));
@@ -707,6 +744,7 @@ TEST(NetworkPanelImpairmentTest, OutlivesClosingThePanel) {
   EXPECT_EQ(SliderOf(network.BuildPanel(), "latency_ms").value, 50.0F);
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, CorrectionRatesComeFromTheCountsOverTheLastSecond) {
   NetworkPanel network;
   network.Sample(Corrected({.count = 0, .rifle_count = 0}), kStart);
@@ -720,6 +758,7 @@ TEST(NetworkPanelTest, CorrectionRatesComeFromTheCountsOverTheLastSecond) {
   EXPECT_TRUE(HasText(panel, "Rifle corrections/s: 3.0 (peak 4.0)"));
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, TheCorrectionSizeIsTheLastWithTheLargestSinceTheReset) {
   NetworkPanel network;
   network.Sample(Corrected({.count = 1, .last_m = 0.4F, .largest_m = 0.4F}), kStart);
@@ -734,6 +773,7 @@ TEST(NetworkPanelTest, TheCorrectionSizeIsTheLastWithTheLargestSinceTheReset) {
   EXPECT_TRUE(HasText(network.BuildPanel(), "Correction: 0.10m (largest 0.50m)"));
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, NoPredictionStateReadsDashesForTheCorrections) {
   NetworkPanel network;
   network.Sample(Connected(Measured()), kStart);
@@ -746,6 +786,7 @@ TEST(NetworkPanelTest, NoPredictionStateReadsDashesForTheCorrections) {
   EXPECT_TRUE(Plot(panel, "Correction (m)").values.empty());
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, CorrectionSizeIsPlottedAsTheLargestOfEachSampleOrZero) {
   NetworkPanel network;
   network.Sample(Corrected({.count = 0}), kStart);
@@ -759,6 +800,7 @@ TEST(NetworkPanelTest, CorrectionSizeIsPlottedAsTheLargestOfEachSampleOrZero) {
   EXPECT_EQ(Plot(network.BuildPanel(), "Correction (m)").values, (std::vector<float>{0.0F, 0.3F, 0.0F, 0.5F, 0.2F}));
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, TheCorrectionPlotKeepsTheLastHundredPointsOldestDropped) {
   NetworkPanel network;
   for (std::uint32_t i = 0; i < 105; ++i) {
@@ -774,6 +816,7 @@ TEST(NetworkPanelTest, TheCorrectionPlotKeepsTheLastHundredPointsOldestDropped) 
   EXPECT_FLOAT_EQ(sizes.back(), 0.105F);
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, TheSlackIsTheSmallestOverTheLastSecondBesideTheInterpolationDelay) {
   NetworkPanel network;
   network.Sample({}, kStart);
@@ -789,6 +832,7 @@ TEST(NetworkPanelTest, TheSlackIsTheSmallestOverTheLastSecondBesideTheInterpolat
   EXPECT_TRUE(HasText(network.BuildPanel(), "Slack: 40.0ms (worst 10.0ms), delay 100ms"));
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, DryFramesAreTheFramesPerSecondWhoseSlackWasZeroOrBelow) {
   NetworkPanel network;
   network.Sample({}, kStart);
@@ -800,6 +844,7 @@ TEST(NetworkPanelTest, DryFramesAreTheFramesPerSecondWhoseSlackWasZeroOrBelow) {
   EXPECT_TRUE(HasText(network.BuildPanel(), "Dry frames/s: 4.0 (peak 4.0)"));
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, NoSlackReadsDashesForTheInterpolation) {
   NetworkPanel network;
   network.Sample({}, kStart);
@@ -815,6 +860,7 @@ TEST(NetworkPanelTest, NoSlackReadsDashesForTheInterpolation) {
   EXPECT_TRUE(HasText(network.BuildPanel(), "Dry frames/s: 0.0 (peak 0.0)"));
 }
 
+// Requirements: US-29
 TEST(NetworkPanelTest, ClosingDropsTheCorrectionsAndTheFramesNotSampledYet) {
   NetworkPanel network;
   network.Sample(Corrected({.count = 1, .last_m = 0.3F, .largest_m = 0.3F}), kStart);
@@ -831,6 +877,7 @@ TEST(NetworkPanelTest, ClosingDropsTheCorrectionsAndTheFramesNotSampledYet) {
   EXPECT_TRUE(HasText(panel, "Dry frames/s: 0.0 (peak 0.0)"));
 }
 
+// Requirements: US-29
 TEST(ConnectionReadingsTest, TakesTheNewestReadingWithThePeakJitterSinceTheLastTake) {
   ConnectionReadings readings;
   ConnectionStats stats = Measured();
@@ -850,6 +897,7 @@ TEST(ConnectionReadingsTest, TakesTheNewestReadingWithThePeakJitterSinceTheLastT
   EXPECT_EQ(reading.traffic, CommandsSent(3, 30));
 }
 
+// Requirements: US-29
 TEST(ConnectionReadingsTest, ATakeStartsTheJitterPeakOver) {
   ConnectionReadings readings;
   ConnectionStats stats = Measured();
@@ -863,6 +911,7 @@ TEST(ConnectionReadingsTest, ATakeStartsTheJitterPeakOver) {
   EXPECT_EQ(readings.Take().stats->max_jitter_us, 2000);
 }
 
+// Requirements: US-29
 TEST(ConnectionReadingsTest, NoConnectionForgetsTheJitterPeak) {
   ConnectionReadings readings;
   ConnectionStats stats = Measured();

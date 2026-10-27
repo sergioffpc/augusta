@@ -707,6 +707,7 @@ class ReplayViewerTest : public ReplayServerTest {
 
 // The replay server logs a Replay's start with the Run ID its viewer sent
 // (ADR-0038), as a live server logs an admission.
+// Requirements: NFR-19
 TEST_F(ReplayViewerTest, AReplaysStartIsLoggedWithTheRunIdItsViewerSent) {
   const std::string name = CaptureAKill(directory_.Path());
   if (name.empty()) {
@@ -843,6 +844,7 @@ TEST_F(ReplayViewerTest, AReplayListQueryGetsTheServersList) {
   EXPECT_FALSE(query.GetFailure().has_value());
 }
 
+// Requirements: NFR-18
 TEST(ReplayListQueryTest, AServerThatIsNotThereIsUnreachable) {
   Endpoint gone;
   {
@@ -971,6 +973,7 @@ TEST(LiveServerReplayTest, ALiveServerRefusesReplayRequestsAsNoReplayServer) {
   EXPECT_EQ(viewer.Refusal(), protocol::JoinRefusalWire::kNotAReplayServer);
 }
 
+// Requirements: NFR-18
 TEST(ReplayServerConfigTest, AReplayServerRefusesACapturesDirectoryThatIsNone) {
   try {
     ReplayServer(ReplayServerConfig{.tick_rate_hz = kTickRate,
