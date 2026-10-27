@@ -159,8 +159,9 @@ help:
 	$(info $()  docs             the documentation site, MkDocs and Doxygen, into build/docs-site)
 	$(info )
 	$(info Test:)
-	$(info $()  test             build, then compile the tests and run ctest, or TAGS="property ..." the tests with any of those labels alone)
-	$(info $()  labels           configure, then list the labels TAGS picks from (the GoogleTest ones once test has built them))
+	$(info $()  test             build, then compile the tests and run ctest, or TAGS="property ..." the tests with any of those labels alone:)
+	$(info $()                   TAGS=<area> ... (animation, ...) compiles that area's test executables alone)
+	$(info $()  labels           configure, then list the labels TAGS picks from, the areas among them (the GoogleTest ones once test has built them))
 	$(info $()  check            configure, then the repository's structural checks (checks/) and their pytest)
 	$(info $()  coverage         test under the linux-coverage preset, then its report into build/x64-linux-coverage/report)
 	$(info $()  profile          build augustac, then run it under nsys, which records the Profiling panel's capture into $(PROFILE_DIR))
@@ -198,12 +199,21 @@ build: configure
 space := $() $()
 TAGS_REGEX = "^($(subst $(space),|,$(strip $(TAGS))))$$"
 
-# The tests are not part of build (ADR-0008): augusta_tests builds them.
+# The test areas this build's executables carry, as tests/CMakeLists.txt
+# writes them when it configures: read when test runs, after its configure.
+TEST_AREAS = $(file <$(BUILD_DIR)/tests/test_areas.txt)
+# augusta_tests_<area> for each of TAGS when every tag is an area, so only
+# those areas' executables build; augusta_tests, every test, otherwise.
+TEST_TARGETS = $(if $(and $(strip $(TAGS)),$(if $(filter-out $(TEST_AREAS),$(TAGS)),,all)),$(addprefix augusta_tests_,$(TAGS)),augusta_tests)
+
+# The tests are not part of build (ADR-0008): augusta_tests builds them, or
+# TAGS=<area> that area's alone.
 test: build
-	$(RUN) cmake --build --preset $(PRESET) --target augusta_tests
+	$(RUN) cmake --build --preset $(PRESET) --target $(TEST_TARGETS)
 	$(RUN) ctest --preset $(PRESET) --parallel $(JOBS) $(if $(strip $(TAGS)),--label-regex $(TAGS_REGEX) --no-tests=error)
 
-# The labels ctest knows in this build, which TAGS picks from.
+# The labels ctest knows in this build, which TAGS picks from: the test areas
+# (animation, ...) and check, property and netcode.
 # gtest_discover_tests labels its tests when they are built, so those show once
 # test has run.
 labels: configure

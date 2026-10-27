@@ -426,7 +426,7 @@ target_link_libraries(
   PRIVATE augusta_animation augusta_assets ozz::animation_offline GTest::gtest GTest::gtest_main
 )
 # Links PhysX through augusta_gameplay, so the same first-launch cost applies as above.
-gtest_discover_tests(augusta_clips_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_clips_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS animation)
 
 # A stance's blend space and the stride length a Stride advances by, on Clips
 # the test authors in memory (clips_fixture.h).
@@ -436,7 +436,7 @@ target_link_libraries(
   PRIVATE augusta_animation ozz::animation_offline GTest::gtest GTest::gtest_main
 )
 # Links PhysX through augusta_gameplay, so the same first-launch cost applies as above.
-gtest_discover_tests(augusta_locomotion_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_locomotion_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS animation)
 
 # A Hitbox pose evaluated from Clips the test authors in memory
 # (clips_fixture.h), whose Joints move.
@@ -446,7 +446,7 @@ target_link_libraries(
   PRIVATE augusta_animation ozz::animation_offline GTest::gtest GTest::gtest_main
 )
 # Links PhysX through augusta_gameplay, so the same first-launch cost applies as above.
-gtest_discover_tests(augusta_pose_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_pose_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS animation)
 
 # What the server loads at startup, on the golden server pack and on copies of
 # it the test re-signs without an entry.
@@ -1319,3 +1319,36 @@ foreach(directory IN LISTS test_directories)
     endif()
   endforeach()
 endforeach()
+
+# Each area's executables build alone through augusta_tests_<area>, made from
+# the area labels their gtest_discover_tests calls carry (cmake/TestAreas.cmake),
+# so labelling an executable is all that adding it to an area takes. The areas
+# go to test_areas.txt, from which `make test TAGS=<area>` picks the targets.
+include(${CMAKE_SOURCE_DIR}/cmake/TestAreas.cmake)
+augusta_test_area_vocabulary(${CMAKE_SOURCE_DIR} area_vocabulary)
+set(test_areas "")
+foreach(directory IN LISTS test_directories)
+  augusta_read_test_labels(${directory}/CMakeLists.txt discovered)
+  foreach(target IN LISTS discovered_TARGETS)
+    # A call in an if() branch this build doesn't take names no executable.
+    if(NOT TARGET ${target})
+      continue()
+    endif()
+    get_target_property(target_type ${target} TYPE)
+    if(NOT target_type STREQUAL "EXECUTABLE")
+      continue()
+    endif()
+    foreach(label IN LISTS discovered_LABELS_${target})
+      if(NOT label IN_LIST area_vocabulary)
+        continue()
+      endif()
+      if(NOT TARGET augusta_tests_${label})
+        add_custom_target(augusta_tests_${label})
+        list(APPEND test_areas ${label})
+      endif()
+      add_dependencies(augusta_tests_${label} ${target})
+    endforeach()
+  endforeach()
+endforeach()
+list(JOIN test_areas " " test_areas)
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/test_areas.txt "${test_areas}")
