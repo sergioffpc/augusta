@@ -1182,29 +1182,32 @@ class LoopbackMatch : public ::testing::Test {
   // One tick of the whole match: every client predicts and sends its command
   // of commands (one per client, in the order they connected), the server ticks
   // once every command a connected client in the match sent has reached it (or
-  // that client has since heard its match end), as AwaitArrival waits, and the
-  // states come back. Returns the server's, or nothing once the test has failed
-  // fatally. Waiting for the commands rather than for a fixed time keeps a slow
-  // run (the sanitizers build, a loaded parallel ctest) from ticking the server
-  // before a command arrives, which would hold that player's last movement
-  // (ADR-0038) and shift what the test expects onto another tick.
+  // that client has since heard its match end or lost its connection, either of
+  // which means it never will), as AwaitArrival waits, and the states come
+  // back. Returns the server's, or nothing once the test has failed fatally.
+  // Waiting for the commands rather than for a fixed time keeps a slow run (the
+  // sanitizers build, a loaded parallel ctest) from ticking the server before a
+  // command arrives, which would hold that player's last movement (ADR-0038)
+  // and shift what the test expects onto another tick.
   augusta::simulation::TickResult StepEach(const std::vector<Command>& commands) {
     if (HasFatalFailure()) {
       return {};
     }
+    const auto playing = [](const Session& session) {
+      return session.GetServerView()->GetPhase() == Phase::kMatch &&
+             session.GetConnectionState() == ConnectionState::kConnected;
+    };
     std::vector<std::size_t> sending;
     for (std::size_t i = 0; i < sessions_.size(); ++i) {
       const auto& session = sessions_[i];
-      if (session->GetServerView()->GetPhase() == Phase::kMatch &&
-          session->GetConnectionState() == ConnectionState::kConnected) {
+      if (playing(*session)) {
         sending.push_back(i);
       }
       states_[session.get()] = session->Tick(commands.at(i), kFixedTick);
     }
     const auto missing = [&]() -> std::optional<std::string> {
       for (const std::size_t i : sending) {
-        const auto view = sessions_[i]->GetServerView();
-        if (host_.QueuedCommands(view->accepted->session) == 0 && view->GetPhase() == Phase::kMatch) {
+        if (host_.QueuedCommands(sessions_[i]->GetServerView()->accepted->session) == 0 && playing(*sessions_[i])) {
           return NeverArrived(i, *sessions_[i]);
         }
       }
@@ -2787,11 +2790,11 @@ TEST_F(FullMatchRobustnessTest, AfterAClientDisconnectsItsPlayerIsAbsentFromOthe
   EXPECT_EQ(watcher.GetServerView()->authoritative->bodies.size(), augusta::limits::kMaxPlayers - 1);
 }
 
-// Requirements: NFR-06
+// Requirements: NFR-06, NFR-02
 TEST_F(RobustnessTest, AClientThatDropsWithoutClosingKeepsTheServerTickingAndIsRemovedOnceItTimesOut) {
   // Set before the connection exists: the timeout only reaches new connections.
   SimulateNetworkConditions({.timeout_ms = 500});
-  Join();
+  const Session& dropped = Join();
   ASSERT_TRUE(StartMatch());
   Run(kSettleTicks);
 
@@ -2811,6 +2814,16 @@ TEST_F(RobustnessTest, AClientThatDropsWithoutClosingKeepsTheServerTickingAndIsR
 
   EXPECT_EQ(players, 0U);
   EXPECT_GT(ticks_run, 0U);
+  // The client is told its connection is lost: by its own transport's timeout,
+  // or, when the loss ends before that fires, by the server, which has
+  // forgotten it, once its packets get through again. The step in between
+  // waits for no command of it once it knows.
+  const auto told_by = std::chrono::steady_clock::now() + kPollDeadline;
+  while (!dropped.GetFailure().has_value() && !HasFatalFailure() && std::chrono::steady_clock::now() < told_by) {
+    Step(Forward());
+  }
+  ASSERT_TRUE(dropped.GetFailure().has_value());
+  EXPECT_EQ(dropped.GetFailure()->kind, FailureKind::kConnectionLost);
   // Its match ended with it, and the next starts with whoever comes.
   Session& next = Join();
   ASSERT_TRUE(DriveIntoMatch(host_, {&next}));
