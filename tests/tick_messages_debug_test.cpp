@@ -153,6 +153,7 @@ std::vector<PeerId> ShotJudgementPeersOf(const std::vector<Sent>& sent) {
 
 // Every subscribed peer's own rounds alone: body 1's goes to peer 1 though
 // all three asked, after the tick's Deaths.
+// Requirements: US-30
 TEST(TickMessagesDebugTest, AShotJudgementGoesToItsShootersPeerAloneAfterTheTicksDeaths) {
   const std::vector<Sent> sent =
       SendAll(ATickWithAShotJudgement(),
@@ -166,6 +167,7 @@ TEST(TickMessagesDebugTest, AShotJudgementGoesToItsShootersPeerAloneAfterTheTick
   EXPECT_EQ(ShotJudgementsOf(sent).size(), 1U);
 }
 
+// Requirements: US-30
 TEST(TickMessagesDebugTest, AShotJudgementIsNotSentWhileTheServerDoesNotServeThem) {
   const std::vector<Sent> served =
       SendAll(ATickWithAShotJudgement(), ThreePlayers(Subscribed(true, {kPeer1}, DebugSubscribe::kShotJudgements)));
@@ -178,6 +180,7 @@ TEST(TickMessagesDebugTest, AShotJudgementIsNotSentWhileTheServerDoesNotServeThe
 }
 
 // Bit 0 cleared, whatever else is set: the stream is not asked for.
+// Requirements: US-30
 TEST(TickMessagesDebugTest, AShotJudgementIsNotSentToAShooterThatDidNotAskForThem) {
   const std::vector<Sent> asked =
       SendAll(ATickWithAShotJudgement(), ThreePlayers(Subscribed(true, {kPeer1}, DebugSubscribe::kShotJudgements)));
@@ -194,6 +197,7 @@ TEST(TickMessagesDebugTest, AShotJudgementIsNotSentToAShooterThatDidNotAskForThe
 }
 
 // Its shooter has left the match: no peer is told of its round.
+// Requirements: US-30
 TEST(TickMessagesDebugTest, AShotJudgementWhoseShooterHasNoPeerIsNotSent) {
   TickResult result = ATickWithAShotJudgement();
   result.shot_judgements.front().shooter = EntityId{4};
@@ -208,6 +212,7 @@ TEST(TickMessagesDebugTest, AShotJudgementWhoseShooterHasNoPeerIsNotSent) {
 
 // Like every message of the tick, one the protocol cannot carry, its Body part
 // corrupted, sends none of the tick's.
+// Requirements: US-30
 TEST(TickMessagesDebugTest, AShotJudgementTheProtocolCannotCarryIsAnInvariantFailureWithNothingSent) {
   TickResult result = ATickWithAShotJudgement();
   result.shot_judgements.front().part = static_cast<augusta::body_part::BodyPart>(99);
@@ -227,6 +232,7 @@ TEST(TickMessagesDebugTest, AShotJudgementTheProtocolCannotCarryIsAnInvariantFai
 
 // How far into a round's flight an entry is travels in 16 bits (ADR-0038): a
 // round never flies that long, but the most is held there.
+// Requirements: US-30
 TEST(TickMessagesDebugTest, AShotJudgementsEntryLaterThanItsFieldCarriesIsHeldToTheMost) {
   TickResult result = ATickWithAShotJudgement();
   result.shot_judgements.front().entries.back().ticks_after_shot = 70000;
@@ -241,6 +247,7 @@ TEST(TickMessagesDebugTest, AShotJudgementsEntryLaterThanItsFieldCarriesIsHeldTo
   EXPECT_EQ(std::get<augusta::protocol::ShotJudgementWire>(*decoded).entries.back().ticks_after_shot, 65535);
 }
 
+// Requirements: US-30
 TEST(DebugSubscriptionsTest, AStreamGoesToAPeerOnlyWhileTheServerServesItAndThePeerAskedForIt) {
   const DebugSubscriptions served = Subscribed(true, {kPeer1}, DebugSubscribe::kShotJudgements);
   const DebugSubscriptions unserved = Subscribed(false, {kPeer1}, DebugSubscribe::kShotJudgements);

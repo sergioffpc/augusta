@@ -85,6 +85,7 @@ class ReplayServerDebugSubscribeTest : public ::testing::Test {
 
 // To confirm in review: the spec says only that a replay server serves
 // neither of a Development build's messages.
+// Requirements: US-30
 TEST_F(ReplayServerDebugSubscribeTest, ADebugSubscribeIsIgnoredAndNeverMisbehaviour) {
   augusta::link::RawClient client;
   client.Connect({.address = server_->ListenEndpoint().address});

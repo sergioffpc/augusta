@@ -54,6 +54,7 @@ bool Within(const Vec3& point, const Vec3& min, const Vec3& max) {
          point.x <= max.x + kSlack && point.y <= max.y + kSlack && point.z <= max.z + kSlack;
 }
 
+// Requirements: US-30
 TEST(PhysicsVisualizationTest, AMeshInsideTheCullingBoxIsDrawnWithinItsBounds) {
   World world{StaminaConfig{}};
   ASSERT_TRUE(world.AddCollisionMesh(Floor(0.0F, -2.0F, 2.0F, -2.0F, 2.0F), kMap).has_value());
@@ -69,6 +70,7 @@ TEST(PhysicsVisualizationTest, AMeshInsideTheCullingBoxIsDrawnWithinItsBounds) {
   }
 }
 
+// Requirements: US-30
 TEST(PhysicsVisualizationTest, AMeshOutsideTheCullingBoxIsNotDrawn) {
   World world{StaminaConfig{}};
   ASSERT_TRUE(world.AddCollisionMesh(Floor(0.0F, 50.0F, 54.0F, -2.0F, 2.0F), kMap).has_value());
@@ -83,6 +85,7 @@ TEST(PhysicsVisualizationTest, AMeshOutsideTheCullingBoxIsNotDrawn) {
   EXPECT_TRUE(lines->empty());
 }
 
+// Requirements: US-30
 TEST(PhysicsVisualizationTest, ABodysCapsuleIsDrawnAroundItsPosition) {
   World world{StaminaConfig{}};
   ASSERT_TRUE(world.AddCollisionMesh(Floor(0.0F, -20.0F, 20.0F, -20.0F, 20.0F), kMap).has_value());
@@ -110,6 +113,7 @@ TEST(PhysicsVisualizationTest, ABodysCapsuleIsDrawnAroundItsPosition) {
   }
 }
 
+// Requirements: US-30
 TEST(PhysicsVisualizationTest, ControllerVolumesAreDrawnWhenAsked) {
   World world{StaminaConfig{}};
   const auto body = world.CreateBody(Vec3(0.0F, 0.0F, 0.0F));
@@ -126,6 +130,7 @@ TEST(PhysicsVisualizationTest, ControllerVolumesAreDrawnWhenAsked) {
   EXPECT_FALSE(lines->empty());
 }
 
+// Requirements: US-30
 TEST(PhysicsVisualizationTest, OffSteppingIsRefused) {
   World world{StaminaConfig{}};
   ASSERT_TRUE(world.AddCollisionMesh(Floor(0.0F, -2.0F, 2.0F, -2.0F, 2.0F), kMap).has_value());
@@ -140,6 +145,7 @@ TEST(PhysicsVisualizationTest, OffSteppingIsRefused) {
 
 // The settings are set every tick but applied to PhysX only when they change:
 // the same again keeps what is drawn, and a moved box draws what it now holds.
+// Requirements: US-30
 TEST(PhysicsVisualizationTest, EachTicksSettingsAreDrawnAsLastSet) {
   World world{StaminaConfig{}};
   ASSERT_TRUE(world.AddCollisionMesh(Floor(0.0F, 50.0F, 54.0F, -2.0F, 2.0F), kMap).has_value());
@@ -161,6 +167,7 @@ TEST(PhysicsVisualizationTest, EachTicksSettingsAreDrawnAsLastSet) {
   EXPECT_FALSE(world.StepVisualization(kFixedTick).value_or(std::vector<VisualizationLine>{}).empty());
 }
 
+// Requirements: US-30
 TEST(PhysicsVisualizationTest, TurnedOffAgainSteppingIsRefused) {
   World world{StaminaConfig{}};
   ASSERT_TRUE(world.AddCollisionMesh(Floor(0.0F, -2.0F, 2.0F, -2.0F, 2.0F), kMap).has_value());
@@ -197,6 +204,7 @@ std::vector<std::pair<BodyState, augusta::physics::FallState>> Walk(bool visuali
   return steps;
 }
 
+// Requirements: US-30
 TEST(PhysicsVisualizationTest, SteppingTheVisualizationChangesNoBodysLaterStep) {
   const auto without = Walk(false);
   const auto with = Walk(true);
@@ -224,6 +232,7 @@ void Discard(std::expected<Recording, RecordingError> recording) {
 // PhysX's OmniPVD build (ports/physx) linked and called: a Debug build with
 // OmniPVD's runtime beside the executable records, any other refuses it as
 // unavailable; neither crashes, and either way a World runs after it.
+// Requirements: US-30
 TEST(PhysicsRecordingTest, StartsOrIsUnavailable) {
   std::expected<Recording, RecordingError> recording = augusta::physics::StartRecording("augusta_physics_tests");
 
@@ -241,6 +250,7 @@ TEST(PhysicsRecordingTest, StartsOrIsUnavailable) {
   Discard(std::move(recording));
 }
 
+// Requirements: US-30
 TEST(PhysicsRecordingTest, IsRefusedWhileAWorldExists) {
   // The control: with no World, it is not refused for one.
   std::expected<Recording, RecordingError> alone = augusta::physics::StartRecording("augusta_physics_tests");

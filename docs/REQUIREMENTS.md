@@ -38,6 +38,7 @@ version only when it is cut (ENGINEERING.md, Milestones).
     - [US-25: Play in VR](#us-25-play-in-vr)
     - [US-26: Play on a Team](#us-26-play-on-a-team)
     - [US-27: Talk to my Team](#us-27-talk-to-my-team)
+    - [US-30: Physics and Shot Judgement Overlays](#us-30-physics-and-shot-judgement-overlays)
 - [Non-Functional Requirements](#non-functional-requirements)
     - [NFR-01: Server Tick Rate (Performance)](#nfr-01-server-tick-rate-performance)
     - [NFR-02: Network Latency Tolerance](#nfr-02-network-latency-tolerance)
@@ -554,6 +555,48 @@ Then only my dead teammates hear me, and I still hear my Team's radio
 ```
 
 Speech is never captured, and there is none in the Lobby (ADR-0069).
+
+### US-30: Physics and Shot Judgement Overlays
+
+Version: v7
+
+As a developer, I want a Development client to draw the bodies, Hitboxes and
+rounds the simulation works with over the game, so that I can see where the
+server put a body or a Hitbox and why a round hit or missed.
+
+```text
+Given a Development client with a physics overlay on, by its debug.physics key or
+      from the Physics panel
+When it draws a frame
+Then it draws each body's capsule, the server's beside my predicted one; the Hitboxes
+     where the server posed them, coloured by body part; and PhysX's collision within
+     the chosen radius of the camera; each hidden behind the world until its through
+     walls toggle is on, and none changing how any body moves
+
+Given a Development client with the Shot judgement overlay on
+When one of my rounds is judged
+Then it draws the round's flight from its Shot to the point struck, the struck Hitbox
+     filled, and the Hitboxes the server judged beside those I saw when I fired, for
+     5 seconds and at most 8 rounds; a round still unjudged after 2 seconds is said so
+     in the Physics panel
+
+Given a Development server with debug.shot_judgements on
+When clients ask for Shot judgements
+Then only the shooter receives its rounds' Shot judgements, and only while it asks;
+     asking is never refused or held against a client, and a stream the server does
+     not serve is logged once per client
+
+Given a Development client or server with debug.physics_recording on
+When it starts
+Then it records its physics to an OmniPVD file, or warns that it cannot and runs on
+
+Given a Shipping build
+When its config sets any debug.* key
+Then it refuses to start, naming the debug section as an unknown key
+```
+
+The overlays and the Physics panel are values the client builds each frame
+(ADR-0075); a Shipping build compiles every debug tool out (ADR-0074).
 
 ---
 

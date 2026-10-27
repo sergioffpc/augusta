@@ -120,6 +120,7 @@ class ShotJudgementsOnTest : public DebugSubscribeTest {
 // However many a client sends and whenever it sends them, Debug subscribes are
 // never refused and never count toward a misbehaving disconnect, so the order
 // in which a developer opens an overlay and joins does not matter.
+// Requirements: US-30
 TEST_F(DebugSubscribeTest, DebugSubscribesBeforeJoiningNeverDisconnectNorKeepAPeerFromJoining) {
   RawClient early(host_.ListenEndpoint(), RawClient::Mode::kScripted);
   ASSERT_TRUE(early.Connect(host_));
@@ -134,6 +135,7 @@ TEST_F(DebugSubscribeTest, DebugSubscribesBeforeJoiningNeverDisconnectNorKeepAPe
   EXPECT_EQ(host_.Metrics().misbehaviour.Total(), 0U);
 }
 
+// Requirements: US-30
 TEST_F(DebugSubscribeTest, DebugSubscribesInTheLobbyInAMatchAndBetweenMatchesNeverDisconnect) {
   Session& client = Join();
   Join();
@@ -154,6 +156,7 @@ TEST_F(DebugSubscribeTest, DebugSubscribesInTheLobbyInAMatchAndBetweenMatchesNev
 // A bit the server does not serve is ignored with one INFO per peer and bit,
 // the first time that peer sets it: Shot judgements' while its key is off, and
 // a bit no stream uses.
+// Requirements: US-30
 TEST_F(DebugSubscribeTest, EachBitTheServerDoesNotServeIsLoggedOncePerPeer) {
   augusta::logging::Init();
   augusta::logging::SetLogLevel(augusta::logging::Severity::kInfo);
@@ -176,6 +179,7 @@ TEST_F(DebugSubscribeTest, EachBitTheServerDoesNotServeIsLoggedOncePerPeer) {
 
 // With `debug.shot_judgements` on, bit 0 is served: only a bit no stream uses
 // is logged.
+// Requirements: US-30
 TEST_F(ShotJudgementsOnTest, AServedBitIsNotLoggedAndAnUnusedOneIs) {
   augusta::logging::Init();
   augusta::logging::SetLogLevel(augusta::logging::Severity::kInfo);
@@ -191,6 +195,7 @@ TEST_F(ShotJudgementsOnTest, AServedBitIsNotLoggedAndAnUnusedOneIs) {
 
 // A peer's flags last from its connection to its disconnect: one that comes
 // back is a new peer, told once more.
+// Requirements: US-30
 TEST_F(DebugSubscribeTest, APeerThatReconnectsIsLoggedAgain) {
   augusta::logging::Init();
   augusta::logging::SetLogLevel(augusta::logging::Severity::kInfo);
@@ -207,6 +212,7 @@ TEST_F(DebugSubscribeTest, APeerThatReconnectsIsLoggedAgain) {
   EXPECT_EQ(CountOccurrences(log, " stream=shot_judgements"), 2U) << log;
 }
 
+// Requirements: US-30
 TEST(DebugSubscribeStartupTest, AServerWithShotJudgementsOnSaysSoAtStartup) {
   augusta::logging::Init();
   augusta::logging::SetLogLevel(augusta::logging::Severity::kInfo);
