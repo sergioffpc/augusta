@@ -28,6 +28,7 @@ std::vector<std::string> IdsOf(const std::vector<debug::IndexEntry>& entries) {
 const DebugIndexStart kAllOn{.hud = true, .profiling_panel = true, .network_panel = true, .physics_panel = true};
 
 // A player who dies spectates in the same mode, so its Debug index stays.
+// Requirements: US-29
 TEST(DebugIndexEntriesTest, APlayerAndACapturedPlayerListThePhysicsPanel) {
   for (const ClientMode mode : {ClientMode::kPlayer, ClientMode::kCapturedPlayer}) {
     EXPECT_EQ(IdsOf(DebugIndexEntries(kAllOn, mode)),
@@ -36,11 +37,13 @@ TEST(DebugIndexEntriesTest, APlayerAndACapturedPlayerListThePhysicsPanel) {
   }
 }
 
+// Requirements: US-29
 TEST(DebugIndexEntriesTest, AReplayViewerListsNoPhysicsPanel) {
   EXPECT_EQ(IdsOf(DebugIndexEntries(kAllOn, ClientMode::kReplayViewer)),
             (std::vector<std::string>{"hud", std::string(kProfilingPanelId), std::string(kNetworkPanelId)}));
 }
 
+// Requirements: US-29
 TEST(DebugIndexEntriesTest, EachEntryStartsAsConfigured) {
   const std::vector<debug::IndexEntry> entries = DebugIndexEntries(
       {.hud = false, .profiling_panel = false, .network_panel = true, .physics_panel = true}, ClientMode::kPlayer);
@@ -54,6 +57,7 @@ TEST(DebugIndexEntriesTest, EachEntryStartsAsConfigured) {
   EXPECT_EQ(entries[3].name, "Physics");
 }
 
+// Requirements: US-29
 TEST(ModeOfTest, AReplayIsWatchedByAReplayViewerAReenactmentPlayedByACapturedPlayer) {
   EXPECT_EQ(ModeOf(/*watches_replay=*/false, /*reenacts=*/false), ClientMode::kPlayer);
   EXPECT_EQ(ModeOf(/*watches_replay=*/false, /*reenacts=*/true), ClientMode::kCapturedPlayer);
@@ -63,6 +67,7 @@ TEST(ModeOfTest, AReplayIsWatchedByAReplayViewerAReenactmentPlayedByACapturedPla
 const config::ClientPhysicsDebugConfig kEveryOverlayOn{
     .panel = true, .collision = true, .server_bodies = true, .hitboxes = true, .shot_judgements = true};
 
+// Requirements: US-29
 TEST(PhysicsOverlaysStartOfTest, APlayerAndACapturedPlayerStartTheOverlaysAsConfigured) {
   const config::ClientPhysicsDebugConfig some{.collision = true, .hitboxes = true};
   for (const ClientMode mode : {ClientMode::kPlayer, ClientMode::kCapturedPlayer}) {
@@ -75,6 +80,7 @@ TEST(PhysicsOverlaysStartOfTest, APlayerAndACapturedPlayerStartTheOverlaysAsConf
 }
 
 // Its Debug index lists no Physics panel to switch them.
+// Requirements: US-29
 TEST(PhysicsOverlaysStartOfTest, AReplayViewerStartsNone) {
   // The control: a player starts them all.
   ASSERT_NE(PhysicsOverlaysStartOf(kEveryOverlayOn, ClientMode::kPlayer), presentation::PhysicsOverlaysStart{});
