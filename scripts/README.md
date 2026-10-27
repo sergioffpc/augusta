@@ -31,6 +31,12 @@ it; this index says which one to look at.
   `// Requirements:` lines and the CI jobs' `# Requirements:` lines in
   `.github/workflows/` against `docs/REQUIREMENTS.md` (`--check`), or writes the
   matrix of each requirement's tests and results, and the CI jobs that check it.
+  `--check` refuses, each as `path:line: message`:
+    - a test that names no requirement, unless it is disabled (`DISABLED_`);
+    - a requirement met in a release (`vN`) that no test or CI job names, at its
+      heading in `docs/REQUIREMENTS.md`; a planned one is exempt;
+    - a marker naming an ID the document does not have;
+    - a marker directly above no test or job.
 - [`test-report.sh`](test-report.sh) joins the nightly's JUnit results,
   requirements matrix and coverage into the test report the documentation site
   publishes.
