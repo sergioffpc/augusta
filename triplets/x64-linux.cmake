@@ -40,20 +40,3 @@ endif()
 if(PORT STREQUAL "mimalloc")
   list(APPEND VCPKG_CMAKE_CONFIGURE_OPTIONS -Dmi_has_libatomic=OFF)
 endif()
-
-# jemalloc's configure finds strerror_r's return type by linking C programs
-# with -Werror, which the LLVM toolchain's -static-libstdc++ fails: clang
-# reports it unused when it links C. That warning alone is turned off.
-if(PORT STREQUAL "jemalloc")
-  set(VCPKG_LINKER_FLAGS -Wno-unused-command-line-argument)
-endif()
-
-# oneTBB builds tbbmalloc_proxy, which replaces malloc with its scalable
-# allocator, as a shared library alone: the allocator benchmarks'
-# (tests/CMakeLists.txt), which no shipped binary links. Its version scripts
-# name symbols some builds leave undefined, which lld refuses since LLVM 17
-# unless told to allow them.
-if(PORT STREQUAL "tbb")
-  set(VCPKG_LIBRARY_LINKAGE dynamic)
-  set(VCPKG_LINKER_FLAGS -Wl,--undefined-version)
-endif()

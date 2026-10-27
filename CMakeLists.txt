@@ -82,18 +82,15 @@ endif()
 # The allocator benchmarks (tests/CMakeLists.txt): off unless a configure asks
 # for them, as `make test TAGS="allocator"` does, and then for that configure
 # alone. The request leaves the cache as soon as it is read, so the next
-# configure, a plain `make test`'s or CMake's own re-run, installs none of the
-# candidates (the manifest's allocators feature) and builds none of their
-# executables. Never under a sanitizer's own allocator. Before project(), as
-# AUGUSTA_TOOLS is.
+# configure, a plain `make test`'s or CMake's own re-run, builds none of their
+# executables. mimalloc, the one allocator they measure against the platform's,
+# is a base dependency (ADR-0078), so they install nothing of their own. Never
+# under a sanitizer's own allocator.
 set(AUGUSTA_ALLOCATOR_BENCHMARKS "${AUGUSTA_ALLOCATOR_BENCHMARKS}")
 unset(AUGUSTA_ALLOCATOR_BENCHMARKS CACHE)
 if(AUGUSTA_ALLOCATOR_BENCHMARKS AND AUGUSTA_SANITIZER_ALLOCATOR)
   message(STATUS "Allocator benchmarks: not built under a sanitizer, which brings its own allocator")
   set(AUGUSTA_ALLOCATOR_BENCHMARKS OFF)
-endif()
-if(AUGUSTA_ALLOCATOR_BENCHMARKS)
-  list(APPEND VCPKG_MANIFEST_FEATURES allocators)
 endif()
 
 project(augusta LANGUAGES CXX)
