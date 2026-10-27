@@ -31,6 +31,7 @@ std::expected<CommandLine, ConfigError> Parse(std::vector<const char*> args) {
   return ParseCommandLine(static_cast<int>(args.size()), args.data(), "augustac", "augustac.yaml", "1.2.3");
 }
 
+// Requirements: US-28
 TEST(ParseCommandLineTest, WithoutArgumentsRunsWithTheDefaultFileNextToTheExecutable) {
   const auto command_line = Parse({});
 
@@ -41,6 +42,7 @@ TEST(ParseCommandLineTest, WithoutArgumentsRunsWithTheDefaultFileNextToTheExecut
       << command_line->config_file.string();
 }
 
+// Requirements: US-28
 TEST(ParseCommandLineTest, ConfigArgumentNamesTheFileAsGiven) {
   const auto command_line = Parse({"--config", "other/dir/my.yaml"});
 
@@ -49,6 +51,7 @@ TEST(ParseCommandLineTest, ConfigArgumentNamesTheFileAsGiven) {
   EXPECT_EQ(command_line->config_file, std::filesystem::path("other") / "dir" / "my.yaml");
 }
 
+// Requirements: US-28
 TEST(ParseCommandLineTest, HelpAsksForTheUsage) {
   const auto command_line = Parse({"--help"});
 
@@ -59,6 +62,7 @@ TEST(ParseCommandLineTest, HelpAsksForTheUsage) {
   EXPECT_TRUE(Contains(command_line->message, "--version")) << command_line->message;
 }
 
+// Requirements: US-28
 TEST(ParseCommandLineTest, VersionAsksForTheVersion) {
   const auto command_line = Parse({"--version"});
 
@@ -67,6 +71,7 @@ TEST(ParseCommandLineTest, VersionAsksForTheVersion) {
   EXPECT_EQ(command_line->message, "augustac 1.2.3");
 }
 
+// Requirements: US-28
 TEST(ParseCommandLineTest, HelpWinsOverConfigAndVersion) {
   // As GNU programs do: --help answers whatever else is asked, even a --config
   // that would be rejected on its own.
@@ -80,6 +85,7 @@ TEST(ParseCommandLineTest, HelpWinsOverConfigAndVersion) {
   }
 }
 
+// Requirements: US-28
 TEST(ParseCommandLineTest, VersionWinsOverConfig) {
   const auto command_line = Parse({"--config", "my.yaml", "--version"});
 
@@ -87,6 +93,7 @@ TEST(ParseCommandLineTest, VersionWinsOverConfig) {
   EXPECT_EQ(command_line->action, CommandLineAction::kShowVersion);
 }
 
+// Requirements: US-28
 TEST(ParseCommandLineTest, RejectsConfigWithoutAFile) {
   const auto command_line = Parse({"--config"});
 
@@ -96,14 +103,17 @@ TEST(ParseCommandLineTest, RejectsConfigWithoutAFile) {
       << command_line.error().subject;
 }
 
+// Requirements: US-28
 TEST(ParseCommandLineTest, RejectsAnEmptyFileName) { ASSERT_FALSE(Parse({"--config", ""}).has_value()); }
 
+// Requirements: US-28
 TEST(ParseCommandLineTest, RejectsAPositionalArgument) {
   // The old `augustac <pack> <key>` invocation must fail, not be half-honored.
   ASSERT_FALSE(Parse({"level.apak", "k.pub"}).has_value());
   ASSERT_FALSE(Parse({"my.yaml"}).has_value());
 }
 
+// Requirements: US-28
 TEST(ParseCommandLineTest, RejectsAnUnknownOptionAndExtraArguments) {
   ASSERT_FALSE(Parse({"--conf", "my.yaml"}).has_value());
   ASSERT_FALSE(Parse({"--config", "a.yaml", "b.yaml"}).has_value());
@@ -123,6 +133,7 @@ std::expected<CommandLine, ConfigError> ParseWithOptions(std::vector<const char*
   return ParseCommandLine(static_cast<int>(args.size()), args.data(), "augustac", "augustac.yaml", "1.2.3", kOptions);
 }
 
+// Requirements: US-28
 TEST(ParseCommandLineTest, AnOptionTheExecutableTakesIsReadWithItsValue) {
   const auto watching = ParseWithOptions({"--config", "my.yaml", "--watch", "a.acap"});
   const auto listing = ParseWithOptions({"--listen"});
@@ -138,12 +149,14 @@ TEST(ParseCommandLineTest, AnOptionTheExecutableTakesIsReadWithItsValue) {
   EXPECT_TRUE(neither->options.empty());
 }
 
+// Requirements: US-28
 TEST(ParseCommandLineTest, AnOptionWithoutItsValueOrOneTheExecutableLacksIsRejected) {
   EXPECT_FALSE(ParseWithOptions({"--watch"}).has_value());
   EXPECT_FALSE(ParseWithOptions({"--listen", "extra"}).has_value());
   EXPECT_FALSE(Parse({"--watch", "a.acap"}).has_value());
 }
 
+// Requirements: US-28
 TEST(ParseCommandLineTest, UsageNamesEachOptionTheExecutableTakes) {
   const auto command_line = ParseWithOptions({"--help"});
 
@@ -154,6 +167,7 @@ TEST(ParseCommandLineTest, UsageNamesEachOptionTheExecutableTakes) {
   EXPECT_TRUE(Contains(command_line->message, "watch a thing")) << command_line->message;
 }
 
+// Requirements: US-28
 TEST(ParseCommandLineTest, UsageNamesTheProgramAndTheDefaultFile) {
   const char* const args[] = {"augustad", "nope"};
   const auto command_line = ParseCommandLine(2, args, "augustad", "augustad.yaml", "1.2.3");
@@ -178,6 +192,7 @@ std::expected<CommandLine, ConfigError> ParseWithOwnOptions(std::vector<const ch
                           kOwnOptions);
 }
 
+// Requirements: US-28
 TEST(ParseCommandLineTest, AnExecutablesOwnOptionsAreReadByNameBesideTheConfig) {
   const auto command_line = ParseWithOwnOptions({"--config", "my.yaml", "--reenact", "a.acap", "--player", "2"});
 
@@ -188,6 +203,7 @@ TEST(ParseCommandLineTest, AnExecutablesOwnOptionsAreReadByNameBesideTheConfig) 
             (std::map<std::string, std::string, std::less<>>{{"player", "2"}, {"reenact", "a.acap"}}));
 }
 
+// Requirements: US-28
 TEST(ParseCommandLineTest, AnOwnOptionLeftOutIsNotRead) {
   const auto command_line = ParseWithOwnOptions({});
 
@@ -195,6 +211,7 @@ TEST(ParseCommandLineTest, AnOwnOptionLeftOutIsNotRead) {
   EXPECT_TRUE(command_line->options.empty());
 }
 
+// Requirements: US-28
 TEST(ParseCommandLineTest, TheUsageListsAnExecutablesOwnOptions) {
   const auto command_line = ParseWithOwnOptions({"--help"});
 
@@ -204,11 +221,13 @@ TEST(ParseCommandLineTest, TheUsageListsAnExecutablesOwnOptions) {
   EXPECT_TRUE(Contains(command_line->message, "the capture to reenact")) << command_line->message;
 }
 
+// Requirements: US-28
 TEST(ParseCommandLineTest, AnotherExecutablesOptionIsUnknown) {
   ASSERT_FALSE(Parse({"--reenact", "a.acap"}).has_value());
   ASSERT_FALSE(ParseWithOwnOptions({"--reenact"}).has_value());
 }
 
+// Requirements: US-28
 TEST(DescribeConfigErrorTest, NamesTheKeyAndTheFile) {
   const ConfigError error{
       .code = ConfigErrorCode::kMissingKey, .subject = "pack", .reason = {}, .file = "dir/augustac.yaml"};
@@ -219,6 +238,7 @@ TEST(DescribeConfigErrorTest, NamesTheKeyAndTheFile) {
   EXPECT_TRUE(Contains(message, std::filesystem::path("dir/augustac.yaml").string())) << message;
 }
 
+// Requirements: US-28
 TEST(DescribeConfigErrorTest, SaysWhatANumberMustBe) {
   const auto message = DescribeConfigError(
       {.code = ConfigErrorCode::kInvalidNumber, .subject = "input.mouse_sensitivity", .reason = {}, .file = {}});
@@ -226,6 +246,7 @@ TEST(DescribeConfigErrorTest, SaysWhatANumberMustBe) {
   EXPECT_EQ(message, "'input.mouse_sensitivity' must be a finite number above zero");
 }
 
+// Requirements: US-28
 TEST(DescribeConfigErrorTest, SaysWhatALogLevelMustBe) {
   const auto message = DescribeConfigError(
       {.code = ConfigErrorCode::kInvalidLogLevel, .subject = "log_level", .reason = {}, .file = {}});
@@ -233,6 +254,7 @@ TEST(DescribeConfigErrorTest, SaysWhatALogLevelMustBe) {
   EXPECT_EQ(message, "'log_level' must be one of trace, debug, info, warn, error, critical");
 }
 
+// Requirements: US-28
 TEST(DescribeConfigErrorTest, OmitsTheFileWhenThereIsNone) {
   const auto message =
       DescribeConfigError({.code = ConfigErrorCode::kUnknownKey, .subject = "typo", .reason = {}, .file = {}});
@@ -240,6 +262,7 @@ TEST(DescribeConfigErrorTest, OmitsTheFileWhenThereIsNone) {
   EXPECT_EQ(message, "unknown key 'typo'");
 }
 
+// Requirements: US-28
 TEST(DescribeConfigErrorTest, GivesTheReasonAConfigRejectedAnEntryFor) {
   const auto message = DescribeConfigError(
       {.code = ConfigErrorCode::kInvalidEntry, .subject = "keys.jump", .reason = "names no control", .file = {}});
@@ -247,6 +270,7 @@ TEST(DescribeConfigErrorTest, GivesTheReasonAConfigRejectedAnEntryFor) {
   EXPECT_EQ(message, "'keys.jump' names no control");
 }
 
+// Requirements: US-28
 TEST(DescribeConfigErrorTest, TakesAPhraseInPlaceOfTheCodesOwn) {
   const ConfigError error{.code = ConfigErrorCode::kInvalidNumber, .subject = "n", .reason = {}, .file = "dir/a.yaml"};
 

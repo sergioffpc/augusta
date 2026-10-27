@@ -56,6 +56,7 @@ TEST(ParseServerConfigTest, ReadsWhetherReenactmentsAreTaken) {
   EXPECT_FALSE(off->reenactments);
 }
 
+// Requirements: US-21, US-28
 TEST(ParseServerConfigTest, RejectsReenactmentsThatAreNeitherTrueNorFalse) {
   const auto config = ParseServerConfig(ServerConfigWith("debug:\n  reenactments: yes\n"), kFileDir);
 
@@ -66,6 +67,7 @@ TEST(ParseServerConfigTest, RejectsReenactmentsThatAreNeitherTrueNorFalse) {
 }
 
 // A replay server runs no Match, so it has no player to reenact.
+// Requirements: US-21, US-28
 TEST(ParseServerConfigTest, RejectsReenactmentsOnAReplayServer) {
   const auto config =
       ParseServerConfig(ServerConfigWith("debug:\n  reenactments: true\nreplay:\n  captures: captures\n"), kFileDir);
