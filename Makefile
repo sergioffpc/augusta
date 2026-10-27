@@ -139,7 +139,7 @@ TIDY_CHECKS := $(addprefix tidy/,$(TIDY_SOURCES))
 INCLUDE_CHECKS := $(addprefix include-cleaner/,$(INCLUDE_SOURCES))
 
 .DEFAULT_GOAL := all
-.PHONY: all help configure build test labels check coverage tools install uninstall clean distclean format format-check tidy tidy-prepare lint prepush docs toolchain toolchain-check
+.PHONY: all help configure build test labels check coverage profile tools install uninstall clean distclean format format-check tidy tidy-prepare lint prepush docs toolchain toolchain-check
 
 all: build
 
@@ -163,6 +163,7 @@ help:
 	$(info $()  labels           configure, then list the labels TAGS picks from (the GoogleTest ones once test has built them))
 	$(info $()  check            configure, then the repository's structural checks (checks/) and their pytest)
 	$(info $()  coverage         test under the linux-coverage preset, then its report into build/x64-linux-coverage/report)
+	$(info $()  profile          build augustac, then run it under nsys, which records the Profiling panel's capture into $(PROFILE_DIR))
 	$(info )
 	$(info Format and lint, on every tracked file, or FILES alone as the hooks run them:)
 	$(info $()  format           every formatter (C++, YAML, Lua, TOML, Python, shell, CMake, Markdown, protobuf))
@@ -222,6 +223,31 @@ coverage:
 	cmake -E rm -rf build/x64-linux-coverage/profiles
 	$(MAKE) --no-print-directory test PRESET=linux-coverage
 	bash scripts/coverage-report.sh
+
+# A Development client under Nsight Systems, which records alone the window of
+# frames its Profiling Debug panel marks, with the flags docs/agents/tooling.md
+# explains. nsys stops the client once the window closes and writes
+# augustac-<pid>.nsys-rep into PROFILE_DIR (not profiles/, which coverage
+# empties). Nsight Systems profiles no macOS process. NSYS names the nsys to
+# run: on Windows, which leaves it off PATH, the newest Nsight Systems under
+# Program Files by default (ProgramW6432: a 32-bit make's ProgramFiles is
+# Program Files (x86)). Recursive, so only profile looks for it. %p reaches nsys,
+# which puts the PID in its place: cmd.exe expands only a %name% pair, and the
+# line holds no other %.
+PROFILE_DIR ?= $(BUILD_DIR)/nsys
+# $(1) quoted, or an error naming NSYS when it is empty.
+nsys_found = $(if $(1),"$(1)",$(error Nsight Systems not found under Program Files: install it, or set NSYS to its nsys))
+ifeq ($(OS),Windows_NT)
+NSYS ?= $(call nsys_found,$(shell powershell -NoProfile -Command "Get-Item (Join-Path $$env:ProgramW6432 'NVIDIA Corporation\Nsight Systems *\target-windows-x64\nsys.exe') -ErrorAction SilentlyContinue | Sort-Object { [version]($$_.Directory.Parent.Name -replace 'Nsight Systems ') } | Select-Object -Last 1 -ExpandProperty FullName"))
+else
+NSYS ?= nsys
+endif
+profile:
+	$(if $(filter Darwin,$(HOST_OS)),$(error Nsight Systems profiles no macOS process: run make profile on Windows or Linux),@:)
+	$(if $(filter %shipping,$(PRESET)),$(error A Shipping client has no Profiling panel (ADR-0074): pick a Development preset, e.g. PRESET=$(subst -shipping,,$(PRESET))),@:)
+	$(MAKE) --no-print-directory build PRESET=$(PRESET) TARGETS=augustac
+	cmake -E make_directory $(PROFILE_DIR)
+	$(NSYS) profile --capture-range=nvtx --nvtx-capture=augusta.capture --env-var=NSYS_NVTX_PROFILER_REGISTER_ONLY=0 "--output=$(abspath $(PROFILE_DIR))/augustac-%p" "$(BUILD_DIR)/src/client/augustac" --config config/augustac.yaml
 
 # The tools alone (tools/, augusta_tools), as the asset cooker's bootstrap
 # builds them (tools/pack/scripts/bootstrap.sh): the preset's build without the
