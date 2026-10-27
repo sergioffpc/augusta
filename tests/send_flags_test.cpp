@@ -13,14 +13,17 @@ using augusta::networking::Reliability;
 using augusta::networking::SendFlags;
 using augusta::networking::SendVerdict;
 
+// Requirements: NFR-02
 TEST(SendFlagsTest, UnreliableMessagesSkipNagle) {
   EXPECT_NE(SendFlags(Reliability::kUnreliable) & k_nSteamNetworkingSend_NoNagle, 0);
 }
 
+// Requirements: NFR-02
 TEST(SendFlagsTest, UnreliableMessagesAreSentUnreliably) {
   EXPECT_EQ(SendFlags(Reliability::kUnreliable) & k_nSteamNetworkingSend_Reliable, 0);
 }
 
+// Requirements: NFR-02
 TEST(SendFlagsTest, ReliableMessagesAreSentReliably) {
   EXPECT_NE(SendFlags(Reliability::kReliable) & k_nSteamNetworkingSend_Reliable, 0);
 }

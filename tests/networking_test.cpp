@@ -261,6 +261,7 @@ class NetworkingEnvironment : public ::testing::Environment {
 
 class NetworkingTest : public ::testing::Test {};
 
+// Requirements: US-01
 TEST_F(NetworkingTest, AServerBoundToPortZeroReportsThePortItGot) {
   Server server(Endpoint{.address = kLoopbackAnyPort});
 
@@ -275,6 +276,7 @@ TEST_F(NetworkingTest, AServerBoundToPortZeroReportsThePortItGot) {
 // bound to port 0 must never land on a port a wildcard socket already holds -
 // held here by the hundreds, so a server picking ports of its own at random
 // would all but surely land on one of them.
+// Requirements: US-01
 TEST_F(NetworkingTest, AServerBoundToPortZeroNeverTakesAPortAWildcardSocketHolds) {
   constexpr std::size_t kHeldPorts = 512;
   constexpr int kServers = 128;
@@ -289,6 +291,7 @@ TEST_F(NetworkingTest, AServerBoundToPortZeroNeverTakesAPortAWildcardSocketHolds
   }
 }
 
+// Requirements: US-01
 TEST_F(NetworkingTest, RoundTripsAMessageBothWays) {
   Server server(Endpoint{.address = kLoopbackAnyPort});
   Client client;
@@ -400,6 +403,7 @@ std::vector<std::string> NumberedMessages(int count) {
   return messages;
 }
 
+// Requirements: NFR-02
 TEST_F(ConnectedNetworkingTest, ReliableMessagesArriveOnceAndInOrderDespiteLoss) {
   SimulateNetworkConditions({.loss_percent = 30.0F});
 
@@ -413,6 +417,7 @@ TEST_F(ConnectedNetworkingTest, ReliableMessagesArriveOnceAndInOrderDespiteLoss)
   EXPECT_TRUE(DrainServerFor(kDrainWindow).empty());
 }
 
+// Requirements: NFR-02
 TEST_F(ConnectedNetworkingTest, UnreliableMessagesCanBeLostButNeverDuplicated) {
   SimulateNetworkConditions({.loss_percent = 50.0F});
 
@@ -441,6 +446,7 @@ TEST_F(ConnectedNetworkingTest, UnreliableMessagesCanBeLostButNeverDuplicated) {
   EXPECT_TRUE(distinct.contains("marker"));
 }
 
+// Requirements: NFR-02
 TEST_F(ConnectedNetworkingTest, ServerSendAndBroadcastHonorReliabilityToo) {
   SimulateNetworkConditions({.loss_percent = 30.0F});
 
@@ -592,6 +598,7 @@ TEST_F(ReorderingNetworkingTest, ConditionsOnBothSidesReorderWhatTheProcessRecei
   EXPECT_FALSE(std::ranges::is_sorted(positions));
 }
 
+// Requirements: NFR-02
 TEST_F(ReorderingNetworkingTest, ReliableMessagesArriveOnceAndInOrderDespiteReordering) {
   SimulateNetworkConditions({.reorder_percent = 50.0F, .reorder_delay_ms = 50});
 
@@ -605,6 +612,7 @@ TEST_F(ReorderingNetworkingTest, ReliableMessagesArriveOnceAndInOrderDespiteReor
   EXPECT_EQ(ReceiveOnServer(sent.size()), sent);
 }
 
+// Requirements: NFR-02
 TEST_F(ConnectedNetworkingTest, AClientThatClosesItsConnectionIsReportedAsClosedByPeer) {
   client_->Disconnect();
 
@@ -616,6 +624,7 @@ TEST_F(ConnectedNetworkingTest, AClientThatClosesItsConnectionIsReportedAsClosed
 // What the server sent reliably before closing is the client's to receive
 // even once it has seen the close: a reply that explains it, or the last of a
 // Replay, is not lost with the connection.
+// Requirements: NFR-02
 TEST_F(ConnectedNetworkingTest, WhatArrivedBeforeTheServerClosedIsStillReceivedAfterTheClose) {
   const std::vector<std::string> sent = NumberedMessages(kBurst);
   for (const std::string& message : sent) {
@@ -634,6 +643,7 @@ TEST_F(ConnectedNetworkingTest, WhatArrivedBeforeTheServerClosedIsStillReceivedA
   EXPECT_TRUE(client_->ReceiveMessages().value().empty());
 }
 
+// Requirements: NFR-07
 TEST_F(ConnectedNetworkingTest, TheServerReportsTheStatsOfEachConnectedPeer) {
   std::vector<PeerStats> stats;
   ASSERT_TRUE(PollUntil([&] { PollBoth(); },
@@ -647,6 +657,7 @@ TEST_F(ConnectedNetworkingTest, TheServerReportsTheStatsOfEachConnectedPeer) {
   EXPECT_GE(stats.front().stats.ping_ms, 0);
 }
 
+// Requirements: NFR-07
 TEST_F(ConnectedNetworkingTest, TheServerReportsNoStatsForAPeerThatLeft) {
   client_->Disconnect();
   ASSERT_TRUE(WaitForServerToLosePeer().has_value());
@@ -654,6 +665,7 @@ TEST_F(ConnectedNetworkingTest, TheServerReportsNoStatsForAPeerThatLeft) {
   EXPECT_TRUE(server_->GetStats().empty());
 }
 
+// Requirements: NFR-02
 TEST_F(NetworkingTest, APeerThatGoesSilentIsReportedAsALostConnectionOnceTheTimeoutPasses) {
   constexpr int kTimeoutMs = 500;
   // Set before the connection exists: the timeout only reaches new connections.
@@ -697,6 +709,7 @@ TEST_F(NetworkingTest, APeerThatGoesSilentIsReportedAsALostConnectionOnceTheTime
   EXPECT_TRUE(client_disconnected);
 }
 
+// Requirements: NFR-02
 TEST_F(NetworkingTest, TheDefaultTimeoutIsBackOnceTheConditionsAreReset) {
   SimulateNetworkConditions({.timeout_ms = 200});
   SimulateNetworkConditions({});

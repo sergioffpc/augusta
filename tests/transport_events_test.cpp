@@ -50,6 +50,7 @@ std::vector<PeerEventType> Types(const std::vector<PeerEvent>& events) {
   return types;
 }
 
+// Requirements: NFR-02
 TEST(TransportEventQueueTest, HandsOutWhatWasPublishedInOrderOnce) {
   TransportEventQueue queue;
   queue.Publish(Event(kPeer, TransportState::kConnecting));
@@ -63,6 +64,7 @@ TEST(TransportEventQueueTest, HandsOutWhatWasPublishedInOrderOnce) {
   EXPECT_TRUE(queue.Drain().empty());
 }
 
+// Requirements: NFR-02
 TEST(TransportEventQueueTest, TakesEventsPublishedFromAnotherThread) {
   constexpr std::uint32_t kEvents = 100;
   TransportEventQueue queue;
@@ -76,6 +78,7 @@ TEST(TransportEventQueueTest, TakesEventsPublishedFromAnotherThread) {
   EXPECT_EQ(queue.Drain().size(), kEvents);
 }
 
+// Requirements: NFR-02
 TEST(PeerTableTest, AConnectingPeerIsRequestedUntilAnswered) {
   PeerTable peers;
   EXPECT_EQ(peers.Apply(Event(kPeer, TransportState::kConnecting)), TransportCall::kNone);
@@ -87,6 +90,7 @@ TEST(PeerTableTest, AConnectingPeerIsRequestedUntilAnswered) {
   EXPECT_TRUE(peers.TakeEvents().empty());
 }
 
+// Requirements: NFR-02
 TEST(PeerTableTest, AConnectedPeerJoinsThePollGroupAndIsReportedOnce) {
   PeerTable peers;
   Feed(peers, kPeer, TransportState::kConnecting);
@@ -102,6 +106,7 @@ TEST(PeerTableTest, AConnectedPeerJoinsThePollGroupAndIsReportedOnce) {
   EXPECT_TRUE(peers.TakeEvents().empty());
 }
 
+// Requirements: NFR-02
 TEST(PeerTableTest, APeerThatClosesIsForgottenClosedAndReportedAsClosedByPeer) {
   PeerTable peers;
   Feed(peers, kPeer, TransportState::kConnected);
@@ -117,6 +122,7 @@ TEST(PeerTableTest, APeerThatClosesIsForgottenClosedAndReportedAsClosedByPeer) {
   EXPECT_TRUE(peers.Connections().empty());
 }
 
+// Requirements: NFR-02
 TEST(PeerTableTest, APeerTheTransportGaveUpOnIsReportedAsLost) {
   PeerTable peers;
   Feed(peers, kPeer, TransportState::kConnected);
@@ -129,6 +135,7 @@ TEST(PeerTableTest, APeerTheTransportGaveUpOnIsReportedAsLost) {
   EXPECT_EQ(events[0].reason, DisconnectReason::kConnectionLost);
 }
 
+// Requirements: NFR-02
 TEST(PeerTableTest, APendingPeerThatDropsIsNoLongerRequested) {
   PeerTable peers;
   Feed(peers, kPeer, TransportState::kConnecting);
@@ -139,6 +146,7 @@ TEST(PeerTableTest, APendingPeerThatDropsIsNoLongerRequested) {
   EXPECT_TRUE(peers.Connections().empty());
 }
 
+// Requirements: NFR-02
 TEST(PeerTableTest, AStateItDoesNotActOnChangesNothing) {
   PeerTable peers;
   Feed(peers, kPeer, TransportState::kConnected);
@@ -150,6 +158,7 @@ TEST(PeerTableTest, AStateItDoesNotActOnChangesNothing) {
   EXPECT_TRUE(peers.IsConnected(kPeer));
 }
 
+// Requirements: NFR-02
 TEST(PeerTableTest, ForgettingAPeerStopsItBeingConnected) {
   PeerTable peers;
   Feed(peers, kPeer, TransportState::kConnected);
@@ -163,6 +172,7 @@ TEST(PeerTableTest, ForgettingAPeerStopsItBeingConnected) {
 
 // A connection this side ends because the transport cannot keep it is a peer
 // outcome: reported like any departure, so its Session ends and nothing else.
+// Requirements: NFR-02, NFR-18
 TEST(PeerTableTest, APeerTheTransportCannotKeepIsClosedAndReportedAsLost) {
   PeerTable peers;
   Feed(peers, kPeer, TransportState::kConnected);
@@ -180,6 +190,7 @@ TEST(PeerTableTest, APeerTheTransportCannotKeepIsClosedAndReportedAsLost) {
   EXPECT_TRUE(peers.IsConnected(kOther));
 }
 
+// Requirements: NFR-02
 TEST(PeerTableTest, LosingAPeerAlreadyGoneChangesNothing) {
   PeerTable peers;
 
@@ -188,6 +199,7 @@ TEST(PeerTableTest, LosingAPeerAlreadyGoneChangesNothing) {
   EXPECT_TRUE(peers.TakeEvents().empty());
 }
 
+// Requirements: NFR-02
 TEST(PeerTableTest, ConnectionsHoldsBothPendingAndConnectedPeers) {
   PeerTable peers;
   Feed(peers, kPeer, TransportState::kConnected);
@@ -199,6 +211,7 @@ TEST(PeerTableTest, ConnectionsHoldsBothPendingAndConnectedPeers) {
   EXPECT_EQ(connections, (std::vector<std::uint32_t>{kPeer, kOther}));
 }
 
+// Requirements: NFR-02
 TEST(ApplyToClientTest, TheCurrentConnectionConnectingAndConnectedMoveTheState) {
   EXPECT_EQ(ApplyToClient(kPeer, ConnectionState::kConnecting, Event(kPeer, TransportState::kConnecting)).state,
             ConnectionState::kConnecting);
@@ -210,6 +223,7 @@ TEST(ApplyToClientTest, TheCurrentConnectionConnectingAndConnectedMoveTheState) 
   EXPECT_FALSE(connected.ended);
 }
 
+// Requirements: NFR-02
 TEST(ApplyToClientTest, TheCurrentConnectionEndingDisconnectsAndClosesIt) {
   for (const TransportState state : {TransportState::kClosedByPeer, TransportState::kProblemDetectedLocally}) {
     const auto ended = ApplyToClient(kPeer, ConnectionState::kConnected, Event(kPeer, state));
@@ -220,6 +234,7 @@ TEST(ApplyToClientTest, TheCurrentConnectionEndingDisconnectsAndClosesIt) {
   }
 }
 
+// Requirements: NFR-02
 TEST(ApplyToClientTest, AnEarlierConnectionEndingIsClosedWithoutTouchingTheState) {
   const auto stale = ApplyToClient(kPeer, ConnectionState::kConnected, Event(kOther, TransportState::kClosedByPeer));
 
@@ -228,6 +243,7 @@ TEST(ApplyToClientTest, AnEarlierConnectionEndingIsClosedWithoutTouchingTheState
   EXPECT_FALSE(stale.ended);
 }
 
+// Requirements: NFR-02
 TEST(ApplyToClientTest, AnEarlierConnectionConnectingChangesNothing) {
   const auto stale = ApplyToClient(kPeer, ConnectionState::kConnecting, Event(kOther, TransportState::kConnected));
 
