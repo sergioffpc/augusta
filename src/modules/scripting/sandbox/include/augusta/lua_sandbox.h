@@ -31,12 +31,20 @@ inline constexpr std::size_t kMemoryLimit = std::size_t{32} << 20U;
 /// limit's stop and a refused allocation are errors, and a script that could
 /// catch them would run on for ever. setmetatable refuses, with an error, a
 /// metatable that holds __gc: Lua runs a finalizer with debug hooks off and at
-/// a GC step of its own choosing, so neither limit would bound it.
+/// a GC step of its own choosing, so neither limit would bound it. table.move
+/// and the pattern functions (string.find, match, gmatch and gsub) are taken
+/// out: each does its work within one instruction, which the instruction limit
+/// cannot bound. sol2's default message handler is taken out of the globals, so
+/// a protected call made before the script runs has none, and one made after
+/// it names none explicitly: Lua runs a message handler with debug hooks off,
+/// so one the script put there would never be stopped.
 sol::state MakeSandbox();
 
 /// Lets lua run instructions more Lua instructions from now, then stops what it
-/// runs with an error saying the instruction limit was exceeded. Arming it again
-/// starts the count over, so it is armed before each run it bounds.
+/// runs with an error saying the instruction limit was exceeded. Once stopped,
+/// every instruction and every call fails at once, the __close handlers the
+/// stop unwinds through among them, until the limit is armed again. Arming it
+/// again starts the count over, so it is armed before each run it bounds.
 void LimitInstructions(sol::state& lua, int instructions);
 
 /// Holds or lifts kMemoryLimit on a state MakeSandbox made while the scope
