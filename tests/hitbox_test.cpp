@@ -50,6 +50,7 @@ void ExpectNear(const Vec3& actual, const Vec3& expected) {
   EXPECT_NEAR(actual.z, expected.z, kTolerance);
 }
 
+// Requirements: US-11
 TEST(HitboxTest, AStandingPoseAtTheOriginFacingAheadLeavesTheHitboxesAsAuthored) {
   const std::vector<PlacedHitbox> placed =
       Place(Character(), Pose{.position = Vec3(0.0F), .yaw = 0.0F, .stance = Stance::kStanding});
@@ -62,6 +63,7 @@ TEST(HitboxTest, AStandingPoseAtTheOriginFacingAheadLeavesTheHitboxesAsAuthored)
   EXPECT_EQ(placed[1].triangles.size(), 2U);
 }
 
+// Requirements: US-11
 TEST(HitboxTest, EachHitboxKeepsItsBodyPart) {
   const std::vector<PlacedHitbox> placed =
       Place(Character(), Pose{.position = Vec3(3.0F, 0.0F, 4.0F), .yaw = 1.0F, .stance = Stance::kProne});
@@ -71,6 +73,7 @@ TEST(HitboxTest, EachHitboxKeepsItsBodyPart) {
   EXPECT_EQ(placed[1].part, BodyPart::kTorso);
 }
 
+// Requirements: US-11
 TEST(HitboxTest, APoseMovesTheHitboxesToItsPosition) {
   const std::vector<PlacedHitbox> placed =
       Place(Character(), Pose{.position = Vec3(10.0F, 2.0F, 5.0F), .yaw = 0.0F, .stance = Stance::kStanding});
@@ -78,6 +81,7 @@ TEST(HitboxTest, APoseMovesTheHitboxesToItsPosition) {
   ExpectNear(placed[0].triangles[0].a, Vec3(10.0F, 3.8F, 4.5F));
 }
 
+// Requirements: US-11
 TEST(HitboxTest, APoseTurnsTheHitboxesByItsYawAboutTheVertical) {
   // A quarter turn left: what faced -Z faces -X.
   const std::vector<PlacedHitbox> placed = Place(
@@ -90,6 +94,7 @@ TEST(HitboxTest, APoseTurnsTheHitboxesByItsYawAboutTheVertical) {
 
 // How low a body is in a stance is its stance's Clips' (ADR-0066): the root
 // is not scaled by it (ADR-0040).
+// Requirements: US-11
 TEST(HitboxTest, TheStanceDoesNotScaleTheRoot) {
   for (const Stance stance : {Stance::kStanding, Stance::kCrouching, Stance::kProne}) {
     SCOPED_TRACE(static_cast<int>(stance));
@@ -102,18 +107,21 @@ TEST(HitboxTest, TheStanceDoesNotScaleTheRoot) {
   }
 }
 
+// Requirements: US-11
 TEST(HitboxTest, ACharacterWithoutHitboxesPlacesNone) { EXPECT_TRUE(Place({}, Pose{}).empty()); }
 
 HitboxData PackTriangle(augusta::assets::BodyPart part) {
   return {.part = part, .mesh = {.points = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}, .indices = {0, 1, 2}}};
 }
 
+// Requirements: US-11
 TEST(HitboxTest, EveryBodyPartOfThePackIsTheSameBodyPart) {
   EXPECT_EQ(FromPack(augusta::assets::BodyPart::kHead), BodyPart::kHead);
   EXPECT_EQ(FromPack(augusta::assets::BodyPart::kTorso), BodyPart::kTorso);
   EXPECT_EQ(FromPack(augusta::assets::BodyPart::kLimb), BodyPart::kLimb);
 }
 
+// Requirements: US-11
 TEST(HitboxTest, APackHitboxIsTheTrianglesItsMeshIndexes) {
   const auto hitbox = FromPack(PackTriangle(augusta::assets::BodyPart::kHead));
 
@@ -125,6 +133,7 @@ TEST(HitboxTest, APackHitboxIsTheTrianglesItsMeshIndexes) {
   EXPECT_EQ(hitbox->triangles[0].c, Vec3(0.0F, 1.0F, 0.0F));
 }
 
+// Requirements: NFR-12
 TEST(HitboxTest, APackHitboxThatIsNotAWholeTriangleListIsRefusedSayingWhy) {
   HitboxData hitbox = PackTriangle(augusta::assets::BodyPart::kTorso);
   ASSERT_TRUE(FromPack(hitbox).has_value());

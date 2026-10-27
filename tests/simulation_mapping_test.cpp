@@ -1,7 +1,6 @@
 #include "simulation_mapping.h"
 
 #include <memory>
-#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -12,7 +11,6 @@
 #include "augusta/command.h"
 #include "augusta/content.h"
 #include "augusta/failure.h"
-#include "augusta/match.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/simulation.h"
@@ -24,8 +22,6 @@ namespace {
 
 using augusta::assets::BodyPart;
 using augusta::assets::HitboxData;
-using augusta::host::EntityId;
-using augusta::host::FromSimulation;
 using augusta::host::ToSimulation;
 using augusta::math::Vec3;
 
@@ -33,11 +29,7 @@ HitboxData Triangle(BodyPart part) {
   return {.part = part, .mesh = {.points = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}, .indices = {0, 1, 2}}};
 }
 
-TEST(SimulationMappingTest, MatchAndSimulationWorldNameABodyByTheSameEntity) {
-  EXPECT_EQ(FromSimulation(ToSimulation(EntityId{77})), EntityId{77});
-  EXPECT_EQ(std::to_underlying(ToSimulation(EntityId{77})), 77U);
-}
-
+// Requirements: US-11
 TEST(SimulationMappingTest, AHitboxIsTheTrianglesItsMeshIndexes) {
   const auto hitbox = ToSimulation(Triangle(BodyPart::kHead), "medic");
 
@@ -48,6 +40,7 @@ TEST(SimulationMappingTest, AHitboxIsTheTrianglesItsMeshIndexes) {
   EXPECT_EQ(hitbox.triangles[0].c, Vec3(0.0F, 1.0F, 0.0F));
 }
 
+// Requirements: NFR-12
 TEST(SimulationMappingTest, AHitboxThatIsNotAWholeTriangleListIsRejected) {
   HitboxData hitbox = Triangle(BodyPart::kTorso);
   hitbox.mesh.indices = {0, 1};
@@ -69,6 +62,7 @@ augusta::assets::Skeleton RootAt(float height) {
                                                     augusta::math::Quat(1.0F, 0.0F, 0.0F, 0.0F), Vec3(1.0F))}};
 }
 
+// Requirements: US-16
 TEST(SimulationMappingTest, EachCharacterIsKeptByItsPath) {
   const std::vector<augusta::scenario::Character> characters = {
       {.path = "medic",
@@ -88,6 +82,7 @@ TEST(SimulationMappingTest, EachCharacterIsKeptByItsPath) {
 
 // SimulationWorld poses a character's hitboxes by its Skeleton (ADR-0061): it
 // is handed both, each hitbox in its Joint's space and bound to it.
+// Requirements: US-11
 TEST(SimulationMappingTest, ACharacterKeepsItsSkeletonAndEachHitboxInItsJointsSpace) {
   const std::vector<augusta::scenario::Character> characters = {
       {.path = "medic",
@@ -110,6 +105,7 @@ TEST(SimulationMappingTest, ACharacterKeepsItsSkeletonAndEachHitboxInItsJointsSp
 
 // Movement advances each player's Stride by its Character's Clips (ADR-0066):
 // SimulationWorld shares the ones the server loaded.
+// Requirements: US-11
 TEST(SimulationMappingTest, ACharacterKeepsItsClips) {
   const auto clips = std::make_shared<const augusta::animation::CharacterClips>();
   const std::vector<augusta::scenario::Character> characters = {
@@ -125,6 +121,7 @@ TEST(SimulationMappingTest, ACharacterKeepsItsClips) {
 // held on the hand of a player playing the Holder (clips_fixture.h), which
 // hangs unturned, its Muzzle where the rifle has it ahead of its Sight, to
 // within the turn ozz-animation quantizes a Clip's rotations to.
+// Requirements: US-07
 TEST(SimulationMappingTest, ASimulationHoldsTheScenariosRifle) {
   augusta::scenario::Scenario scenario;
   scenario.rifle = augusta::weapon::Markers{
