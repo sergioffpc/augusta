@@ -25,6 +25,7 @@
 #include "augusta/replay_server.h"
 #include "augusta/server_config.h"
 #include "server.h"
+#include "shutdown_signal.h"
 #if AUGUSTA_DEBUG_TOOLS
 #include "augusta/physics.h"
 #endif
@@ -45,6 +46,7 @@ failure::Failure ContentFailure(const std::filesystem::path& pack_path, std::str
 RuntimeOptions RuntimeOptionsOf(const config::ServerConfig& file_config, failure::Faults* faults) {
   return RuntimeOptions{
       .metrics_port = file_config.metrics_port,
+      .shutdown_request = &GlobalShutdownRequest(),
       .faults = faults,
 #if AUGUSTA_DEBUG_TOOLS
       .network_pcapng = file_config.network_pcapng,

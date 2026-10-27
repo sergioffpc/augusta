@@ -65,9 +65,10 @@ augusta_set_module_scope(augusta_server SERVER_ONLY)
 
 # augustad's phases behind the application boundary - config, transport,
 # content, runtime - each classifying its own failure (see
-# server_application.h, ADR-0033); tested with the golden server pack and
-# injected faults.
-add_library(augusta_server_application STATIC server_application.cpp)
+# server_application.h, ADR-0033), and the shutdown signal handler whose
+# process-lifetime request its runtime watches (shutdown_signal.h, ADR-0005);
+# tested with the golden server pack, injected faults and raised signals.
+add_library(augusta_server_application STATIC server_application.cpp shutdown_signal.cpp)
 target_include_directories(augusta_server_application PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augusta_server_application

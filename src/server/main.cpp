@@ -1,8 +1,5 @@
-#include <atomic>
-#include <csignal>
 #include <print>
 #include <string_view>
-#include <utility>
 
 #include "augusta/application.h"
 #include "augusta/config.h"
@@ -10,44 +7,13 @@
 #include "augusta/logging.h"
 #include "augusta/server_config.h"
 #include "augusta/version.h"
-#include "server.h"
 #include "server_application.h"
+#include "shutdown_signal.h"
 
 namespace {
 
 // The subsystem augustad's terminal event and crash lines name (ADR-0029).
 constexpr std::string_view kSubsystem = "server";
-
-// Signal handlers can't capture context, so this is the only way to
-// reach the one ServerRuntime main() constructs - set just before Run() is
-// called, and cleared once it returns or throws, before the runtime is released.
-std::atomic<augusta::server::ServerRuntime*> g_runtime{nullptr};
-static_assert(std::atomic<augusta::server::ServerRuntime*>::is_always_lock_free,
-              "the signal handler must read it lock-free");
-
-extern "C" void HandleShutdownSignal(int /*signal*/) {
-  if (augusta::server::ServerRuntime* runtime = g_runtime.load(); runtime != nullptr) {
-    runtime->Stop();
-  }
-}
-
-// Points the signal handlers at runtime for as long as it lives, and away
-// from it again however run ends - an exception included, which the
-// application boundary catches before it releases the runtime.
-class SignalTarget {
- public:
-  explicit SignalTarget(augusta::server::ServerRuntime& runtime) {
-    g_runtime = &runtime;
-    std::signal(SIGINT, HandleShutdownSignal);
-    std::signal(SIGTERM, HandleShutdownSignal);
-  }
-  ~SignalTarget() { g_runtime = nullptr; }
-
-  SignalTarget(const SignalTarget&) = delete;
-  SignalTarget& operator=(const SignalTarget&) = delete;
-  SignalTarget(SignalTarget&&) = delete;
-  SignalTarget& operator=(SignalTarget&&) = delete;
-};
 
 }  // namespace
 
@@ -74,11 +40,9 @@ int main(int argc, char** argv) {
   augusta::logging::SetLogLevel(*augusta::logging::ParseSeverity(file_config->log_level));
   LOG_INFO("subsystem=server event=starting version={}", augusta::EngineVersion());
 
-  auto program = augusta::server::ServerProgram(*file_config);
-  program.run = [run = std::move(program.run)](augusta::server::ServerRuntime& runtime) {
-    const SignalTarget target(runtime);
-    return run(runtime);
-  };
+  // Before the Program, so a signal during startup stops the run as it starts.
+  augusta::server::InstallShutdownSignalHandlers();
+  const auto program = augusta::server::ServerProgram(*file_config);
   // The runtime's supervisor logged a runtime failure where it happened; this
   // is the process's one terminal event for it.
   return augusta::application::Conclude(kSubsystem, augusta::application::Execute(program));
