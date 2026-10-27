@@ -75,6 +75,7 @@ TEST(ParseServerConfigTest, RejectsReenactmentsOnAReplayServer) {
   EXPECT_EQ(config.error().subject, "debug.reenactments");
 }
 
+// Requirements: US-31
 TEST(ParseServerConfigTest, WritesNoPcapngByDefault) {
   const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
 
@@ -82,6 +83,7 @@ TEST(ParseServerConfigTest, WritesNoPcapngByDefault) {
   EXPECT_TRUE(config->network_pcapng.empty());
 }
 
+// Requirements: US-31
 TEST(ParseServerConfigTest, ReadsThePcapngDirectoryUnderBaseDirAndCreatesIt) {
   const std::filesystem::path file_dir = FreshDirectory();
 
@@ -93,6 +95,7 @@ TEST(ParseServerConfigTest, ReadsThePcapngDirectoryUnderBaseDirAndCreatesIt) {
 }
 
 // A replay server's traffic is captured as a live server's is.
+// Requirements: US-31
 TEST(ParseServerConfigTest, ReadsThePcapngDirectoryOnAReplayServer) {
   const std::filesystem::path file_dir = FreshDirectory();
 
@@ -104,6 +107,7 @@ TEST(ParseServerConfigTest, ReadsThePcapngDirectoryOnAReplayServer) {
 }
 
 // A directory beneath a file can never be created.
+// Requirements: US-31
 TEST(ParseServerConfigTest, RejectsAPcapngDirectoryThatCannotBeCreated) {
   const std::filesystem::path file_dir = FreshDirectory();
   std::filesystem::create_directories(file_dir / "content");
@@ -121,6 +125,7 @@ TEST(ParseServerConfigTest, RejectsAPcapngDirectoryThatCannotBeCreated) {
 // An existing directory no file can be written in is refused as one that
 // can't be created: here a directory, which it can't remove, stands where the
 // write probe's file would go. Without it, the same directory is taken.
+// Requirements: US-31
 TEST(ParseServerConfigTest, RejectsAnExistingPcapngDirectoryThatCannotBeWritten) {
   const std::filesystem::path file_dir = FreshDirectory();
   const std::filesystem::path directory = file_dir / "content" / "net";

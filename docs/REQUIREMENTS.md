@@ -38,6 +38,7 @@ version only when it is cut (ENGINEERING.md, Milestones).
     - [US-25: Play in VR](#us-25-play-in-vr)
     - [US-26: Play on a Team](#us-26-play-on-a-team)
     - [US-27: Talk to my Team](#us-27-talk-to-my-team)
+    - [US-31: Capture Network Messages for Wireshark](#us-31-capture-network-messages-for-wireshark)
 - [Non-Functional Requirements](#non-functional-requirements)
     - [NFR-01: Server Tick Rate (Performance)](#nfr-01-server-tick-rate-performance)
     - [NFR-02: Network Latency Tolerance](#nfr-02-network-latency-tolerance)
@@ -554,6 +555,39 @@ Then only my dead teammates hear me, and I still hear my Team's radio
 ```
 
 Speech is never captured, and there is none in the Lobby (ADR-0069).
+
+### US-31: Capture Network Messages for Wireshark
+
+Version: v7
+
+As a developer, I want a client or server to write every message it sends and
+receives to a file Wireshark reads, so that I can see which message went where,
+when and with which fields while I chase a networking bug.
+
+```text
+Given a Development client or server whose config names a directory under
+      debug.network.pcapng
+When it runs
+Then it logs and writes one pcapng in that directory, named after the
+     executable and its start in UTC, whose header names the executable and its
+     version; the file holds every message it sent and received, decrypted,
+     each with its direction, both endpoints and its time, and Wireshark
+     decodes each with tools/wireshark; a send the transport drops is not in
+     it, and without the key it writes none
+
+Given a debug.network.pcapng directory that cannot be created or written
+When the executable starts
+Then it stops at startup naming the key
+
+Given a pcapng file that cannot be created or written, or a writer that falls
+      behind
+When that happens
+Then the file stops there, keeping every message before it, with one warning,
+     and the client or server runs on
+```
+
+A replay server writes one too. Only a Development build has it (ADR-0074,
+ADR-0076).
 
 ---
 
