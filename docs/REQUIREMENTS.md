@@ -569,16 +569,16 @@ Given a Development client with a physics overlay on, by its debug.physics key o
       from the Physics panel
 When it draws a frame
 Then it draws each body's capsule, the server's beside my predicted one; the Hitboxes
-     where the server posed them, coloured by body part; and PhysX's collision within
-     the chosen radius of the camera; each hidden behind the world until its through
-     walls toggle is on, and none changing how any body moves
+     where the server posed them, coloured by Body part; and the physics engine's
+     collision shapes within the chosen radius of the camera; each hidden behind the
+     world until its through walls toggle is on, and none changing how any body moves
 
 Given a Development client with the Shot judgement overlay on
 When one of my rounds is judged
 Then it draws the round's flight from its Shot to the point struck, the struck Hitbox
      filled, and the Hitboxes the server judged beside those I saw when I fired, for
-     5 seconds and at most 8 rounds; a round still unjudged after 2 seconds is said so
-     in the Physics panel
+     5 seconds and at most 8 rounds; the Physics panel says when a round is still
+     unjudged after 2 seconds
 
 Given a Development server with debug.shot_judgements on
 When clients ask for Shot judgements
@@ -588,7 +588,8 @@ Then only the shooter receives its rounds' Shot judgements, and only while it as
 
 Given a Development client or server with debug.physics_recording on
 When it starts
-Then it records its physics to an OmniPVD file, or warns that it cannot and runs on
+Then it records its physics to a file the physics debugger reads, or warns that it
+     cannot and runs on
 
 Given a Shipping build
 When its config sets any debug.* key
@@ -596,7 +597,8 @@ Then it refuses to start, naming the debug section as an unknown key
 ```
 
 The overlays and the Physics panel are values the client builds each frame
-(ADR-0075); a Shipping build compiles every debug tool out (ADR-0074).
+(ADR-0075); the collision shapes are PhysX's own and the recording is OmniPVD's.
+A Shipping build compiles every debug tool out (ADR-0074).
 
 ---
 
