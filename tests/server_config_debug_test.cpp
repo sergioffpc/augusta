@@ -56,6 +56,7 @@ TEST(ParseServerConfigTest, ReadsWhetherReenactmentsAreTaken) {
   EXPECT_FALSE(off->reenactments);
 }
 
+// Requirements: US-21, US-28
 TEST(ParseServerConfigTest, RejectsReenactmentsThatAreNeitherTrueNorFalse) {
   const auto config = ParseServerConfig(ServerConfigWith("debug:\n  reenactments: yes\n"), kFileDir);
 
@@ -66,6 +67,7 @@ TEST(ParseServerConfigTest, RejectsReenactmentsThatAreNeitherTrueNorFalse) {
 }
 
 // A replay server runs no Match, so it has no player to reenact.
+// Requirements: US-21, US-28
 TEST(ParseServerConfigTest, RejectsReenactmentsOnAReplayServer) {
   const auto config =
       ParseServerConfig(ServerConfigWith("debug:\n  reenactments: true\nreplay:\n  captures: captures\n"), kFileDir);
@@ -75,6 +77,7 @@ TEST(ParseServerConfigTest, RejectsReenactmentsOnAReplayServer) {
   EXPECT_EQ(config.error().subject, "debug.reenactments");
 }
 
+// Requirements: US-31
 TEST(ParseServerConfigTest, WritesNoPcapngByDefault) {
   const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
 
@@ -82,6 +85,7 @@ TEST(ParseServerConfigTest, WritesNoPcapngByDefault) {
   EXPECT_TRUE(config->network_pcapng.empty());
 }
 
+// Requirements: US-31
 TEST(ParseServerConfigTest, ReadsThePcapngDirectoryUnderBaseDirAndCreatesIt) {
   const std::filesystem::path file_dir = FreshDirectory();
 
@@ -93,6 +97,7 @@ TEST(ParseServerConfigTest, ReadsThePcapngDirectoryUnderBaseDirAndCreatesIt) {
 }
 
 // A replay server's traffic is captured as a live server's is.
+// Requirements: US-31
 TEST(ParseServerConfigTest, ReadsThePcapngDirectoryOnAReplayServer) {
   const std::filesystem::path file_dir = FreshDirectory();
 
@@ -104,6 +109,7 @@ TEST(ParseServerConfigTest, ReadsThePcapngDirectoryOnAReplayServer) {
 }
 
 // A directory beneath a file can never be created.
+// Requirements: US-31
 TEST(ParseServerConfigTest, RejectsAPcapngDirectoryThatCannotBeCreated) {
   const std::filesystem::path file_dir = FreshDirectory();
   std::filesystem::create_directories(file_dir / "content");
@@ -121,6 +127,7 @@ TEST(ParseServerConfigTest, RejectsAPcapngDirectoryThatCannotBeCreated) {
 // An existing directory no file can be written in is refused as one that
 // can't be created: here a directory, which it can't remove, stands where the
 // write probe's file would go. Without it, the same directory is taken.
+// Requirements: US-31
 TEST(ParseServerConfigTest, RejectsAnExistingPcapngDirectoryThatCannotBeWritten) {
   const std::filesystem::path file_dir = FreshDirectory();
   const std::filesystem::path directory = file_dir / "content" / "net";
@@ -138,6 +145,7 @@ TEST(ParseServerConfigTest, RejectsAnExistingPcapngDirectoryThatCannotBeWritten)
             "'debug.network.pcapng' must name a directory that can be written");
 }
 
+// Requirements: US-30
 TEST(ParseServerConfigTest, SendsNoShotJudgementsByDefault) {
   const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
 
@@ -145,6 +153,7 @@ TEST(ParseServerConfigTest, SendsNoShotJudgementsByDefault) {
   EXPECT_FALSE(config->shot_judgements);
 }
 
+// Requirements: US-30
 TEST(ParseServerConfigTest, ReadsWhetherShotJudgementsAreSent) {
   const auto on = ParseServerConfig(ServerConfigWith("debug:\n  shot_judgements: true\n"), kFileDir);
   const auto off = ParseServerConfig(ServerConfigWith("debug:\n  shot_judgements: false\n"), kFileDir);
@@ -155,6 +164,7 @@ TEST(ParseServerConfigTest, ReadsWhetherShotJudgementsAreSent) {
   EXPECT_FALSE(off->shot_judgements);
 }
 
+// Requirements: US-30
 TEST(ParseServerConfigTest, RejectsShotJudgementsThatAreNeitherTrueNorFalse) {
   const auto config = ParseServerConfig(ServerConfigWith("debug:\n  shot_judgements: 1\n"), kFileDir);
 
@@ -164,6 +174,7 @@ TEST(ParseServerConfigTest, RejectsShotJudgementsThatAreNeitherTrueNorFalse) {
 }
 
 // A replay server runs no Match, so no round of it is judged.
+// Requirements: US-30
 TEST(ParseServerConfigTest, RejectsShotJudgementsOnAReplayServer) {
   const auto config =
       ParseServerConfig(ServerConfigWith("debug:\n  shot_judgements: true\nreplay:\n  captures: captures\n"), kFileDir);
@@ -173,6 +184,7 @@ TEST(ParseServerConfigTest, RejectsShotJudgementsOnAReplayServer) {
   EXPECT_EQ(config.error().subject, "debug.shot_judgements");
 }
 
+// Requirements: US-30
 TEST(ParseServerConfigTest, RecordsNoPhysicsByDefault) {
   const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
 
@@ -180,6 +192,7 @@ TEST(ParseServerConfigTest, RecordsNoPhysicsByDefault) {
   EXPECT_FALSE(config->physics_recording);
 }
 
+// Requirements: US-30
 TEST(ParseServerConfigTest, ReadsWhetherPhysicsIsRecorded) {
   const auto on = ParseServerConfig(ServerConfigWith("debug:\n  physics_recording: true\n"), kFileDir);
   const auto off = ParseServerConfig(ServerConfigWith("debug:\n  physics_recording: false\n"), kFileDir);
@@ -190,6 +203,7 @@ TEST(ParseServerConfigTest, ReadsWhetherPhysicsIsRecorded) {
   EXPECT_FALSE(off->physics_recording);
 }
 
+// Requirements: US-30
 TEST(ParseServerConfigTest, RejectsAPhysicsRecordingThatIsNeitherTrueNorFalse) {
   const auto config = ParseServerConfig(ServerConfigWith("debug:\n  physics_recording: on\n"), kFileDir);
 

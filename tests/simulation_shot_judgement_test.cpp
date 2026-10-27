@@ -345,6 +345,7 @@ class SlowRoundTest : public ShotJudgementTest {
   [[nodiscard]] Command FiringAway() const { return FiringAt(alice_ + Vec3(0.0F, 1.6F, -10.0F), Next() - 1); }
 };
 
+// Requirements: US-30
 TEST_F(SlowRoundTest, AFlightCrossingMoreTicksThanTheEntriesHoldKeepsTheFirstAndSaysSomeWereLeftOut) {
   const std::vector<ShotJudgement> judgements = Shoot(FiringAway(), kFlightTicks + 6);
 
@@ -358,6 +359,7 @@ TEST_F(SlowRoundTest, AFlightCrossingMoreTicksThanTheEntriesHoldKeepsTheFirstAnd
 }
 
 // The same flight, its match left running, is judged once it ends.
+// Requirements: US-30
 TEST_F(SlowRoundTest, ARoundStillInFlightWhenItsMatchEndsHasNoJudgement) {
   ASSERT_EQ(Shoot(FiringAway(), kFlightTicks + 6).size(), 1U);
   ASSERT_TRUE(Tick(FiringAway()).shot_judgements.empty());
@@ -374,6 +376,7 @@ class UnjudgedShotTest : public ShotJudgementTest {
   UnjudgedShotTest() { world_.JudgeShots(false); }
 };
 
+// Requirements: US-30
 TEST_F(UnjudgedShotTest, WithShotJudgementsOffATickCarriesNone) {
   Place(Vec3(0.0F, 0.0F, -10.0F));
   const augusta::tick::Tick seen = Next() - 1;

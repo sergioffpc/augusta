@@ -127,14 +127,17 @@ class LogLines {
   std::filesystem::path file_;
 };
 
+// Requirements: US-31
 TEST(PcapngFileName, NamesTheExecutableAndItsStartInUtc) {
   EXPECT_EQ(FileName("augustad", kStarted), "augustad-20231114T221320123Z.pcapng");
 }
 
+// Requirements: US-31
 TEST(PcapngRunWriter, IsNoneWithoutADirectory) { EXPECT_EQ(RunWriter({}, kExecutable, kVersion), nullptr); }
 
 // A directory name the ANSI code page lacks: Windows' path::string() would
 // throw on it rather than log it.
+// Requirements: US-31
 TEST(PcapngRunWriter, WritesIntoTheDirectoryAndLogsItsFileInUtf8) {
   const std::filesystem::path directory = FreshDirectory("run") / std::filesystem::path(u8"日本");
   std::filesystem::create_directories(directory);
@@ -158,6 +161,7 @@ TEST(PcapngRunWriter, WritesIntoTheDirectoryAndLogsItsFileInUtf8) {
   EXPECT_NE(lines[0].find(std::string(utf8.begin(), utf8.end())), std::string::npos) << lines[0];
 }
 
+// Requirements: US-31
 TEST(PcapngFileWriter, WritesTheHeadersThenEveryReportedMessageInOrder) {
   const std::filesystem::path directory = FreshDirectory("writes");
   const std::vector<std::byte> hello = PayloadOf("hello");
@@ -180,6 +184,7 @@ TEST(PcapngFileWriter, WritesTheHeadersThenEveryReportedMessageInOrder) {
   EXPECT_EQ((*blocks)[3], EncodeEnhancedPacket(MessageOf(world, networking::TapDirection::kInbound)));
 }
 
+// Requirements: US-31
 TEST(PcapngFileWriter, AFailedCreateWritesNothingWithOneWarning) {
   // A file where the directory would be.
   const std::filesystem::path root = FreshDirectory("create_failure");
@@ -200,6 +205,7 @@ TEST(PcapngFileWriter, AFailedCreateWritesNothingWithOneWarning) {
   EXPECT_NE(warnings[0].find("reason=create_failed"), std::string::npos) << warnings[0];
 }
 
+// Requirements: US-31
 TEST(PcapngFileWriter, AFailedWriteStopsTheFileThereWithOneWarning) {
   const std::filesystem::path directory = FreshDirectory("write_failure");
   const LogLines log("write_failure.log");
@@ -228,6 +234,7 @@ TEST(PcapngFileWriter, AFailedWriteStopsTheFileThereWithOneWarning) {
 }
 
 // What was written before the failure stays in the file, whole.
+// Requirements: US-31
 TEST(PcapngFileWriter, AFailedWriteKeepsTheMessagesWrittenBeforeIt) {
   const std::filesystem::path directory = FreshDirectory("write_failure_after");
   Faults faults;
@@ -254,6 +261,7 @@ TEST(PcapngFileWriter, AFailedWriteKeepsTheMessagesWrittenBeforeIt) {
   EXPECT_EQ((*blocks)[2], EncodeEnhancedPacket(MessageOf(hello, networking::TapDirection::kOutbound)));
 }
 
+// Requirements: US-31
 TEST(PcapngFileWriter, AFullQueueStopsTheFileThereWithOneWarning) {
   const std::filesystem::path directory = FreshDirectory("full_queue");
   const LogLines log("full_queue.log");

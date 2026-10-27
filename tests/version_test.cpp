@@ -6,10 +6,9 @@
 
 #include <gtest/gtest.h>
 
-TEST(EngineVersion, IsNotEmpty) { EXPECT_FALSE(augusta::EngineVersion().empty()); }
-
 // A Development build's version carries the SemVer build metadata `+dev` and a
 // Shipping build's none, so the two kinds refuse each other at Join (ADR-0074).
+// Requirements: US-01
 TEST(EngineVersion, EndsInDevInADevelopmentBuildAndIsBareInAShippingOne) {
   const std::string_view version = augusta::EngineVersion();
 #if AUGUSTA_DEBUG_TOOLS

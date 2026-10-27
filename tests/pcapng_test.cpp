@@ -29,6 +29,7 @@ std::vector<std::byte> BytesOf(std::initializer_list<int> values) {
   return bytes;
 }
 
+// Requirements: US-31
 TEST(PcapngSectionHeader, NamesTheExecutableAndItsVersionInShbUserappl) {
   const std::vector<std::byte> expected = BytesOf({
       0x0A, 0x0D, 0x0D, 0x0A,                          // Block Type: Section Header Block.
@@ -46,6 +47,7 @@ TEST(PcapngSectionHeader, NamesTheExecutableAndItsVersionInShbUserappl) {
   EXPECT_EQ(EncodeSectionHeader("augustac", "1.2.3+dev"), expected);
 }
 
+// Requirements: US-31
 TEST(PcapngInterfaceDescription, IsAnUpperPduInterfaceInMicroseconds) {
   const std::vector<std::byte> expected = BytesOf({
       0x01, 0x00, 0x00, 0x00,  // Block Type: Interface Description Block.
@@ -69,6 +71,7 @@ constexpr std::uint16_t kRemotePort = 27015;  // 0x6987.
 // 1700000000.123456 s since the epoch: 0x00060A24'18202240 microseconds.
 constexpr std::chrono::system_clock::time_point kTime{std::chrono::microseconds(1'700'000'000'123'456)};
 
+// Requirements: US-31
 TEST(PcapngEnhancedPacket, AnOutboundIpv4MessageGoesFromLocalToRemote) {
   const std::vector<std::byte> payload = BytesOf({'a', 'b'});
   const networking::TappedMessage message{
@@ -181,6 +184,7 @@ TEST(PcapngEnhancedPacket, AnOutboundIpv4MessageGoesFromLocalToRemote) {
   EXPECT_EQ(EncodeEnhancedPacket(message), expected);
 }
 
+// Requirements: US-31
 TEST(PcapngEnhancedPacket, AnInboundIpv6MessageGoesFromRemoteToLocal) {
   // ::1 and 2001:db8::7.
   constexpr networking::Ipv6Address kLocalIpv6{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
@@ -232,6 +236,7 @@ networking::TappedMessage Ipv4Message(networking::TapDirection direction, std::s
   };
 }
 
+// Requirements: US-31
 TEST(PcapngEnhancedPacket, AnInboundIpv4MessageSwapsSourceAndDestination) {
   const std::vector<std::byte> block = EncodeEnhancedPacket(Ipv4Message(networking::TapDirection::kInbound, {}));
 
@@ -248,6 +253,7 @@ TEST(PcapngEnhancedPacket, AnInboundIpv4MessageSwapsSourceAndDestination) {
             expected);
 }
 
+// Requirements: US-31
 TEST(PcapngEnhancedPacket, PadsEveryPayloadLengthToFourBytes) {
   // Payload length, then the block's total length: 28 of header, 48 of TLVs,
   // the payload padded to 4, 8 of epb_flags, 4 of opt_endofopt, 4 of length.
@@ -275,6 +281,7 @@ TEST(PcapngEnhancedPacket, PadsEveryPayloadLengthToFourBytes) {
   }
 }
 
+// Requirements: US-31
 TEST(PcapngEnhancedPacket, SplitsTheTimestampIntoItsUpperAndLowerHalves) {
   // 2^32 + 1 microseconds, then 2^32 - 1.
   const std::vector<std::pair<std::chrono::microseconds, std::vector<std::byte>>> cases = {

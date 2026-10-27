@@ -93,6 +93,7 @@ std::filesystem::path FreshDirectory(std::string_view name) {
 // A client admitted by a server, each given a pcapng writer as its tap, writes
 // what it sent and what it received: the client its Join request and the
 // server's answers, the server the same from its side.
+// Requirements: US-31
 TEST(SessionTapTest, AClientAndAServerGivenATapEachWriteTheMessagesTheyExchanged) {
   const auto started = std::chrono::system_clock::now();
   auto server_writer =

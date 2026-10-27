@@ -54,6 +54,7 @@ auto ResolveTo(std::vector<HitboxData> hitboxes, std::string* resolved = nullptr
   };
 }
 
+// Requirements: US-30
 TEST(LoadCharacterHitboxesTest, ConvertsEachOfTheCharactersHitboxesAsTheServerDoes) {
   std::string resolved;
   const auto hitboxes = LoadCharacterHitboxes("medic", SkeletonIs(RootAlone()),
@@ -72,6 +73,7 @@ TEST(LoadCharacterHitboxesTest, ConvertsEachOfTheCharactersHitboxesAsTheServerDo
 
 // A hand Joint held 2 m out to the right at 1.4 m: its Hitbox, in the hand's
 // space, is drawn there, bound to the root as the overlay places it.
+// Requirements: US-30
 TEST(LoadCharacterHitboxesTest, PlacesEachHitboxInTheRootSpaceWhereTheRestPoseHoldsItsJoint) {
   const Vec3 hand(2.0F, 1.4F, 0.0F);
   const Skeleton reaching{
@@ -90,6 +92,7 @@ TEST(LoadCharacterHitboxesTest, PlacesEachHitboxInTheRootSpaceWhereTheRestPoseHo
   EXPECT_EQ((*hitboxes)[0].triangles[0].b, Vec3(3.0F, 1.4F, 0.0F));
 }
 
+// Requirements: US-30
 TEST(LoadCharacterHitboxesTest, ACharacterWithoutHitboxesHasNone) {
   const auto hitboxes = LoadCharacterHitboxes("medic", SkeletonIs(RootAlone()), ResolveTo({}));
 
@@ -97,6 +100,7 @@ TEST(LoadCharacterHitboxesTest, ACharacterWithoutHitboxesHasNone) {
   EXPECT_TRUE(hitboxes->empty());
 }
 
+// Requirements: US-30
 TEST(LoadCharacterHitboxesTest, HitboxesThatDoNotResolveAreACharacterErrorNamingTheCharacter) {
   const auto hitboxes = LoadCharacterHitboxes("sniper", SkeletonIs(RootAlone()), [](std::string_view) {
     return std::expected<std::vector<HitboxData>, ResolveError>(std::unexpected(ResolveError::kCorruptBlob));
@@ -109,6 +113,7 @@ TEST(LoadCharacterHitboxesTest, HitboxesThatDoNotResolveAreACharacterErrorNaming
   EXPECT_NE(DescribeCharacterError(hitboxes.error()).find("sniper"), std::string::npos);
 }
 
+// Requirements: US-30
 TEST(LoadCharacterHitboxesTest, ASkeletonThatDoesNotResolveIsACharacterErrorNamingTheCharacter) {
   const auto hitboxes = LoadCharacterHitboxes(
       "sniper",
@@ -124,6 +129,7 @@ TEST(LoadCharacterHitboxesTest, ASkeletonThatDoesNotResolveIsACharacterErrorNami
   EXPECT_NE(described.find("skeleton"), std::string::npos);
 }
 
+// Requirements: US-30
 TEST(LoadCharacterHitboxesTest, AHitboxOnAJointTheSkeletonLacksIsACharacterErrorNamingTheJoint) {
   const auto hitboxes = LoadCharacterHitboxes(
       "sniper", SkeletonIs(RootAlone()),
@@ -138,6 +144,7 @@ TEST(LoadCharacterHitboxesTest, AHitboxOnAJointTheSkeletonLacksIsACharacterError
   EXPECT_NE(described.find("Root/Neck"), std::string::npos);
 }
 
+// Requirements: US-30
 TEST(LoadCharacterHitboxesTest, AHitboxThatIsNotATriangleListIsACharacterErrorNamingItsBodyPart) {
   // The control: the same Hitbox with whole triangles loads.
   ASSERT_TRUE(LoadCharacterHitboxes("sniper", SkeletonIs(RootAlone()),

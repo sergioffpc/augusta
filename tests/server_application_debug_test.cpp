@@ -74,6 +74,7 @@ std::vector<std::string> FileNamesIn(const std::filesystem::path& directory) {
 
 bool IsAugustadPcapng(std::string_view name) { return name.starts_with("augustad-") && name.ends_with(".pcapng"); }
 
+// Requirements: US-31
 TEST(ServerApplicationDebugTest, AServerWritesOnePcapngPerRunIntoThePcapngDirectory) {
   ServerConfig config = ExampleConfig();
   config.network_pcapng = FreshDirectory();
@@ -89,6 +90,7 @@ TEST(ServerApplicationDebugTest, AServerWritesOnePcapngPerRunIntoThePcapngDirect
 }
 
 // A replay server's endpoint is tapped as a live server's listening socket is (ADR-0051).
+// Requirements: US-31
 TEST(ServerApplicationDebugTest, AReplayServerWritesOnePcapngPerRunIntoThePcapngDirectory) {
   ServerConfig config = ExampleConfig();
   config.replay_captures = std::filesystem::temp_directory_path();
@@ -107,6 +109,7 @@ TEST(ServerApplicationDebugTest, AReplayServerWritesOnePcapngPerRunIntoThePcapng
 // Without the key a run writes no pcapng anywhere: not into the working
 // directory, where a file named from an empty directory would go. The tests
 // above, with it, are the control.
+// Requirements: US-31
 TEST(ServerApplicationDebugTest, AServerWritesNoPcapngWithoutThePcapngDirectory) {
   const auto pcapngs_here = [] {
     return std::ranges::count_if(std::filesystem::directory_iterator(std::filesystem::current_path()),

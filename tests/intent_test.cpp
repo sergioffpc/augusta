@@ -101,6 +101,7 @@ struct Endings {
   }
 };
 
+// Requirements: US-23
 TEST(IntentExecutorTest, WithNoIntentItHoldsNothing) {
   IntentExecutor executor;
 
@@ -162,6 +163,7 @@ TEST(IntentExecutorTest, AReloadIsSentOnOneTickAndThenEndsDone) {
 
 // Outside a Match, or once its player is dead, nothing it sends is played: an
 // Intent waits, and a Reload is not spent on a tick that cannot use it.
+// Requirements: US-23
 TEST(IntentExecutorTest, OutsideAMatchItHoldsNothingAndItsIntentsWait) {
   IntentExecutor executor;
   Endings endings;
@@ -178,6 +180,7 @@ TEST(IntentExecutorTest, OutsideAMatchItHoldsNothingAndItsIntentsWait) {
   EXPECT_TRUE(match.reload);
 }
 
+// Requirements: US-23
 TEST(IntentExecutorTest, OnceItsPlayerIsDeadItHoldsNothing) {
   IntentExecutor executor;
   executor.SetTrigger(HoldFire{});
@@ -187,6 +190,7 @@ TEST(IntentExecutorTest, OnceItsPlayerIsDeadItHoldsNothing) {
   EXPECT_FALSE(Next(executor, view).fire);
 }
 
+// Requirements: US-23
 TEST(IntentExecutorTest, EachChannelIsSetWithoutTouchingTheOthers) {
   IntentExecutor executor;
   Endings movement;
@@ -248,6 +252,7 @@ TEST(IntentExecutorTest, AReloadThatIsDoneIsNotReplacedAfterwards) {
 
 // A person who lets go of the mouse keeps looking where they were, and one who
 // stops walking keeps their stance.
+// Requirements: US-23
 TEST(IntentExecutorTest, WithItsAimOrMovementClearedItKeepsTheLastViewAndStance) {
   IntentExecutor executor;
   executor.SetAim(Look{.yaw = 0.5F, .pitch = 0.25F});
@@ -275,6 +280,7 @@ Command EveryField() {
   return command;
 }
 
+// Requirements: US-23
 TEST(IntentExecutorTest, ARawHoldsEveryFieldOfItsCommandEveryTick) {
   IntentExecutor executor;
   executor.SetRaw(EveryField());
@@ -293,6 +299,7 @@ TEST(IntentExecutorTest, ARawHoldsEveryFieldOfItsCommandEveryTick) {
 
 // Reload is a rising edge (command::Command): a script that forgets to clear
 // it does not reload every tick.
+// Requirements: US-23
 TEST(IntentExecutorTest, ARawsReloadIsSentOnExactlyOneTick) {
   IntentExecutor executor;
   executor.SetRaw(EveryField());
@@ -305,6 +312,7 @@ TEST(IntentExecutorTest, ARawsReloadIsSentOnExactlyOneTick) {
   EXPECT_EQ(reloads, 1);
 }
 
+// Requirements: US-23
 TEST(IntentExecutorTest, ARawReplacesTheIntentOnEveryChannel) {
   IntentExecutor executor;
   Endings movement;
@@ -325,6 +333,7 @@ TEST(IntentExecutorTest, ARawReplacesTheIntentOnEveryChannel) {
   EXPECT_FALSE(command.fire);
 }
 
+// Requirements: US-23
 TEST(IntentExecutorTest, SettingOrClearingAnyChannelEndsARawReplacedAndLeavesTheOthersEmpty) {
   IntentExecutor executor;
   Endings raw;
@@ -341,6 +350,7 @@ TEST(IntentExecutorTest, SettingOrClearingAnyChannelEndsARawReplacedAndLeavesThe
   EXPECT_FALSE(command.ads);
 }
 
+// Requirements: US-23
 TEST(IntentExecutorTest, ARawSetAgainEndsTheFirstReplacedAndSendsTheNewOnesReload) {
   IntentExecutor executor;
   Endings first;
@@ -355,6 +365,7 @@ TEST(IntentExecutorTest, ARawSetAgainEndsTheFirstReplacedAndSendsTheNewOnesReloa
 
 // The Seen time is how lag compensation judges a round (ADR-0044), not a
 // choice of the player's: the newest state's, as this Agent sees the others.
+// Requirements: US-23
 TEST(IntentExecutorTest, TheSeenTimeIsTheNewestStatesEvenWhenARawCarriesAnother) {
   IntentExecutor executor;
   Command raw = EveryField();
@@ -368,6 +379,7 @@ TEST(IntentExecutorTest, TheSeenTimeIsTheNewestStatesEvenWhenARawCarriesAnother)
   EXPECT_EQ(command.seen_fraction, 0.0F);
 }
 
+// Requirements: US-23
 TEST(IntentExecutorTest, AnEndingMaySetAnotherIntent) {
   IntentExecutor executor;
   executor.SetTrigger(Reload{}, [&executor](IntentEnding /*ending*/) { executor.SetTrigger(HoldFire{}); });
@@ -554,6 +566,7 @@ TEST(IntentExecutorTest, AnAimAtEndsTargetGoneWhenItsTargetDiesAfterThisAgentHas
 }
 
 // Set in the Lobby, it waits for a Match to aim in.
+// Requirements: US-23
 TEST(IntentExecutorTest, AnAimAtSetOutsideAMatchWaitsForOne) {
   IntentExecutor executor;
   Endings endings;
