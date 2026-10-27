@@ -57,8 +57,9 @@ enum class HookErrorCode : std::uint8_t {
   /// The global the hook is named by is not a function.
   kNotAFunction,
   /// It returned more than one value, or one that is not plain data (a
-  /// function, a table keyed by both or neither of 1 to n and strings, or one
-  /// nested too deep); subject says which.
+  /// function, a table keyed by both or neither of 1 to n and strings, one
+  /// nested too deep, or one of too many values in all, counting a table it
+  /// holds at several places once at each); subject says which.
   kNotPlainData,
 };
 

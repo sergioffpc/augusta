@@ -201,7 +201,8 @@ TEST_F(PolicyTest, AFailingHookIsLoggedDecidesNothingAndTheTickGoesOn) {
            FailingHook{.rules = "function on_tick(match) match.tick = 0 end", .logged = "read-only"},
            FailingHook{.rules = "function on_tick() return function() end end", .logged = "not plain data"},
            FailingHook{.rules = "function on_tick() return 1, 2 end", .logged = "more than one value"},
-           FailingHook{.rules = "function on_tick() local t = {} t[1] = t return t end", .logged = "not plain data"},
+           FailingHook{.rules = "function on_tick() local t = {} t[1] = t return t end",
+                       .logged = "tables nested more than 16 deep, which is not plain data"},
            FailingHook{.rules = "function on_tick() return {1, x = 2} end", .logged = "not plain data"},
            FailingHook{.rules = "on_tick = 5", .logged = "not a function"},
            FailingHook{.rules = "function on_tick() return #string.rep('x', 1 << 30) end",
@@ -242,6 +243,63 @@ TEST_F(PolicyTest, AFailingHookIsLoggedDecidesNothingAndTheTickGoesOn) {
     EXPECT_EQ(second.state.tick, 2U) << hook.rules;
     ASSERT_EQ(second.state.bodies.size(), 1U) << hook.rules;
     EXPECT_EQ(second.state.bodies[0].body.position, WalkedTo(Policy{}, 2)) << hook.rules;
+  }
+}
+
+// A table an answer holds at several places is converted once per place, so a
+// few small tables, each held two or three times by the one above it, would
+// make millions of copies outside the sandbox's limits. The conversion counts
+// every value it builds instead and refuses the answer once past its bound,
+// within the second. An answer of as many values as the bound, or one that
+// holds a table twice, is plain data, which the Match end reader then refuses.
+// Requirements: US-22
+TEST_F(PolicyTest, AnAnswerOfTooManyValuesIsRefusedPromptlyHoweverItSharesItsTables) {
+  for (const FailingHook& hook : {
+           FailingHook{.rules = R"(
+             function on_tick()
+               local t = {}
+               for i = 1, 1000 do t[i] = i end
+               for _ = 1, 15 do t = {t, t} end
+               return t
+             end
+           )",
+                       .logged = "more than 4096 values in all, which is not plain data"},
+           FailingHook{.rules = R"(
+             function on_tick()
+               local t = {}
+               for i = 1, 1000 do t[i] = i end
+               for _ = 1, 15 do t = {t, t, t} end
+               return t
+             end
+           )",
+                       .logged = "more than 4096 values in all, which is not plain data"},
+           FailingHook{.rules = R"(
+             function on_tick()
+               local t = {}
+               for i = 1, 4096 do t[i] = i end
+               return t
+             end
+           )",
+                       .logged = "more than 4096 values in all, which is not plain data"},
+           FailingHook{.rules = R"(
+             function on_tick()
+               local t = {}
+               for i = 1, 4095 do t[i] = i end
+               return t
+             end
+           )",
+                       .logged = "neither {winner = <Session ID>} nor {draw = true}"},
+           FailingHook{.rules = "function on_tick() local t = {1, 2} return {t, t} end",
+                       .logged = "neither {winner = <Session ID>} nor {draw = true}"},
+       }) {
+    World world = WithAlice(WithRules(hook.rules));
+
+    const auto start = std::chrono::steady_clock::now();
+    const std::string log = WithinADeadline([&world] { return LogOfTicks(world, 1); });
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+
+    EXPECT_NE(log.find(hook.logged), std::string::npos) << hook.rules << "\n" << log;
+    EXPECT_LT(elapsed, std::chrono::seconds(1)) << hook.rules;
   }
 }
 

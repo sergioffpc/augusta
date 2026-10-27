@@ -31,6 +31,13 @@ constexpr int kHookInstructionLimit = 100'000;
 // table that holds itself is refused rather than followed for ever.
 constexpr int kMaxDepth = 16;
 
+// Far more values than any answer a hook gives (the Spawn points of the most
+// players are a few dozen), and few enough to convert in well under a
+// millisecond. A table an answer holds at several places counts again at each,
+// since each becomes a copy of its own: unbounded, a few small tables each held
+// twice by the one above would make millions, outside the sandbox's limits.
+constexpr std::size_t kMaxValues = 4096;
+
 // Turns a table into a read-only view of it: reads, lengths and pairs see the
 // table, a write raises an error, and its metatable cannot be read or replaced.
 // Compiled before the script's top level runs, so it keeps the base functions
@@ -126,19 +133,23 @@ sol::object ToLua(Slot& slot, const Value& value) {
       value.data);
 }
 
-std::expected<Value, HookError> ToValue(const sol::object& object, int depth);
+std::expected<Value, HookError> ToValue(const sol::object& object, int depth, std::size_t& values_built);
 
 // A table as a list, keyed 1 to n, or a record, keyed by strings: any other key
-// is not plain data. An empty table is an empty list.
-std::expected<Value, HookError> TableToValue(const sol::table& table, int depth) {
+// is not plain data. An empty table is an empty list. values_built counts every
+// value of the answer so far: each entry counts one before it is copied.
+std::expected<Value, HookError> TableToValue(const sol::table& table, int depth, std::size_t& values_built) {
   if (depth >= kMaxDepth) {
     return Fail(HookErrorCode::kNotPlainData, "tables nested more than " + std::to_string(kMaxDepth) + " deep");
   }
   std::vector<std::pair<double, sol::object>> indexed;
   std::vector<std::pair<std::string, sol::object>> named;
   bool other_key = false;
+  bool too_many = false;
   table.for_each([&](const sol::object& key, const sol::object& value) {
-    if (key.get_type() == sol::type::string) {
+    if (too_many || ++values_built > kMaxValues) {
+      too_many = true;
+    } else if (key.get_type() == sol::type::string) {
       named.emplace_back(key.as<std::string>(), value);
     } else if (key.get_type() == sol::type::number) {
       indexed.emplace_back(key.as<double>(), value);
@@ -146,6 +157,9 @@ std::expected<Value, HookError> TableToValue(const sol::table& table, int depth)
       other_key = true;
     }
   });
+  if (too_many) {
+    return Fail(HookErrorCode::kNotPlainData, "more than " + std::to_string(kMaxValues) + " values in all");
+  }
   if (other_key || (!indexed.empty() && !named.empty())) {
     return Fail(HookErrorCode::kNotPlainData, "a table keyed neither 1 to n nor by strings");
   }
@@ -153,7 +167,7 @@ std::expected<Value, HookError> TableToValue(const sol::table& table, int depth)
     std::ranges::sort(named, {}, &std::pair<std::string, sol::object>::first);
     Value::Record record;
     for (const auto& [key, entry] : named) {
-      auto value = ToValue(entry, depth + 1);
+      auto value = ToValue(entry, depth + 1, values_built);
       if (!value) {
         return std::unexpected(value.error());
       }
@@ -167,7 +181,7 @@ std::expected<Value, HookError> TableToValue(const sol::table& table, int depth)
     if (index != static_cast<double>(list.size() + 1)) {
       return Fail(HookErrorCode::kNotPlainData, "a table keyed neither 1 to n nor by strings");
     }
-    auto value = ToValue(entry, depth + 1);
+    auto value = ToValue(entry, depth + 1, values_built);
     if (!value) {
       return std::unexpected(value.error());
     }
@@ -176,7 +190,7 @@ std::expected<Value, HookError> TableToValue(const sol::table& table, int depth)
   return Value{.data = std::move(list)};
 }
 
-std::expected<Value, HookError> ToValue(const sol::object& object, int depth) {
+std::expected<Value, HookError> ToValue(const sol::object& object, int depth, std::size_t& values_built) {
   switch (object.get_type()) {
     case sol::type::lua_nil:
     case sol::type::none:
@@ -188,7 +202,7 @@ std::expected<Value, HookError> ToValue(const sol::object& object, int depth) {
     case sol::type::string:
       return Value{.data = object.as<std::string>()};
     case sol::type::table:
-      return TableToValue(object.as<sol::table>(), depth);
+      return TableToValue(object.as<sol::table>(), depth, values_built);
     default:
       return Fail(HookErrorCode::kNotPlainData,
                   "a " + std::string(sol::type_name(object.lua_state(), object.get_type())));
@@ -257,7 +271,8 @@ std::expected<Value, HookError> Script::Call(std::string_view hook, const Value:
   if (result.return_count() == 0) {
     return Value{};
   }
-  return ToValue(result.get<sol::object>(), 0);
+  std::size_t values_built = 1;  // The answer itself.
+  return ToValue(result.get<sol::object>(), 0, values_built);
 }
 
 }  // namespace augusta::scripting
