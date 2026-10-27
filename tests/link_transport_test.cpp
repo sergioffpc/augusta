@@ -291,6 +291,7 @@ void ExpectOnlyTypeCarried(const augusta::link::Traffic& traffic, MessageType ca
 
 // A message the client sent counts once, under its type, as sent, with the
 // bytes the server received.
+// Requirements: US-29
 TEST_F(ClientTrafficTest, ASentMessageCountsOnceUnderItsTypeAsSent) {
   ASSERT_EQ(client_.Send(augusta::link::Ready{.version = 3}), augusta::link::SendOutcome::kAccepted);
   const std::vector<augusta::link::RawPayload> arrived = ReceivedByServer(1);
@@ -305,6 +306,7 @@ TEST_F(ClientTrafficTest, ASentMessageCountsOnceUnderItsTypeAsSent) {
 
 // A message the client received counts once, under its type, as received,
 // with the bytes the server sent.
+// Requirements: US-29
 TEST_F(ClientTrafficTest, AReceivedMessageCountsOnceUnderItsTypeAsReceived) {
   const augusta::link::RawPayload shot =
       BytesOf(augusta::link::ToWire(augusta::link::Shot{.shooter = augusta::link::EntityId{4}, .tick = 90}));
@@ -318,6 +320,7 @@ TEST_F(ClientTrafficTest, AReceivedMessageCountsOnceUnderItsTypeAsReceived) {
 }
 
 // Each message counts on its own: two of a type are two, their bytes summed.
+// Requirements: US-29
 TEST_F(ClientTrafficTest, MessagesOfOneTypeAddUp) {
   const augusta::link::RawPayload first = BytesOf(augusta::link::ToWire(augusta::link::Shot{.tick = 1}));
   const augusta::link::RawPayload second =
@@ -331,6 +334,7 @@ TEST_F(ClientTrafficTest, MessagesOfOneTypeAddUp) {
 // A payload that is no message, and a message only a client sends, are dropped
 // by the client and count nowhere; the Lobby sent after them, which it takes
 // in, counts.
+// Requirements: US-29
 TEST_F(ClientTrafficTest, APayloadTheClientDropsCountsNowhere) {
   const augusta::link::RawPayload garbage{std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF}};
   const augusta::link::RawPayload ready = BytesOf(augusta::link::ToWire(augusta::link::Ready{.version = 1}));
@@ -346,6 +350,7 @@ TEST_F(ClientTrafficTest, APayloadTheClientDropsCountsNowhere) {
 }
 
 // A new connection counts from zero, whatever the last one carried.
+// Requirements: US-29
 TEST_F(ClientTrafficTest, ANewConnectionStartsFromZero) {
   ASSERT_EQ(client_.Send(augusta::link::Ready{.version = 3}), augusta::link::SendOutcome::kAccepted);
   ASSERT_TRUE(ServeUntilReceived({BytesOf(augusta::link::ToWire(augusta::link::Shot{}))}, 1));
@@ -371,6 +376,7 @@ augusta::link::RawPayload StateBytes(augusta::tick::Tick tick, std::uint32_t bod
 
 // Each update adds its bytes to the total; the last is the newest to arrive,
 // the largest the biggest so far, whichever came later.
+// Requirements: US-29
 TEST_F(ClientTrafficTest, AnAuthoritativeStateUpdateCountsItsSize) {
   const augusta::link::RawPayload large = StateBytes(1, 3);
   const augusta::link::RawPayload small = StateBytes(2);
@@ -386,6 +392,7 @@ TEST_F(ClientTrafficTest, AnAuthoritativeStateUpdateCountsItsSize) {
 
 // Ticks one after another miss nothing; a skip counts the ticks between, by
 // the gap: 10, 11, then 15 misses 12, 13 and 14.
+// Requirements: US-29
 TEST_F(ClientTrafficTest, ASkippedTickCountsAsMissingByTheGap) {
   ASSERT_TRUE(ServeUntilReceived({StateBytes(10), StateBytes(11), StateBytes(15)}, 3));
 
@@ -396,6 +403,7 @@ TEST_F(ClientTrafficTest, ASkippedTickCountsAsMissingByTheGap) {
 
 // A tick before the newest seen, and the newest again, are each out of order,
 // and neither moves the newest: 21 after them is one past 20, missing nothing.
+// Requirements: US-29
 TEST_F(ClientTrafficTest, AnOlderOrRepeatedTickCountsAsOutOfOrder) {
   ASSERT_TRUE(ServeUntilReceived({StateBytes(20), StateBytes(18), StateBytes(20), StateBytes(21)}, 4));
 
@@ -407,6 +415,7 @@ TEST_F(ClientTrafficTest, AnOlderOrRepeatedTickCountsAsOutOfOrder) {
 
 // A Match start begins a new tick sequence: neither a tick far past the last
 // Match's nor one before it counts, and the counts so far stay.
+// Requirements: US-29
 TEST_F(ClientTrafficTest, AMatchStartForgetsTheNewestTick) {
   const augusta::link::RawPayload start = BytesOf(augusta::link::ToWire(augusta::link::MatchStart{}));
   ASSERT_TRUE(ServeUntilReceived({StateBytes(100), StateBytes(102), start, StateBytes(500), StateBytes(501)}, 5));
@@ -419,6 +428,7 @@ TEST_F(ClientTrafficTest, AMatchStartForgetsTheNewestTick) {
 
 // A new connection forgets the newest tick with the rest of its counts, so
 // its first tick counts nothing, however far from the last connection's.
+// Requirements: US-29
 TEST_F(ClientTrafficTest, ANewConnectionForgetsTheNewestTick) {
   ASSERT_TRUE(ServeUntilReceived({StateBytes(40)}, 1));
   client_.Disconnect();
