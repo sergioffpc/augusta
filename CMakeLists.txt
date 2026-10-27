@@ -71,8 +71,8 @@ endif()
 # The allocator benchmarks (tests/CMakeLists.txt): off unless a configure asks
 # for them, as `make test TAGS="allocator"` does, and then for that configure
 # alone. The request leaves the cache as soon as it is read, so the next
-# configure, a plain `make test`'s or CMake's own re-run, installs none of the
-# candidates (the manifest's allocators feature) and builds none of their
+# configure, a plain `make test`'s or CMake's own re-run, installs no mimalloc
+# for them (the manifest's allocators feature) and builds none of their
 # executables. Never under a sanitizer, which brings its own allocator (see the
 # operator new override in tests/protocol_test.cpp). Before project(), as
 # AUGUSTA_TOOLS is.

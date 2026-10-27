@@ -76,22 +76,16 @@ add_executable(augusta_benchmarks)
 target_link_libraries(augusta_benchmarks PRIVATE augusta_hot_path_benchmarks benchmark::benchmark_main)
 
 # The allocator benchmarks (#1351): the hot paths above, and a churn of blocks
-# freed on another thread than the one that allocated them, under each
-# general-purpose allocator that can replace malloc/free and new/delete for the
-# whole process on this host, against the platform's own. Built only when the
-# configure asks for them (AUGUSTA_ALLOCATOR_BENCHMARKS, the root
-# CMakeLists.txt), and run only by their label, allocator, which every test
-# preset leaves out: `make test TAGS="allocator"`. One at a time (RUN_SERIAL),
-# so ctest's --parallel adds no contention to what they measure. Each writes
-# its Google Benchmark JSON into allocator-results/, and first fails if its
-# candidate does not serve the process's allocations (allocator_candidate.h).
-#
-# Not built here, so not in the results: snmalloc on Windows, where replacing
-# the CRT's malloc takes Microsoft Detours; jemalloc on Windows, whose port
-# builds it with a prefix and no override; gperftools on Windows, whose
-# override needs a static CRT, which this project's triplet does not link;
-# oneTBB on macOS, where its proxy does not replace malloc; google/tcmalloc
-# and rpmalloc anywhere, which have no vcpkg port.
+# freed on another thread than the one that allocated them, under mimalloc,
+# the allocator chosen to replace malloc (#1397), against the platform's own:
+# whether mimalloc still beats it, asked again after a mimalloc bump or on a
+# new OS. Built only when the configure asks for them
+# (AUGUSTA_ALLOCATOR_BENCHMARKS, the root CMakeLists.txt), and run only by
+# their label, allocator, which every test preset leaves out:
+# `make test TAGS="allocator"`. One at a time (RUN_SERIAL), so ctest's
+# --parallel adds no contention to what they measure. Each writes its Google
+# Benchmark JSON into allocator-results/, and first fails if its candidate does
+# not serve the process's allocations (allocator_candidate.h).
 if(AUGUSTA_ALLOCATOR_BENCHMARKS)
   add_library(augusta_allocator_benchmark_common OBJECT allocator_benchmark_main.cpp allocator_churn_benchmark.cpp)
   target_link_libraries(augusta_allocator_benchmark_common PUBLIC benchmark::benchmark)
@@ -127,11 +121,6 @@ if(AUGUSTA_ALLOCATOR_BENCHMARKS)
   endfunction()
 
   augusta_allocator_benchmark(platform SOURCES allocator_platform.cpp)
-  if(WIN32)
-    # The process heap as the Segment Heap, which the executable's manifest
-    # asks Windows for: the platform's own other allocator.
-    augusta_allocator_benchmark(segment_heap SOURCES allocator_segment_heap.cpp segment_heap.manifest)
-  endif()
 
   find_package(mimalloc CONFIG REQUIRED)
   # Static where the triplet links statically (Linux, macOS), where its malloc
@@ -142,37 +131,6 @@ if(AUGUSTA_ALLOCATOR_BENCHMARKS)
     SOURCES allocator_mimalloc.cpp
     LIBRARIES $<IF:$<TARGET_EXISTS:mimalloc-static>,mimalloc-static,mimalloc>
   )
-
-  if(NOT APPLE)
-    find_package(TBB CONFIG REQUIRED)
-    # tbbmalloc_proxy replaces malloc when its shared library loads: by
-    # patching the CRT's on Windows (allocator_tbbmalloc_proxy.cpp makes the
-    # executable load it), by interposing its own on Linux, whose triplets
-    # build oneTBB shared for it.
-    augusta_allocator_benchmark(
-      tbbmalloc
-      SOURCES allocator_tbbmalloc.cpp allocator_tbbmalloc_proxy.cpp
-      LIBRARIES TBB::tbbmalloc TBB::tbbmalloc_proxy
-    )
-    # The startup check's control: the same check, with tbbmalloc but not its
-    # proxy, so the platform's malloc serves the allocations and it must fail.
-    augusta_allocator_benchmark(tbbmalloc_unproxied SOURCES allocator_tbbmalloc.cpp LIBRARIES TBB::tbbmalloc)
-    set_tests_properties(allocator_tbbmalloc_unproxied PROPERTIES WILL_FAIL TRUE)
-  endif()
-
-  if(NOT WIN32)
-    find_package(snmalloc CONFIG REQUIRED)
-    augusta_allocator_benchmark(snmalloc SOURCES allocator_snmalloc.cpp LIBRARIES snmalloc::snmalloc)
-
-    # jemalloc's and gperftools' ports install pkg-config files, no CMake
-    # package.
-    find_package(PkgConfig REQUIRED)
-    pkg_check_modules(jemalloc REQUIRED IMPORTED_TARGET jemalloc)
-    augusta_allocator_benchmark(jemalloc SOURCES allocator_jemalloc.cpp LIBRARIES PkgConfig::jemalloc)
-
-    pkg_check_modules(tcmalloc_minimal REQUIRED IMPORTED_TARGET libtcmalloc_minimal)
-    augusta_allocator_benchmark(gperftools SOURCES allocator_gperftools.cpp LIBRARIES PkgConfig::tcmalloc_minimal)
-  endif()
 endif()
 
 # Links augusta_tick alone, so the build fails if its header ever needs another
