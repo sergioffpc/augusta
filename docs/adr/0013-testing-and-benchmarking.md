@@ -265,10 +265,12 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
   process's allocations, and reports the resident set beside each benchmark.
   Only `make test TAGS="allocator"` builds and runs them, on an otherwise idle
   machine: every test preset leaves the label out, so CI and the nightly never
-  run them; and a sanitizer preset never builds them, since a sanitizer brings
-  its own allocator. They answer whether mimalloc, which replaces the platform's
-  allocator (ADR-0078), still beats it, checked after a mimalloc bump or on a
-  new OS, not whether a change regressed, so they keep no history.
+  run them; mimalloc comes from the vcpkg manifest's base dependencies, as the
+  executables it replaces malloc in take it (ADR-0078), so the benchmarks
+  install nothing of their own; and a sanitizer preset never builds them, since
+  a sanitizer brings its own allocator. They answer whether mimalloc still beats
+  the platform's allocator, checked after a mimalloc bump or on a new OS, not
+  whether a change regressed, so they keep no history.
 
 ## Out of scope
 

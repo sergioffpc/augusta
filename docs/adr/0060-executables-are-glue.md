@@ -60,9 +60,10 @@ PredictionWorld are a module, tested by hand-driven ticks.
 - **Checked at configure time.** `cmake/AugustaModule.cmake` refuses a target
   that links an executable, and an executable that links more than the
   application, its Runtime (any target defined in the executable's own
-  directory), crash, failure, logging and version. The build's own
-  infrastructure that every binary links, such as a sanitizer's default options,
-  is no module and passes.
+  directory), crash, failure, logging, version and mimalloc, which replaces
+  malloc in the executables alone (ADR-0078). The build's own infrastructure
+  that every binary links, such as a sanitizer's default options, is no module
+  and passes.
 - **Existing code.** Migrated gradually, one cohesive cluster at a time, never
   in one change.
 - **Python tools** keep their own project layout (`tools/<tool>/`) and are not

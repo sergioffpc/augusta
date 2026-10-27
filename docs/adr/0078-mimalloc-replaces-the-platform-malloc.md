@@ -65,5 +65,7 @@ serves.
   them fails the zip's own `--version` check, not a player's machine.
 - Allocation behaviour differs between the sanitizer presets and every other; a
   bug that depends on the allocator reproduces outside the sanitizers only.
-- The allocator benchmarks keep every candidate, the platform's allocator as the
-  baseline, to answer whether mimalloc is still the right choice.
+- The allocator benchmarks keep two candidates, mimalloc and the platform's
+  allocator, to answer whether mimalloc still beats it after a mimalloc bump or
+  on a new OS. The other candidates are gone; git keeps them should the wider
+  question come back.

@@ -210,8 +210,10 @@ policy (ADR-0060).
   Runtime logs as it starts (augusta_hardware); the GPU, display and audio
   device are logged by the modules that open them
 - Application — the application boundary each executable's `main` runs behind
-  (augusta_application, ADR-0033). The failure model both report in is a module
-  of its own (augusta_failure), so any module names a failure without linking
+  (augusta_application, ADR-0033), and the check, before either executable reads
+  its command line, that mimalloc serves the process, decided from the facts
+  `main` read of it (ADR-0078). The failure model both report in is a module of
+  its own (augusta_failure), so any module names a failure without linking
   thread supervision
 - Crash — the fatal-signal handler each executable's `main` installs first
   (augusta_crash, ADR-0047): it logs the signal and the crashing thread's
