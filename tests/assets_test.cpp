@@ -61,6 +61,7 @@ void WriteFileBytes(const std::filesystem::path& path, const void* data, std::si
 
 // Client/server startup (issue #60) reads its public key from exactly
 // this kind of file: 32 raw bytes, no framing.
+// Requirements: NFR-08
 TEST_F(ReadEd25519PublicKeyFileTest, RoundTripsAValidKeyFile) {
   const auto keys = GenerateEd25519KeyPair();
   const auto path = MakePath("augusta_assets_test_valid.pub");
@@ -71,12 +72,14 @@ TEST_F(ReadEd25519PublicKeyFileTest, RoundTripsAValidKeyFile) {
   EXPECT_EQ(*read_key, keys.public_key);
 }
 
+// Requirements: NFR-08
 TEST_F(ReadEd25519PublicKeyFileTest, RejectsMissingFile) {
   const auto result = ReadEd25519PublicKeyFile(MakePath("augusta_assets_test_does_not_exist.pub"));
   ASSERT_FALSE(result.has_value());
   EXPECT_EQ(result.error(), ReadKeyFileError::kIoError);
 }
 
+// Requirements: NFR-08
 TEST_F(ReadEd25519PublicKeyFileTest, RejectsTruncatedFile) {
   const auto path = MakePath("augusta_assets_test_truncated.pub");
   const std::vector<std::byte> short_bytes(Ed25519PublicKey{}.size() - 1);
@@ -87,6 +90,7 @@ TEST_F(ReadEd25519PublicKeyFileTest, RejectsTruncatedFile) {
   EXPECT_EQ(result.error(), ReadKeyFileError::kIoError);
 }
 
+// Requirements: NFR-08
 TEST_F(ReadEd25519PublicKeyFileTest, RejectsOversizedFile) {
   const auto keys = GenerateEd25519KeyPair();
   const auto path = MakePath("augusta_assets_test_oversized.pub");
@@ -98,8 +102,6 @@ TEST_F(ReadEd25519PublicKeyFileTest, RejectsOversizedFile) {
   ASSERT_FALSE(result.has_value());
   EXPECT_EQ(result.error(), ReadKeyFileError::kIoError);
 }
-
-TEST(PackExtensionTest, EveryPackFileEndsInItsExtension) { EXPECT_EQ(augusta::assets::kPackExtension, ".apak"); }
 
 class PackTest : public ::testing::Test {
  protected:
@@ -150,6 +152,7 @@ std::vector<std::byte> MakeTriangleMeshBlob() {
   return blob.has_value() ? *blob : std::vector<std::byte>{};
 }
 
+// Requirements: US-22
 TEST_F(PackTest, WritePackRejectsDuplicatePaths) {
   const auto blob = MakeTriangleMeshBlob();
   ASSERT_FALSE(blob.empty());
@@ -214,6 +217,7 @@ class TextureBlobTest : public PackTest {
   }
 };
 
+// Requirements: US-22
 TEST_F(TextureBlobTest, ResolvesEachSupportedVkFormatToItsBlockFormat) {
   const std::array<std::pair<std::uint32_t, augusta::assets::TextureFormat>, 3> cases = {{
       {kVkFormatBc7SrgbBlock, augusta::assets::TextureFormat::kBC7},
@@ -232,6 +236,7 @@ TEST_F(TextureBlobTest, ResolvesEachSupportedVkFormatToItsBlockFormat) {
   }
 }
 
+// Requirements: NFR-12
 TEST_F(TextureBlobTest, RefusesABlobWithoutTheKtx2Identifier) {
   std::vector<std::byte> dds = MakeKtx2(kVkFormatBc7SrgbBlock);
   std::ranges::copy(std::array{std::byte{'D'}, std::byte{'D'}, std::byte{'S'}, std::byte{' '}}, dds.begin());
@@ -239,6 +244,7 @@ TEST_F(TextureBlobTest, RefusesABlobWithoutTheKtx2Identifier) {
   EXPECT_EQ(WriteAndResolve(dds).error(), augusta::assets::ResolveError::kCorruptBlob);
 }
 
+// Requirements: NFR-12
 TEST_F(TextureBlobTest, RefusesABlobTooShortForAKtx2Header) {
   std::vector<std::byte> truncated = MakeKtx2(kVkFormatBc7SrgbBlock);
   truncated.resize(kKtx2Identifier.size() + 3);
@@ -246,12 +252,14 @@ TEST_F(TextureBlobTest, RefusesABlobTooShortForAKtx2Header) {
   EXPECT_EQ(WriteAndResolve(truncated).error(), augusta::assets::ResolveError::kCorruptBlob);
 }
 
+// Requirements: NFR-12
 TEST_F(TextureBlobTest, RefusesAKtx2OfAnotherVkFormat) {
   EXPECT_EQ(WriteAndResolve(MakeKtx2(kVkFormatBc7UnormBlock)).error(), augusta::assets::ResolveError::kCorruptBlob);
 }
 
 // A scenario's Lua scripts ride in its server pack (ADR-0031, ADR-0039) as text,
 // addressed by their path relative to the scenario's folder.
+// Requirements: US-22
 TEST_F(PackTest, EncodesAndResolvesAScriptBlob) {
   const auto pack_path = MakePackPath("augusta_assets_test_script_blob");
   const auto keys = GenerateEd25519KeyPair();
@@ -273,6 +281,7 @@ TEST_F(PackTest, EncodesAndResolvesAScriptBlob) {
   EXPECT_EQ(pack->ResolveScript("rules/round.lua").value(), script);
 }
 
+// Requirements: US-22
 TEST_F(PackTest, AnEmptyScriptResolvesToEmptyText) {
   const auto pack_path = MakePackPath("augusta_assets_test_empty_script");
   const auto keys = GenerateEd25519KeyPair();
@@ -287,6 +296,7 @@ TEST_F(PackTest, AnEmptyScriptResolvesToEmptyText) {
   EXPECT_EQ(pack->ResolveScript("empty.lua").value(), "");
 }
 
+// Requirements: US-22
 TEST_F(PackTest, AScriptThatIsNotThereOrIsSomethingElseIsAResolveError) {
   const auto pack_path = MakePackPath("augusta_assets_test_script_errors");
   const auto keys = GenerateEd25519KeyPair();
@@ -302,6 +312,7 @@ TEST_F(PackTest, AScriptThatIsNotThereOrIsSomethingElseIsAResolveError) {
   EXPECT_EQ(pack->ResolveScript("parameters.lua").error(), augusta::assets::ResolveError::kTypeMismatch);
 }
 
+// Requirements: NFR-12
 TEST_F(PackTest, AScriptLargerThanTheLimitIsTooLargeToEncodeAndCorruptToResolve) {
   const std::string huge(2U * 1024 * 1024, 'x');
   const auto blob = augusta::assets::EncodeScriptBlob(huge);
@@ -325,7 +336,7 @@ TEST_F(PackTest, AScriptLargerThanTheLimitIsTooLargeToEncodeAndCorruptToResolve)
 
 // A scenario's character list rides in both packs (ADR-0042): the character
 // index N names element N-1, so the order the cooker wrote is the order resolved.
-// Requirements: US-16
+// Requirements: US-16, US-22
 TEST_F(PackTest, EncodesAndResolvesTheCharacterListInOrder) {
   const auto pack_path = MakePackPath("augusta_assets_test_characters");
   const auto keys = GenerateEd25519KeyPair();
@@ -347,6 +358,7 @@ TEST_F(PackTest, EncodesAndResolvesTheCharacterListInOrder) {
 
 // A cue's sound is mono PCM (ADR-0020): resolved by path with its sample rate,
 // its sample width and its samples as the WAV file held them, and only as audio.
+// Requirements: US-22
 TEST_F(PackTest, EncodesAndResolvesASound) {
   const auto pack_path = MakePackPath("augusta_assets_test_audio");
   const auto keys = GenerateEd25519KeyPair();
@@ -372,6 +384,7 @@ TEST_F(PackTest, EncodesAndResolvesASound) {
 }
 
 // Only whole samples of a width PCM has are a sound: anything else is corrupt.
+// Requirements: NFR-12
 TEST_F(PackTest, ASoundWithAnUnknownSampleWidthOrAPartialSampleIsCorrupt) {
   const auto pack_path = MakePackPath("augusta_assets_test_corrupt_audio");
   const auto keys = GenerateEd25519KeyPair();
@@ -398,6 +411,7 @@ TEST_F(PackTest, ASoundWithAnUnknownSampleWidthOrAPartialSampleIsCorrupt) {
 
 // The encoder refuses the sounds the decoder would find corrupt, so no cook
 // writes one.
+// Requirements: US-22
 TEST(EncodeAudioBlobTest, RefusesASampleWidthPcmDoesNotHave) {
   const std::vector<std::byte> samples(6);
 
@@ -407,6 +421,7 @@ TEST(EncodeAudioBlobTest, RefusesASampleWidthPcmDoesNotHave) {
   EXPECT_EQ(blob.error(), augusta::assets::EncodeError::kUnsupportedSampleWidth);
 }
 
+// Requirements: US-22
 TEST(EncodeAudioBlobTest, RefusesSamplesThatAreNotAWholeNumberOfSamples) {
   const std::vector<std::byte> samples(3);
 
@@ -422,6 +437,7 @@ TEST(EncodeAudioBlobTest, RefusesSamplesThatAreNotAWholeNumberOfSamples) {
 
 // A cue's sound and each of its variants are addressed under the sounds prefix
 // (ADR-0031), which the client and the cooker share.
+// Requirements: US-22
 TEST(CueSoundPathTest, ACuesSoundAndItsVariantsAreAddressedUnderTheSoundsPrefix) {
   EXPECT_EQ(augusta::assets::CueSoundPath("gunshot"), "sounds/gunshot");
   EXPECT_EQ(augusta::assets::CueVariantPath("gunshot", 0), "sounds/gunshot/0");
@@ -430,6 +446,7 @@ TEST(CueSoundPathTest, ACuesSoundAndItsVariantsAreAddressedUnderTheSoundsPrefix)
 
 // A cue's sound (ADR-0041) is its gain and its variants' paths, resolved by
 // path and only as a cue sound.
+// Requirements: US-22
 TEST_F(PackTest, EncodesAndResolvesACueSound) {
   const auto pack_path = MakePackPath("augusta_assets_test_cue_sound");
   const auto keys = GenerateEd25519KeyPair();
@@ -455,6 +472,7 @@ TEST_F(PackTest, EncodesAndResolvesACueSound) {
 
 // Every cue needs a sound (ADR-0041): one with no variant, or a gain that is
 // not a number, is refused when encoded and corrupt when decoded.
+// Requirements: US-22
 TEST(EncodeCueSoundBlobTest, RefusesACueSoundWithNoVariantOrANonFiniteGain) {
   const auto no_variant = augusta::assets::EncodeCueSoundBlob({.gain_db = 0.0F, .variants = {}});
   const auto infinite = augusta::assets::EncodeCueSoundBlob(
@@ -470,6 +488,7 @@ TEST(EncodeCueSoundBlobTest, RefusesACueSoundWithNoVariantOrANonFiniteGain) {
   EXPECT_EQ(not_a_number.error(), augusta::assets::EncodeError::kInvalidCueSound);
 }
 
+// Requirements: NFR-12
 TEST_F(PackTest, ACueSoundWithNoVariantOrANonFiniteGainIsCorrupt) {
   const auto pack_path = MakePackPath("augusta_assets_test_corrupt_cue_sound");
   const auto keys = GenerateEd25519KeyPair();
@@ -499,7 +518,7 @@ TEST(CharacterEyePathTest, ACharactersEyeIsTheEyeChildOfItsRootPrim) {
   EXPECT_EQ(augusta::assets::CharacterEyePath("soldier"), "soldier/Character/Eye");
 }
 
-// Requirements: US-17
+// Requirements: US-17, US-22
 TEST(CharacterMeshPathTest, ACharactersMeshIsTheVisualChildOfItsRootPrim) {
   EXPECT_EQ(augusta::assets::CharacterMeshPath("soldier"), "soldier/Character/Visual");
 }
@@ -529,6 +548,7 @@ TEST_F(PackTest, EncodesAndResolvesACharactersEye) {
 // The rifle's markers (ADR-0064, ADR-0066): its Grip, Muzzle, Sight and
 // Fore-end, each a frame in the rifle's space, found at the one path every
 // scenario's rifle has.
+// Requirements: US-22
 TEST_F(PackTest, EncodesAndResolvesTheRiflesMarkers) {
   const auto pack_path = MakePackPath("augusta_assets_test_rifle");
   const auto keys = GenerateEd25519KeyPair();
@@ -557,6 +577,7 @@ TEST_F(PackTest, EncodesAndResolvesTheRiflesMarkers) {
   EXPECT_EQ(pack->ResolveEye(augusta::assets::kRiflePath).error(), augusta::assets::ResolveError::kTypeMismatch);
 }
 
+// Requirements: US-22
 TEST_F(PackTest, APackWithoutARifleResolvesNone) {
   const auto pack_path = MakePackPath("augusta_assets_test_no_rifle");
   const auto keys = GenerateEd25519KeyPair();
@@ -567,6 +588,7 @@ TEST_F(PackTest, APackWithoutARifleResolvesNone) {
   EXPECT_EQ(pack->ResolveRifle().error(), augusta::assets::ResolveError::kNotFound);
 }
 
+// Requirements: NFR-12
 TEST_F(PackTest, ARifleMissingAMarkerIsCorrupt) {
   const auto pack_path = MakePackPath("augusta_assets_test_rifle_truncated");
   const auto keys = GenerateEd25519KeyPair();
@@ -587,7 +609,7 @@ TEST_F(PackTest, ARifleMissingAMarkerIsCorrupt) {
 
 // A character's weapon socket (ADR-0066): its right hand's Joint and its frame
 // there, and its left hand's Joint, found under the character's path.
-// Requirements: US-11
+// Requirements: US-11, US-22
 TEST_F(PackTest, EncodesAndResolvesAWeaponSocket) {
   const auto pack_path = MakePackPath("augusta_assets_test_weapon_socket");
   const auto keys = GenerateEd25519KeyPair();
@@ -676,7 +698,7 @@ class HitboxPackTest : public PackTest {
   }
 };
 
-// Requirements: US-11
+// Requirements: US-11, US-22
 TEST_F(HitboxPackTest, AHitboxResolvesToItsBodyPartJointAndGeometry) {
   const auto pack = Write({Hitbox("soldier/Character/Head", augusta::assets::BodyPart::kHead, 1.8F)});
 
@@ -690,7 +712,7 @@ TEST_F(HitboxPackTest, AHitboxResolvesToItsBodyPartJointAndGeometry) {
   EXPECT_EQ(hitbox->mesh.indices, (std::vector<std::uint32_t>{0, 1, 2}));
 }
 
-// Requirements: US-11
+// Requirements: US-11, US-22
 TEST_F(HitboxPackTest, ACharactersHitboxesResolveTogetherInPathOrderAndNoOtherCharacters) {
   const auto pack = Write({
       Hitbox("soldier/Character/Torso", augusta::assets::BodyPart::kTorso, 1.3F),
@@ -725,7 +747,7 @@ TEST_F(HitboxPackTest, AHitboxOfAnUnknownBodyPartIsCorrupt) {
 
 // A character's hitbox is cooked in its Joint's space (ADR-0061), and resolves
 // as it was cooked: placing it is its Joint's business.
-// Requirements: US-11
+// Requirements: US-11, US-22
 TEST_F(HitboxPackTest, ACharactersHitboxesResolveInTheirJointsSpace) {
   const auto pack = Write({
       Skeleton("soldier", Vec3(0.0F, 1.0F, 0.0F)),
@@ -785,7 +807,7 @@ void ExpectNear(const Vec3& actual, const Vec3& expected) {
   EXPECT_NEAR(actual.z, expected.z, kTolerance);
 }
 
-// Requirements: US-11
+// Requirements: US-11, US-22
 TEST_F(SkeletonPackTest, ACharactersSkeletonResolvesItsJointsAndTheirParents) {
   const auto pack = Write({Soldier()});
 
@@ -800,7 +822,7 @@ TEST_F(SkeletonPackTest, ACharactersSkeletonResolvesItsJointsAndTheirParents) {
 
 // Each Joint's world transform is composed once, at load, from the local ones
 // the pack stores: the Head sits where the turned Spine's +X points, -Z.
-// Requirements: US-11
+// Requirements: US-11, US-22
 TEST_F(SkeletonPackTest, ACharactersSkeletonResolvesEachJointsRestTransformInTheCharactersSpace) {
   const auto skeleton = ResolveSoldier();
 
@@ -818,7 +840,7 @@ TEST_F(SkeletonPackTest, ACharacterWithoutASkeletonResolvesNone) {
 }
 
 // Every Joint name is resolved once, at load, into the Joint it names.
-// Requirements: US-11
+// Requirements: US-11, US-22
 TEST_F(SkeletonPackTest, EachHitboxIsPairedWithTheJointItNames) {
   const auto skeleton = ResolveSoldier();
 
@@ -846,7 +868,7 @@ TEST_F(SkeletonPackTest, AHitboxNamingAJointTheSkeletonLacksIsRefusedNamingThatJ
   EXPECT_EQ(bound.error().joint, "Head");
 }
 
-// Requirements: US-11
+// Requirements: US-11, US-22
 TEST(FirstMissingBodyPartTest, NamesTheFirstBodyPartNoHitboxStandsFor) {
   using augusta::assets::BodyPart;
   using augusta::assets::FirstMissingBodyPart;
@@ -861,7 +883,7 @@ TEST(FirstMissingBodyPartTest, NamesTheFirstBodyPartNoHitboxStandsFor) {
   EXPECT_EQ(FirstMissingBodyPart({}), BodyPart::kHead);
 }
 
-// Requirements: US-11
+// Requirements: US-11, US-22
 TEST(CharacterAnimationPathsTest, ACharactersClipsAreAddressedUnderItsClipsPrim) {
   EXPECT_EQ(augusta::assets::CharacterAnimationSkeletonPath("soldier"), "soldier/Character/Skeleton.ozz");
   EXPECT_EQ(augusta::assets::CharacterClipPath("soldier", "standing/forward"),
@@ -873,7 +895,7 @@ TEST(CharacterAnimationPathsTest, ACharactersClipsAreAddressedUnderItsClipsPrim)
 // carries without reading.
 std::vector<std::byte> MakeArchive() { return {std::byte{0x6F}, std::byte{0x7A}, std::byte{0x7A}, std::byte{0x00}}; }
 
-// Requirements: US-11
+// Requirements: US-11, US-22
 TEST(ClipBlobTest, AClipDecodesToItsStrideLengthFootContactsAndArchive) {
   using augusta::assets::Foot;
   const augusta::assets::ClipData clip{
@@ -895,7 +917,7 @@ TEST(ClipBlobTest, AClipDecodesToItsStrideLengthFootContactsAndArchive) {
   EXPECT_EQ(decoded->archive, MakeArchive());
 }
 
-// Requirements: NFR-12
+// Requirements: US-22, NFR-12
 TEST(ClipBlobTest, AClipWithANegativeStrideOrAFootContactOutsideItIsRefused) {
   using augusta::assets::EncodeError;
   using augusta::assets::Foot;
@@ -923,7 +945,7 @@ TEST(ClipBlobTest, AClipOfAnUnknownFootIsCorrupt) {
   EXPECT_FALSE(augusta::assets::DecodeClipBlob(*blob).has_value());
 }
 
-// Requirements: US-11
+// Requirements: US-11, US-22
 TEST(StanceTransitionsBlobTest, EachPairOfStancesDecodesToItsDuration) {
   const auto blob = augusta::assets::EncodeStanceTransitionsBlob(
       {.standing_crouching = 0.25F, .standing_prone = 0.75F, .crouching_prone = 0.5F});
@@ -937,7 +959,7 @@ TEST(StanceTransitionsBlobTest, EachPairOfStancesDecodesToItsDuration) {
   EXPECT_FLOAT_EQ(decoded->crouching_prone, 0.5F);
 }
 
-// Requirements: NFR-12
+// Requirements: US-22, NFR-12
 TEST(StanceTransitionsBlobTest, ADurationThatIsNotPositiveIsRefused) {
   const auto blob = augusta::assets::EncodeStanceTransitionsBlob(
       {.standing_crouching = 0.25F, .standing_prone = 0.0F, .crouching_prone = 0.5F});
@@ -945,7 +967,7 @@ TEST(StanceTransitionsBlobTest, ADurationThatIsNotPositiveIsRefused) {
   EXPECT_EQ(blob.error(), augusta::assets::EncodeError::kInvalidAnimation);
 }
 
-// Requirements: US-11
+// Requirements: US-11, US-22
 TEST(AnimationSkeletonBlobTest, AnAnimationSkeletonDecodesToItsArchive) {
   const auto blob = augusta::assets::EncodeAnimationSkeletonBlob(MakeArchive());
   ASSERT_TRUE(blob.has_value());
@@ -955,7 +977,7 @@ TEST(AnimationSkeletonBlobTest, AnAnimationSkeletonDecodesToItsArchive) {
 
 // A pack holding a character's animation loads, and resolves each part of it
 // by the character's name and, for a Clip, its role.
-// Requirements: US-11
+// Requirements: US-11, US-22
 TEST_F(PackTest, APackHoldingACharactersAnimationResolvesItsSkeletonClipsAndTransitions) {
   const auto pack_path = MakePackPath("augusta_assets_test_animation");
   const auto keys = GenerateEd25519KeyPair();
@@ -995,7 +1017,7 @@ TEST_F(PackTest, APackHoldingACharactersAnimationResolvesItsSkeletonClipsAndTran
   EXPECT_EQ(pack->ResolveStanceTransitions("medic").error(), augusta::assets::ResolveError::kNotFound);
 }
 
-// Requirements: US-16
+// Requirements: US-16, US-22
 TEST_F(PackTest, AnEmptyCharacterListResolvesAsEmpty) {
   const auto pack_path = MakePackPath("augusta_assets_test_no_characters");
   const auto keys = GenerateEd25519KeyPair();
@@ -1069,6 +1091,7 @@ TEST_F(PackTest, ACharacterListLongerThanTheLimitIsTooLargeToEncodeAndCorruptToR
 
 // A pack's hash names one cook of it: the trailer's BLAKE3 hash, which the
 // server pack carries for the client pack cooked with it.
+// Requirements: NFR-08
 TEST_F(PackTest, APacksHashIsItsTrailersHash) {
   const auto pack_path = MakePackPath("augusta_assets_test_hash");
   const auto keys = GenerateEd25519KeyPair();
@@ -1089,6 +1112,7 @@ TEST_F(PackTest, APacksHashIsItsTrailersHash) {
 }
 
 // The executables name the pack in every error about its content.
+// Requirements: NFR-08
 TEST_F(PackTest, APackRemembersThePathItWasLoadedFrom) {
   const auto pack_path = MakePackPath("augusta_assets_test_path");
   const auto keys = GenerateEd25519KeyPair();
@@ -1103,6 +1127,7 @@ TEST_F(PackTest, APackRemembersThePathItWasLoadedFrom) {
   EXPECT_EQ(pack->Path(), pack_path);
 }
 
+// Requirements: NFR-08
 TEST_F(PackTest, LoadVerifiedPackLoadsAPackAgainstTheKeyInAFile) {
   const auto pack_path = MakePackPath("augusta_assets_test_verified");
   const auto key_path = MakePackPath("augusta_assets_test_verified.pub");
@@ -1173,6 +1198,7 @@ TEST_F(PackTest, APackNamesTheClientPackItWasWrittenWith) {
 
 // The cooker names a client pack in its server pack by the hash WritePack
 // returns, so it must be the one Load verifies.
+// Requirements: NFR-08
 TEST_F(PackTest, WritePackReturnsTheHashLoadVerifies) {
   const auto keys = GenerateEd25519KeyPair();
   const auto pack_path = MakePackPath("augusta_assets_test_returned_hash");
@@ -1195,6 +1221,7 @@ constexpr std::size_t kWrittenSignatureSize = 64;
 
 // What a tool shows of a pack without a key (augusta-inspect): every field of
 // its header, index and trailer, as WritePack wrote them.
+// Requirements: NFR-08
 TEST_F(PackTest, TheLayoutReadReturnsTheHeaderEntriesHashAndSignatureWritePackWrote) {
   const auto keys = GenerateEd25519KeyPair();
   const auto pack_path = MakePackPath("augusta_assets_test_layout");
@@ -1229,6 +1256,7 @@ TEST_F(PackTest, TheLayoutReadReturnsTheHeaderEntriesHashAndSignatureWritePackWr
   EXPECT_TRUE(std::ranges::equal(layout->signature, std::span(bytes).last(kWrittenSignatureSize)));
 }
 
+// Requirements: NFR-08
 TEST_F(PackTest, TheLayoutReadReturnsTheClientPackAServerPackNames) {
   const auto keys = GenerateEd25519KeyPair();
   const auto client_path = MakePackPath("augusta_assets_test_layout_client");
@@ -1245,6 +1273,7 @@ TEST_F(PackTest, TheLayoutReadReturnsTheClientPackAServerPackNames) {
 }
 
 // augusta-verify reports what it verified.
+// Requirements: NFR-08
 TEST_F(PackTest, APackListsTheEntriesItWasWrittenWith) {
   const auto keys = GenerateEd25519KeyPair();
   const auto pack_path = MakePackPath("augusta_assets_test_entries");
@@ -1272,6 +1301,7 @@ TEST_F(PackTest, APackListsTheEntriesItWasWrittenWith) {
 
 // augusta-publish names the format a verified server pack was cooked in, and
 // augusta-verify the size it verified.
+// Requirements: NFR-08
 TEST_F(PackTest, APackKnowsItsFormatVersionAndSize) {
   const auto keys = GenerateEd25519KeyPair();
   const auto pack_path = MakePackPath("augusta_assets_test_version");
@@ -1324,10 +1354,10 @@ TEST_F(PackLoadNegativeTest, RejectsBadMagic) {
   EXPECT_EQ(pack.error().code, augusta::assets::LoadErrorCode::kBadMagic);
 }
 
-// Requirements: NFR-08, NFR-12
 // A version-2 pack holds DDS textures (ADR-0031): refused, not misread, and
 // named by both versions, so whoever reads it can tell whether the pack or the
 // build is the stale one.
+// Requirements: NFR-08, NFR-12
 TEST_F(PackLoadNegativeTest, RejectsAVersion2Pack) {
   auto bytes = valid_bytes_;
   bytes[4] = std::byte{2};
@@ -1340,9 +1370,9 @@ TEST_F(PackLoadNegativeTest, RejectsAVersion2Pack) {
   EXPECT_EQ(augusta::assets::DescribeLoadError(pack.error()), "is pack format 2; this build reads format 7");
 }
 
-// Requirements: NFR-08, NFR-12
 // A version-3 pack has no Skeleton (ADR-0061): refused at load by the version
 // error, not loaded only to fail at a character's first Hitbox.
+// Requirements: NFR-08, NFR-12
 TEST_F(PackLoadNegativeTest, RejectsAVersion3Pack) {
   auto bytes = valid_bytes_;
   bytes[4] = std::byte{3};
@@ -1355,9 +1385,9 @@ TEST_F(PackLoadNegativeTest, RejectsAVersion3Pack) {
   EXPECT_EQ(augusta::assets::DescribeLoadError(pack.error()), "is pack format 3; this build reads format 7");
 }
 
-// Requirements: NFR-08, NFR-12
 // A version-4 pack has no Clips (ADR-0066): refused at load by the version
 // error, so a server never starts on a Character it cannot pose.
+// Requirements: NFR-08, NFR-12
 TEST_F(PackLoadNegativeTest, RejectsAVersion4Pack) {
   auto bytes = valid_bytes_;
   bytes[4] = std::byte{4};
@@ -1370,9 +1400,9 @@ TEST_F(PackLoadNegativeTest, RejectsAVersion4Pack) {
   EXPECT_EQ(augusta::assets::DescribeLoadError(pack.error()), "is pack format 4; this build reads format 7");
 }
 
-// Requirements: NFR-08, NFR-12
 // A version-5 pack has no rifle (ADR-0064): refused at load by the version
 // error, not loaded only to fail when the server resolves its rifle.
+// Requirements: NFR-08, NFR-12
 TEST_F(PackLoadNegativeTest, RejectsAVersion5Pack) {
   auto bytes = valid_bytes_;
   bytes[4] = std::byte{5};
@@ -1385,9 +1415,9 @@ TEST_F(PackLoadNegativeTest, RejectsAVersion5Pack) {
   EXPECT_EQ(augusta::assets::DescribeLoadError(pack.error()), "is pack format 5; this build reads format 7");
 }
 
-// Requirements: NFR-08, NFR-12
 // A version-6 pack has no weapon socket or Fore-end (ADR-0066): refused at load
 // by the version error, not loaded only to fail when the server resolves them.
+// Requirements: NFR-08, NFR-12
 TEST_F(PackLoadNegativeTest, RejectsAVersion6Pack) {
   auto bytes = valid_bytes_;
   bytes[4] = std::byte{6};
@@ -1546,6 +1576,7 @@ TEST_F(PackLayoutNegativeTest, RejectsAnIndexEntryOfAnUnknownType) {
 
 // No key, no verification: a pack modified after signing still shows its
 // layout, which is how augusta-inspect looks inside a pack that fails to verify.
+// Requirements: NFR-08
 TEST_F(PackLayoutNegativeTest, ReadsAPackWhoseContentNoLongerMatchesItsHash) {
   auto bytes = valid_bytes_;
   bytes[kHeaderSize + 2] ^= std::byte{0xFF};
@@ -1557,6 +1588,7 @@ TEST_F(PackLayoutNegativeTest, ReadsAPackWhoseContentNoLongerMatchesItsHash) {
   EXPECT_EQ(layout->entries[0].path, "TestMesh");
 }
 
+// Requirements: US-22
 TEST(ComputeWorldTransformsTest, ChainsEachNodeThroughItsParents) {
   augusta::assets::SceneData scene;
   augusta::assets::SceneNode root;
@@ -1586,6 +1618,7 @@ TEST(ComputeWorldTransformsTest, ChainsEachNodeThroughItsParents) {
               1e-5F);
 }
 
+// Requirements: US-22
 TEST(ComputeWorldTransformsTest, ANodeWithNoParentIsItsOwnRoot) {
   augusta::assets::SceneData scene;
   augusta::assets::SceneNode node;

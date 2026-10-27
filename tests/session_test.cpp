@@ -345,6 +345,7 @@ TEST_F(JoinTest, SessionIdsFromTwoHostsNeverCollide) {
 
 // The admission line ties the client's Run ID to the Session it is admitted
 // as (ADR-0038).
+// Requirements: NFR-19
 TEST_F(JoinTest, AnAdmittedClientIsLoggedWithTheRunIdItSentAndItsSession) {
   augusta::logging::Init();
   const boost::uuids::uuid run = boost::uuids::time_generator_v7{}();
@@ -655,14 +656,17 @@ augusta::prediction::State FallenBody(const std::vector<CollisionMesh>& collisio
   return state;
 }
 
+// Requirements: US-04
 TEST(MapSessionTest, ThePredictedBodyRestsOnTheMapsFloor) {
   EXPECT_NEAR(FallenBody({FloorAt(kFloorHeight)}).local_body.position.y, kFloorHeight, 0.2F);
 }
 
+// Requirements: US-04
 TEST(MapSessionTest, WithoutAMapThePredictedBodyKeepsFalling) {
   EXPECT_LT(FallenBody({}).local_body.position.y, kFloorHeight - 5.0F);
 }
 
+// Requirements: US-22
 TEST(MapSessionTest, APredictionWorldRefusesAMapMeshPhysicsRejects) {
   augusta::prediction::World world = EmptyWorld();
 
@@ -672,6 +676,7 @@ TEST(MapSessionTest, APredictionWorldRefusesAMapMeshPhysicsRejects) {
   EXPECT_EQ(added.error(), augusta::physics::CollisionMeshError::kEmpty);
 }
 
+// Requirements: US-22
 TEST(MapHostTest, AHostAcceptsAMapAndKeepsTicking) {
   Host host(TestHostConfig(),
             Scenario{.collision = {FloorAt(0.0F)},
@@ -684,6 +689,7 @@ TEST(MapHostTest, AHostAcceptsAMapAndKeepsTicking) {
   SUCCEED();
 }
 
+// Requirements: US-22
 TEST(MapHostTest, AHostRefusesACharacterHitboxThatIsNotAWholeTriangleList) {
   // Three points and an index past them.
   const augusta::assets::HitboxData hitbox{
@@ -702,6 +708,7 @@ TEST(MapHostTest, AHostRefusesACharacterHitboxThatIsNotAWholeTriangleList) {
             Code::kInvalidContent);
 }
 
+// Requirements: US-22
 TEST(MapHostTest, AHostRefusesAMapMeshPhysicsRejects) {
   EXPECT_EQ(CodeThrownBy([] {
               Host(TestHostConfig(),
@@ -1586,7 +1593,7 @@ TEST_F(ReadyTest, AClientInTheLobbyNeitherPredictsNorSendsCommands) {
 
 using MidMatchTest = MatchOf<3>;
 
-// Requirements: NFR-06
+// Requirements: NFR-02, NFR-06
 TEST_F(MidMatchTest, APlayerWhoDisconnectsLeavesTheOthersStateAndTheSimulationAndTheMatchGoesOn) {
   for (int i = 0; i < 3; ++i) {
     Join();
@@ -1640,6 +1647,7 @@ TEST_F(MatchCycleTest, EndingTheMatchSendsEveryoneBackToTheLobbyUnderANewRoster)
 // A Server view is one moment of what the server has said (ADR-0005): one taken
 // during a match still holds that match after it ends, while one taken after
 // shows the Lobby.
+// Requirements: US-14
 TEST_F(MatchCycleTest, AServerViewKeepsTheMomentItWasTakenAt) {
   Session& client = Join();
   Join();
@@ -1741,6 +1749,7 @@ bool EndMatchIntoTheLobby(Host& host, const std::vector<Session*>& sessions) {
 }
 
 // A Match ID names one Match on every client of it, and each Match afresh (ADR-0043).
+// Requirements: NFR-19
 TEST_F(MatchCycleTest, EveryClientOfAMatchIsToldTheSameMatchIdAndTheNextMatchIsNamedByANewOne) {
   Session& first = Join();
   Session& second = Join();
@@ -1757,6 +1766,7 @@ TEST_F(MatchCycleTest, EveryClientOfAMatchIsToldTheSameMatchIdAndTheNextMatchIsN
 }
 
 // Who played with whom is read off the server's Match start line (ADR-0029).
+// Requirements: NFR-19
 TEST_F(MatchCycleTest, TheServersMatchLinesNameTheMatchIdAndItsStartLineEveryPlayersSession) {
   augusta::logging::Init();
   Session& first = Join();
@@ -1784,6 +1794,7 @@ TEST_F(MatchCycleTest, TheServersMatchLinesNameTheMatchIdAndItsStartLineEveryPla
 // A Session tells its owner of its Match (SessionConfig::on_match), which the
 // client holds in its logging context (ADR-0029): the Match ID at Match start,
 // the nil ID at Match end.
+// Requirements: NFR-10
 TEST_F(MatchCycleTest, ASessionTellsItsOwnerOfItsMatchAtItsStartAndOfNoneAtItsEnd) {
   std::vector<boost::uuids::uuid> told;
   SessionConfig config = TestSessionConfig(host_.ListenEndpoint());
@@ -1803,6 +1814,7 @@ TEST_F(MatchCycleTest, ASessionTellsItsOwnerOfItsMatchAtItsStartAndOfNoneAtItsEn
 // A Session outside the client, as each of the Agent's many is, sets no Match
 // in the process-wide logging context: its Match is told to no one, so another
 // Session's lines never carry it.
+// Requirements: NFR-10
 TEST_F(MatchCycleTest, ASessionWithNoOwnerToTellPutsNoMatchInTheLogContext) {
   augusta::logging::Init();
   augusta::logging::SetLogLevel(augusta::logging::Severity::kInfo);
@@ -2328,6 +2340,7 @@ TEST_F(ScriptedServerTest, BytesThatAreNoMessageChangeNothingAndTheClientKeepsRu
 
 // The scripted server's rifle holds one round. The client fires it, and the
 // server says it refused that round: the rifle is still loaded and ready.
+// Requirements: NFR-02
 TEST_F(ScriptedServerTest, ARifleTheServerSaysDiffersFromThePredictedOneIsPutAtTheServers) {
   Settle();
   Command fire{};
@@ -2349,6 +2362,7 @@ TEST_F(ScriptedServerTest, ARifleTheServerSaysDiffersFromThePredictedOneIsPutAtT
   EXPECT_EQ(corrected.rifle.rounds, 0);
 }
 
+// Requirements: NFR-12
 TEST_F(ScriptedServerTest, AStateNamingABodyNotInTheMatchIsDropped) {
   Settle();
 
@@ -2364,6 +2378,7 @@ TEST_F(ScriptedServerTest, AStateNamingABodyNotInTheMatchIsDropped) {
 // The server's tick never starts over (ADR-0038): past the last one 32 bits
 // hold, a newer state is still newer and an older one still stale, and the
 // client keeps sending its commands.
+// Requirements: NFR-02
 TEST_F(ScriptedServerTest, StatesPastThirtyTwoBitsOfTicksAreStillNewestWins) {
   constexpr augusta::tick::Tick kLastOf32Bits = std::numeric_limits<std::uint32_t>::max();
   Settle();
@@ -2404,6 +2419,7 @@ TEST_F(ScriptedServerTest, AStateThatArrivesAfterMatchEndIsDroppedAndTheClientIs
 
 // Below the tick rate, a render frame comes after several updates have arrived:
 // the view keeps them, oldest first, for the interpolation to record each.
+// Requirements: US-17
 TEST_F(ScriptedServerTest, TheViewKeepsTheRecentStatesInTickOrderTheNewestLast) {
   Settle();
   for (const augusta::tick::Tick tick : {1U, 2U, 3U}) {
@@ -2423,6 +2439,7 @@ TEST_F(ScriptedServerTest, TheViewKeepsTheRecentStatesInTickOrderTheNewestLast) 
 
 // The view keeps no more updates than the interpolation keeps per body (28,
 // at the fastest tick rate): the oldest go first. A stale one is not kept.
+// Requirements: NFR-12
 TEST_F(ScriptedServerTest, TheViewKeepsNoMoreRecentStatesThanTheInterpolationKeeps) {
   constexpr augusta::tick::Tick kSent = 40;
   Settle();
@@ -2467,6 +2484,7 @@ class ScriptedLobbyTest : public ScriptedServerTest {
   }
 };
 
+// Requirements: US-02
 TEST_F(ScriptedLobbyTest, AStateThatArrivesBeforeMatchStartIsDropped) {
   server_.Send(ScriptedServer::StateOf(1, {kScriptedEntity}));
   Settle();
@@ -2480,6 +2498,7 @@ TEST_F(ScriptedLobbyTest, AStateThatArrivesBeforeMatchStartIsDropped) {
   EXPECT_TRUE(session_.GetServerView()->authoritative.has_value());
 }
 
+// Requirements: US-02
 TEST_F(ScriptedLobbyTest, AMatchStartThatLeavesThisClientOutIsDropped) {
   server_.Send(augusta::protocol::MatchStartWire{
       .players = {
@@ -2565,6 +2584,7 @@ TEST_F(TickRateTest, AClientLearnsTheServersTickRateWhenItJoins) {
   EXPECT_EQ(client.GetServerView()->accepted->tick_rate_hz, kServerRate);
 }
 
+// Requirements: NFR-02
 TEST_F(TickRateTest, AClientTickingAtTheRateItWasToldAgreesWithTheServerWithoutCorrection) {
   Session& client = Join();
   ASSERT_TRUE(StartMatch());
@@ -4839,6 +4859,7 @@ augusta::protocol::HitConfirmationWire HitOn(EntityIdWire target) {
       .target = target, .damage = 37.5F, .part = augusta::protocol::BodyPartWire::kHead};
 }
 
+// Requirements: US-19
 TEST_F(ScriptedServerTest, AHitConfirmationOfABodyInTheMatchIsHandedOutOnceAsItWasSent) {
   server_.Send(HitOn(kScriptedEntity));
   Settle();
@@ -4852,6 +4873,7 @@ TEST_F(ScriptedServerTest, AHitConfirmationOfABodyInTheMatchIsHandedOutOnceAsItW
   EXPECT_TRUE(session_.TakeHitConfirmations(*session_.GetServerView()).empty());
 }
 
+// Requirements: NFR-12
 TEST_F(ScriptedServerTest, AHitConfirmationNamingABodyNotInTheMatchIsDropped) {
   server_.Send(HitOn(EntityIdWire{99}));
   Settle();
@@ -4859,6 +4881,7 @@ TEST_F(ScriptedServerTest, AHitConfirmationNamingABodyNotInTheMatchIsDropped) {
   EXPECT_TRUE(session_.TakeHitConfirmations(*session_.GetServerView()).empty());
 }
 
+// Requirements: US-19
 TEST_F(ScriptedServerTest, AHitConfirmationThatArrivesAfterMatchEndIsDropped) {
   server_.Send(augusta::protocol::MatchEndWire{});
   server_.Send(HitOn(kScriptedEntity));
@@ -4867,6 +4890,7 @@ TEST_F(ScriptedServerTest, AHitConfirmationThatArrivesAfterMatchEndIsDropped) {
   EXPECT_TRUE(session_.TakeHitConfirmations(*session_.GetServerView()).empty());
 }
 
+// Requirements: US-19
 TEST_F(ScriptedServerTest, AHitConfirmationNobodyAskedForIsNotHandedOutInTheNextMatch) {
   server_.Send(HitOn(kScriptedEntity));
   server_.Send(augusta::protocol::MatchEndWire{});
@@ -4877,6 +4901,7 @@ TEST_F(ScriptedServerTest, AHitConfirmationNobodyAskedForIsNotHandedOutInTheNext
   EXPECT_TRUE(session_.TakeHitConfirmations(*session_.GetServerView()).empty());
 }
 
+// Requirements: US-19
 TEST_F(ScriptedLobbyTest, AHitConfirmationThatArrivesBeforeMatchStartIsDropped) {
   server_.Send(HitOn(kScriptedEntity));
   Settle();
@@ -4887,6 +4912,7 @@ TEST_F(ScriptedLobbyTest, AHitConfirmationThatArrivesBeforeMatchStartIsDropped) 
 }
 
 // A client nobody asks keeps the newest Hit confirmations, not all of them for ever.
+// Requirements: NFR-12
 TEST_F(ScriptedServerTest, AClientThatIsNeverAskedKeepsOnlyTheNewestHitConfirmations) {
   const std::size_t sent = augusta::harness::kMaxPendingHitConfirmations + 10;
   for (std::size_t i = 1; i <= sent; ++i) {
@@ -4909,6 +4935,7 @@ augusta::protocol::ShotWire ShotBy(EntityIdWire shooter) {
       .tick = 7, .origin = Vec3(1.0F, 1.5F, -2.0F), .shooter = shooter, .yaw = 0.5F, .pitch = -0.125F};
 }
 
+// Requirements: US-19
 TEST_F(ScriptedServerTest, AShotOfABodyInTheMatchIsHandedOutOnceAsItWasSent) {
   server_.Send(ShotBy(kScriptedEntity));
   Settle();
@@ -4924,6 +4951,7 @@ TEST_F(ScriptedServerTest, AShotOfABodyInTheMatchIsHandedOutOnceAsItWasSent) {
   EXPECT_TRUE(session_.TakeShots(*session_.GetServerView()).empty());
 }
 
+// Requirements: US-19
 TEST_F(ScriptedServerTest, ShotsAreHandedOutInTheOrderTheyArrived) {
   for (augusta::tick::Tick tick = 1; tick <= 3; ++tick) {
     augusta::protocol::ShotWire shot = ShotBy(kScriptedEntity);
@@ -4940,6 +4968,7 @@ TEST_F(ScriptedServerTest, ShotsAreHandedOutInTheOrderTheyArrived) {
   EXPECT_EQ(shots[2].tick, 3U);
 }
 
+// Requirements: NFR-12
 TEST_F(ScriptedServerTest, AShotNamingABodyNotInTheMatchIsDropped) {
   server_.Send(ShotBy(EntityIdWire{99}));
   Settle();
@@ -4947,6 +4976,7 @@ TEST_F(ScriptedServerTest, AShotNamingABodyNotInTheMatchIsDropped) {
   EXPECT_TRUE(session_.TakeShots(*session_.GetServerView()).empty());
 }
 
+// Requirements: US-19
 TEST_F(ScriptedServerTest, AShotThatArrivesAfterMatchEndIsDropped) {
   server_.Send(augusta::protocol::MatchEndWire{});
   server_.Send(ShotBy(kScriptedEntity));
@@ -4955,6 +4985,7 @@ TEST_F(ScriptedServerTest, AShotThatArrivesAfterMatchEndIsDropped) {
   EXPECT_TRUE(session_.TakeShots(*session_.GetServerView()).empty());
 }
 
+// Requirements: US-19
 TEST_F(ScriptedServerTest, AShotNobodyAskedForIsNotHandedOutInTheNextMatch) {
   server_.Send(ShotBy(kScriptedEntity));
   server_.Send(augusta::protocol::MatchEndWire{});
@@ -4965,6 +4996,7 @@ TEST_F(ScriptedServerTest, AShotNobodyAskedForIsNotHandedOutInTheNextMatch) {
   EXPECT_TRUE(session_.TakeShots(*session_.GetServerView()).empty());
 }
 
+// Requirements: US-19
 TEST_F(ScriptedLobbyTest, AShotThatArrivesBeforeMatchStartIsDropped) {
   server_.Send(ShotBy(kScriptedEntity));
   Settle();
@@ -4976,6 +5008,7 @@ TEST_F(ScriptedLobbyTest, AShotThatArrivesBeforeMatchStartIsDropped) {
 }
 
 // A client nobody asks keeps the newest Shots, not all of them for ever.
+// Requirements: NFR-12
 TEST_F(ScriptedServerTest, AClientThatIsNeverAskedKeepsOnlyTheNewestShots) {
   const auto sent = static_cast<augusta::tick::Tick>(augusta::harness::kMaxPendingShots + 10);
   for (augusta::tick::Tick tick = 1; tick <= sent; ++tick) {
@@ -5163,6 +5196,7 @@ augusta::protocol::DeathWire DeathOf(EntityIdWire victim, EntityIdWire killer) {
                                       .part = augusta::protocol::BodyPartWire::kTorso};
 }
 
+// Requirements: NFR-12
 TEST_F(ScriptedServerTest, ADeathNamingABodyNotInTheMatchIsDropped) {
   Settle();
 
@@ -5181,6 +5215,7 @@ TEST_F(ScriptedServerTest, ADeathNamingABodyNotInTheMatchIsDropped) {
 // The tick that ends a Match sends its own Shots, Hit confirmations and Deaths
 // just before Match end, so they often arrive together: what the Match ended
 // on is still handed out once it has.
+// Requirements: US-13, US-19
 TEST_F(ScriptedServerTest, TheShotsHitsAndDeathsThatArriveJustBeforeMatchEndAreStillHandedOutAfterIt) {
   server_.Send(ShotBy(kScriptedEntity));
   server_.Send(HitOn(kScriptedEntity));
@@ -5194,6 +5229,7 @@ TEST_F(ScriptedServerTest, TheShotsHitsAndDeathsThatArriveJustBeforeMatchEndAreS
   EXPECT_EQ(session_.TakeDeaths(*session_.GetServerView()).size(), 1U);
 }
 
+// Requirements: US-13
 TEST_F(ScriptedServerTest, ADeathNobodyAskedForIsNotHandedOutInTheNextMatch) {
   Settle();
 
@@ -5224,6 +5260,7 @@ TEST_F(ScriptedServerTest, AClientToldOfItsOwnDeathStopsPredicting) {
   EXPECT_EQ(after.total_rounds_fired, dead.total_rounds_fired);
 }
 
+// Requirements: US-13
 TEST_F(ScriptedLobbyTest, ADeathThatArrivesOutsideAMatchIsDropped) {
   EXPECT_FALSE(session_.GetServerView()->OwnAlive());
   server_.Send(DeathOf(kScriptedEntity, kScriptedEntity));
@@ -5241,6 +5278,7 @@ TEST_F(ScriptedLobbyTest, ADeathThatArrivesOutsideAMatchIsDropped) {
 // nothing of the next one, even once it has started and sent its own, and the
 // last one's events nobody took are obsolete by then; the next Match's view
 // takes that Match's own and nothing of the last.
+// Requirements: US-13, US-19
 TEST_F(ScriptedServerTest, AServerViewTakesTheShotsHitsAndDeathsOfItsOwnMatchOnly) {
   const auto send_match_events = [&](augusta::tick::Tick tick) {
     augusta::protocol::ShotWire shot = ShotBy(kScriptedEntity);
@@ -5278,6 +5316,7 @@ TEST_F(ScriptedServerTest, AServerViewTakesTheShotsHitsAndDeathsOfItsOwnMatchOnl
 // thread reads the Server view and takes: what it takes is never of a Match
 // before the one it last saw start, and what it takes with a view is of that
 // view's Match alone.
+// Requirements: US-13, US-19
 TEST_F(ScriptedServerTest, AReaderThatHasSeenAMatchStartNeverTakesTheEventsOfAnEarlierOne) {
   constexpr std::uint32_t kMatches = 100;
   const auto tag = [](std::uint32_t match) { return static_cast<float>(match) / 64.0F; };

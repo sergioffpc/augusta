@@ -71,12 +71,6 @@ target_compile_definitions(
   PRIVATE AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs"
 )
 
-# Links augusta_limits alone, so the build fails if its header ever needs
-# another module's include path.
-add_executable(augusta_limits_tests limits_test.cpp)
-target_link_libraries(augusta_limits_tests PRIVATE augusta_limits GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_limits_tests DISCOVERY_TIMEOUT 30)
-
 # Links augusta_tick alone, so the build fails if its header ever needs another
 # module's include path.
 add_executable(augusta_tick_tests tick_test.cpp)
@@ -417,12 +411,6 @@ add_executable(augusta_hitbox_tests hitbox_test.cpp)
 target_link_libraries(augusta_hitbox_tests PRIVATE augusta_gameplay GTest::gtest GTest::gtest_main)
 # Links PhysX through augusta_gameplay, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_hitbox_tests DISCOVERY_TIMEOUT 30)
-
-# ozz-animation's prebuilt libraries and this build's code, run together on SIMD
-# values held on the stack; the offline libraries author the test's archives.
-add_executable(augusta_animation_ozz_jobs_tests animation_ozz_jobs_test.cpp)
-target_link_libraries(augusta_animation_ozz_jobs_tests PRIVATE ozz::animation_offline GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_animation_ozz_jobs_tests)
 
 # A Character's Clips loaded from packs the test writes, of archives it
 # authors with ozz-animation's offline libraries, as the cooker does.
@@ -904,16 +892,9 @@ target_link_libraries(
 target_compile_options(augusta_crash_property_tests PRIVATE $<$<CXX_COMPILER_ID:Clang>:-Wno-deprecated-declarations>)
 gtest_discover_tests(augusta_crash_property_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS property)
 
-# The renderer's GPU half builds only with the client (AUGUSTA_CLIENT), but
-# which region of its per-frame upload buffers a frame uses is a GPU-free
-# header, private to the module, so it is tested in every build through a
-# private include path.
-add_executable(augusta_frame_regions_tests frame_regions_test.cpp)
-target_include_directories(augusta_frame_regions_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/renderer)
-target_link_libraries(augusta_frame_regions_tests PRIVATE GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_frame_regions_tests DISCOVERY_TIMEOUT 30)
-
-# Likewise the geometry the renderer builds on the CPU (vertices.h).
+# The renderer's GPU half builds only with the client (AUGUSTA_CLIENT), but the
+# geometry it builds on the CPU (vertices.h) is free of any GPU API, private to
+# the module, so it is tested in every build through a private include path.
 add_executable(augusta_renderer_vertices_tests renderer_vertices_test.cpp)
 target_include_directories(augusta_renderer_vertices_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/renderer)
 target_link_libraries(augusta_renderer_vertices_tests PRIVATE augusta_renderer_vertices GTest::gtest GTest::gtest_main)

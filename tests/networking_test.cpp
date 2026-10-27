@@ -261,6 +261,7 @@ class NetworkingEnvironment : public ::testing::Environment {
 
 class NetworkingTest : public ::testing::Test {};
 
+// Requirements: US-01
 TEST_F(NetworkingTest, AServerBoundToPortZeroReportsThePortItGot) {
   Server server(Endpoint{.address = kLoopbackAnyPort});
 
@@ -275,6 +276,7 @@ TEST_F(NetworkingTest, AServerBoundToPortZeroReportsThePortItGot) {
 // bound to port 0 must never land on a port a wildcard socket already holds -
 // held here by the hundreds, so a server picking ports of its own at random
 // would all but surely land on one of them.
+// Requirements: US-01
 TEST_F(NetworkingTest, AServerBoundToPortZeroNeverTakesAPortAWildcardSocketHolds) {
   constexpr std::size_t kHeldPorts = 512;
   constexpr int kServers = 128;
@@ -289,6 +291,7 @@ TEST_F(NetworkingTest, AServerBoundToPortZeroNeverTakesAPortAWildcardSocketHolds
   }
 }
 
+// Requirements: US-01
 TEST_F(NetworkingTest, RoundTripsAMessageBothWays) {
   Server server(Endpoint{.address = kLoopbackAnyPort});
   Client client;
@@ -400,6 +403,7 @@ std::vector<std::string> NumberedMessages(int count) {
   return messages;
 }
 
+// Requirements: NFR-02
 TEST_F(ConnectedNetworkingTest, ReliableMessagesArriveOnceAndInOrderDespiteLoss) {
   SimulateNetworkConditions({.loss_percent = 30.0F});
 
@@ -413,6 +417,7 @@ TEST_F(ConnectedNetworkingTest, ReliableMessagesArriveOnceAndInOrderDespiteLoss)
   EXPECT_TRUE(DrainServerFor(kDrainWindow).empty());
 }
 
+// Requirements: NFR-02
 TEST_F(ConnectedNetworkingTest, UnreliableMessagesCanBeLostButNeverDuplicated) {
   SimulateNetworkConditions({.loss_percent = 50.0F});
 
@@ -441,6 +446,7 @@ TEST_F(ConnectedNetworkingTest, UnreliableMessagesCanBeLostButNeverDuplicated) {
   EXPECT_TRUE(distinct.contains("marker"));
 }
 
+// Requirements: NFR-02
 TEST_F(ConnectedNetworkingTest, ServerSendAndBroadcastHonorReliabilityToo) {
   SimulateNetworkConditions({.loss_percent = 30.0F});
 
@@ -455,6 +461,7 @@ TEST_F(ConnectedNetworkingTest, ServerSendAndBroadcastHonorReliabilityToo) {
   EXPECT_EQ(ReceiveOnClient(expected.size()), expected);
 }
 
+// Requirements: US-29
 TEST_F(ConnectedNetworkingTest, InjectedLatencyDelaysDelivery) {
   constexpr int kLatencyMs = 100;
   SimulateNetworkConditions({.latency_ms = kLatencyMs});
@@ -474,6 +481,7 @@ TEST_F(ConnectedNetworkingTest, InjectedLatencyDelaysDelivery) {
 // Both ends live in this one process, so a packet is sent and received by it:
 // conditions on what it receives add to those on what it sends, and the
 // default must add only the latter.
+// Requirements: US-29
 TEST_F(ConnectedNetworkingTest, ByDefaultTheLatencyDelaysOnlyWhatTheProcessSends) {
   constexpr int kLatencyMs = 200;
   SimulateNetworkConditions({.latency_ms = kLatencyMs});
@@ -487,6 +495,7 @@ TEST_F(ConnectedNetworkingTest, ByDefaultTheLatencyDelaysOnlyWhatTheProcessSends
   EXPECT_LT(elapsed, std::chrono::milliseconds((2 * kLatencyMs) - 20));
 }
 
+// Requirements: US-29
 TEST_F(ConnectedNetworkingTest, ConditionsOnBothSidesDelayWhatTheProcessReceivesToo) {
   constexpr int kLatencyMs = 100;
   SimulateNetworkConditions({.latency_ms = kLatencyMs, .applies_to = SimulatedTraffic::kSentAndReceived});
@@ -501,6 +510,7 @@ TEST_F(ConnectedNetworkingTest, ConditionsOnBothSidesDelayWhatTheProcessReceives
   EXPECT_LT(elapsed, std::chrono::milliseconds((2 * kLatencyMs) + 400));
 }
 
+// Requirements: US-29
 TEST_F(ConnectedNetworkingTest, ConditionsOnBothSidesLoseWhatTheProcessReceivesToo) {
   // Half lost on the way out, and half of the rest on the way in: about a
   // quarter arrive, where losing on one side alone lets about half through.
@@ -520,6 +530,7 @@ TEST_F(ConnectedNetworkingTest, ConditionsOnBothSidesLoseWhatTheProcessReceivesT
   EXPECT_LT(received.size(), static_cast<std::size_t>(kSent * 3 / 8));
 }
 
+// Requirements: US-29
 TEST_F(ConnectedNetworkingTest, InjectedJitterDelaysSomeMessagesMoreThanOthers) {
   constexpr int kJitterMeanMs = 50;
   constexpr int kJitterMaxMs = 100;
@@ -564,6 +575,7 @@ class ReorderingNetworkingTest : public ConnectedNetworkingTest {
   }
 };
 
+// Requirements: US-29
 TEST_F(ReorderingNetworkingTest, InjectedJitterAloneKeepsMessagesInOrder) {
   SimulateNetworkConditions({.jitter_mean_ms = 20, .jitter_max_ms = 60});
 
@@ -573,6 +585,7 @@ TEST_F(ReorderingNetworkingTest, InjectedJitterAloneKeepsMessagesInOrder) {
   EXPECT_TRUE(std::ranges::is_sorted(positions));
 }
 
+// Requirements: US-29
 TEST_F(ReorderingNetworkingTest, InjectedReorderingDeliversUnreliableMessagesOutOfOrder) {
   SimulateNetworkConditions({.reorder_percent = 50.0F, .reorder_delay_ms = 50});
 
@@ -582,6 +595,7 @@ TEST_F(ReorderingNetworkingTest, InjectedReorderingDeliversUnreliableMessagesOut
   EXPECT_FALSE(std::ranges::is_sorted(positions));
 }
 
+// Requirements: US-29
 TEST_F(ReorderingNetworkingTest, ConditionsOnBothSidesReorderWhatTheProcessReceivesToo) {
   SimulateNetworkConditions(
       {.reorder_percent = 50.0F, .reorder_delay_ms = 50, .applies_to = SimulatedTraffic::kSentAndReceived});
@@ -592,6 +606,7 @@ TEST_F(ReorderingNetworkingTest, ConditionsOnBothSidesReorderWhatTheProcessRecei
   EXPECT_FALSE(std::ranges::is_sorted(positions));
 }
 
+// Requirements: NFR-02
 TEST_F(ReorderingNetworkingTest, ReliableMessagesArriveOnceAndInOrderDespiteReordering) {
   SimulateNetworkConditions({.reorder_percent = 50.0F, .reorder_delay_ms = 50});
 
@@ -605,6 +620,7 @@ TEST_F(ReorderingNetworkingTest, ReliableMessagesArriveOnceAndInOrderDespiteReor
   EXPECT_EQ(ReceiveOnServer(sent.size()), sent);
 }
 
+// Requirements: NFR-02
 TEST_F(ConnectedNetworkingTest, AClientThatClosesItsConnectionIsReportedAsClosedByPeer) {
   client_->Disconnect();
 
@@ -616,6 +632,7 @@ TEST_F(ConnectedNetworkingTest, AClientThatClosesItsConnectionIsReportedAsClosed
 // What the server sent reliably before closing is the client's to receive
 // even once it has seen the close: a reply that explains it, or the last of a
 // Replay, is not lost with the connection.
+// Requirements: NFR-02
 TEST_F(ConnectedNetworkingTest, WhatArrivedBeforeTheServerClosedIsStillReceivedAfterTheClose) {
   const std::vector<std::string> sent = NumberedMessages(kBurst);
   for (const std::string& message : sent) {
@@ -634,6 +651,7 @@ TEST_F(ConnectedNetworkingTest, WhatArrivedBeforeTheServerClosedIsStillReceivedA
   EXPECT_TRUE(client_->ReceiveMessages().value().empty());
 }
 
+// Requirements: NFR-07
 TEST_F(ConnectedNetworkingTest, TheServerReportsTheStatsOfEachConnectedPeer) {
   std::vector<PeerStats> stats;
   ASSERT_TRUE(PollUntil([&] { PollBoth(); },
@@ -647,6 +665,7 @@ TEST_F(ConnectedNetworkingTest, TheServerReportsTheStatsOfEachConnectedPeer) {
   EXPECT_GE(stats.front().stats.ping_ms, 0);
 }
 
+// Requirements: NFR-07
 TEST_F(ConnectedNetworkingTest, TheServerReportsNoStatsForAPeerThatLeft) {
   client_->Disconnect();
   ASSERT_TRUE(WaitForServerToLosePeer().has_value());
@@ -654,6 +673,7 @@ TEST_F(ConnectedNetworkingTest, TheServerReportsNoStatsForAPeerThatLeft) {
   EXPECT_TRUE(server_->GetStats().empty());
 }
 
+// Requirements: NFR-02
 TEST_F(NetworkingTest, APeerThatGoesSilentIsReportedAsALostConnectionOnceTheTimeoutPasses) {
   constexpr int kTimeoutMs = 500;
   // Set before the connection exists: the timeout only reaches new connections.
@@ -697,6 +717,7 @@ TEST_F(NetworkingTest, APeerThatGoesSilentIsReportedAsALostConnectionOnceTheTime
   EXPECT_TRUE(client_disconnected);
 }
 
+// Requirements: NFR-02
 TEST_F(NetworkingTest, TheDefaultTimeoutIsBackOnceTheConditionsAreReset) {
   SimulateNetworkConditions({.timeout_ms = 200});
   SimulateNetworkConditions({});

@@ -61,7 +61,7 @@ std::string ContextOf(const Failure& failure, std::string_view key) {
   return {};
 }
 
-// Requirements: NFR-18
+// Requirements: US-28, NFR-18
 TEST(ClientPhasesTest, AConfigFileThatCannotBeReadIsAConfigurationFailure) {
   const auto config = ReadClientConfig(CommandLine{
       .config_file = "no/such/augustac.yaml", .message = {}, .options = {}, .action = CommandLineAction::kRun});
@@ -71,7 +71,7 @@ TEST(ClientPhasesTest, AConfigFileThatCannotBeReadIsAConfigurationFailure) {
   EXPECT_FALSE(config.error().detail.empty());
 }
 
-// Requirements: NFR-18
+// Requirements: NFR-08, NFR-18
 TEST(ClientPhasesTest, APackThatDoesNotVerifyIsAContentFailure) {
   ClientConfig config;
   config.pack_path = (kPacks / "missing").replace_extension(augusta::assets::kPackExtension);
@@ -172,6 +172,7 @@ std::filesystem::path WriteCapture(const std::string& stem) {
   return path;
 }
 
+// Requirements: US-21
 TEST(ClientPhasesTest, ARunThatAsksToReenactNothingPlaysAsAPerson) {
   const auto reenactment = ReadReenactment(
       CommandLine{.config_file = "augustac.yaml", .message = {}, .options = {}, .action = CommandLineAction::kRun});
@@ -209,7 +210,7 @@ TEST(ClientPhasesTest, ACaptureThatDoesNotLoadOrLacksThePlayerIsAConfigurationFa
   std::filesystem::remove(capture);
 }
 
-// Requirements: NFR-18
+// Requirements: US-21, US-28, NFR-18
 TEST(ClientPhasesTest, ReenactWithoutPlayerIsAConfigurationFailure) {
   CommandLine command_line =
       ReenactCommandLine(std::filesystem::path("a").replace_extension(augusta::capture::kExtension), "1");

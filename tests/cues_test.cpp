@@ -84,6 +84,7 @@ class CueSoundsTest : public ::testing::Test {
   std::filesystem::path path_ = TestPackPath();
 };
 
+// Requirements: US-22
 TEST(CueNameTest, EachCueIsNamedAsItsSoundFileIs) {
   const std::vector<std::string_view> names = {"gunshot", "hit_marker", "hit_taken",
                                                "death",   "match_won",  "match_lost"};
@@ -94,6 +95,7 @@ TEST(CueNameTest, EachCueIsNamedAsItsSoundFileIs) {
   EXPECT_EQ(catalogue, names);
 }
 
+// Requirements: US-22
 TEST_F(CueSoundsTest, EveryCueLoadsInCatalogueOrderWithItsVariantsAndGain) {
   const Pack pack = PackOf({});
 
@@ -108,6 +110,7 @@ TEST_F(CueSoundsTest, EveryCueLoadsInCatalogueOrderWithItsVariantsAndGain) {
   }
 }
 
+// Requirements: US-22
 TEST_F(CueSoundsTest, ACueWithNoSoundIsNamed) {
   const Pack pack = PackOf({.cue = "hit_taken", .second_variant_of = ""});
 
@@ -119,6 +122,7 @@ TEST_F(CueSoundsTest, ACueWithNoSoundIsNamed) {
   EXPECT_NE(augusta::audio::DescribeCueSoundError(sounds.error()).find("sounds/hit_taken"), std::string::npos);
 }
 
+// Requirements: US-22
 TEST_F(CueSoundsTest, AMissingVariantIsNamed) {
   const Pack pack = PackOf({.cue = "", .second_variant_of = "death"});
 
@@ -131,6 +135,7 @@ TEST_F(CueSoundsTest, AMissingVariantIsNamed) {
 
 // A cue's variant is chosen at random each time it plays, never the one it
 // played last (ADR-0041).
+// Requirements: US-18
 TEST(ChooseVariantTest, ACueWithOneVariantAlwaysPlaysIt) {
   for (std::uint32_t random = 0; random < 8; ++random) {
     EXPECT_EQ(ChooseVariant(1, std::nullopt, random), 0U);
@@ -138,6 +143,7 @@ TEST(ChooseVariantTest, ACueWithOneVariantAlwaysPlaysIt) {
   }
 }
 
+// Requirements: US-18
 TEST(ChooseVariantTest, NoVariantIsChosenTwiceInARow) {
   for (std::size_t count = 2; count <= 5; ++count) {
     for (std::size_t last = 0; last < count; ++last) {
@@ -150,6 +156,7 @@ TEST(ChooseVariantTest, NoVariantIsChosenTwiceInARow) {
   }
 }
 
+// Requirements: US-18
 TEST(ChooseVariantTest, EveryVariantIsChosenOverEnoughPlays) {
   constexpr std::size_t kCount = 4;
   std::set<std::size_t> chosen;
@@ -163,6 +170,7 @@ TEST(ChooseVariantTest, EveryVariantIsChosenOverEnoughPlays) {
   EXPECT_EQ(chosen, (std::set<std::size_t>{0, 1, 2, 3}));
 }
 
+// Requirements: US-18
 TEST(ChooseVariantTest, TheFirstPlayMayChooseAnyVariant) {
   EXPECT_EQ(ChooseVariant(3, std::nullopt, 0), 0U);
   EXPECT_EQ(ChooseVariant(3, std::nullopt, 1), 1U);

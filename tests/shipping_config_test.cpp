@@ -26,6 +26,7 @@ const std::string kServerConfig =
 const std::string kClientConfig =
     "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: k.pub\n";
 
+// Requirements: US-30
 TEST(ShippingConfigTest, TheServerConfigRefusesADebugSectionAsAnUnknownKey) {
   ASSERT_TRUE(ParseServerConfig(kServerConfig, kFileDir).has_value());
 
@@ -36,6 +37,7 @@ TEST(ShippingConfigTest, TheServerConfigRefusesADebugSectionAsAnUnknownKey) {
   EXPECT_EQ(config.error().subject, "debug");
 }
 
+// Requirements: US-30
 TEST(ShippingConfigTest, TheClientConfigRefusesADebugSectionAsAnUnknownKey) {
   ASSERT_TRUE(ParseClientConfig(kClientConfig, kFileDir).has_value());
 
@@ -46,6 +48,7 @@ TEST(ShippingConfigTest, TheClientConfigRefusesADebugSectionAsAnUnknownKey) {
   EXPECT_EQ(config.error().subject, "debug");
 }
 
+// Requirements: US-30
 TEST(ShippingConfigTest, NeitherConfigKnowsThePhysicsRecordingKey) {
   const auto server = ParseServerConfig(kServerConfig + "debug:\n  physics_recording: true\n", kFileDir);
   const auto client = ParseClientConfig(kClientConfig + "debug:\n  physics_recording: true\n", kFileDir);
@@ -56,6 +59,7 @@ TEST(ShippingConfigTest, NeitherConfigKnowsThePhysicsRecordingKey) {
   EXPECT_EQ(client.error().code, ConfigErrorCode::kUnknownKey);
 }
 
+// Requirements: US-30
 TEST(ShippingConfigTest, TheClientConfigKnowsNoPhysicsDebugKey) {
   for (const char* key : {"panel", "collision", "server_bodies", "hitboxes", "shot_judgements"}) {
     const auto config = ParseClientConfig(kClientConfig + "debug:\n  physics:\n    " + key + ": true\n", kFileDir);

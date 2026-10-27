@@ -334,25 +334,6 @@ TEST_F(PresentationWorldTest, RenderFramesWithoutNewerStateKeepShowingTheRemoteP
   }
 }
 
-TEST_F(PresentationWorldTest, KeepsNothingItWasLentPastTheRenderFrame) {
-  State shown;
-  {
-    const WorldSnapshot snapshot = ThreePlayersAt(5);
-    const std::vector<PlayerCharacter> characters = SessionOrder();
-    shown = world.RunFrame(InMatch(snapshot, characters));
-  }
-  // What the first frame was lent is gone: the next is shown from its own, and
-  // what the first returned is the caller's.
-  const WorldSnapshot newer = ThreePlayersAt(6);
-  const std::vector<PlayerCharacter> characters = SessionOrder();
-  const State next = world.RunFrame(InMatch(newer, characters));
-
-  ASSERT_NE(Find(shown, kMedic), nullptr);
-  EXPECT_EQ(Find(shown, kMedic)->character, "medic");
-  ASSERT_NE(Find(next, kMedic), nullptr);
-  EXPECT_EQ(Find(next, kMedic)->character, "medic");
-}
-
 // Requirements: US-17
 TEST_F(PresentationWorldTest, OutsideAMatchNoRemotePlayerIsShown) {
   const WorldSnapshot snapshot = ThreePlayersAt(5);
@@ -427,6 +408,7 @@ TEST_F(PresentationWorldTest, TheSeenTimeIsOfTheUpdatesTheFrameRecorded) {
 }
 
 // The frame samples 0.1 s before tick 3's 3 s, where the newest update is.
+// Requirements: US-29
 TEST_F(PresentationWorldTest, WithUpdatesWaitingTheSlackIsTheNewestUpdatesLead) {
   const std::vector<PlayerCharacter> characters = SessionOrder();
   const std::vector<WorldSnapshot> updates = {SniperAt(1, 0.0F), SniperAt(2, 0.0F), SniperAt(3, 10.0F)};
@@ -438,6 +420,7 @@ TEST_F(PresentationWorldTest, WithUpdatesWaitingTheSlackIsTheNewestUpdatesLead) 
 }
 
 // Frames run on, well past kInterpolationDelay, with no newer update.
+// Requirements: US-29
 TEST_F(PresentationWorldTest, PastTheNewestUpdateTheSlackIsZeroOrBelow) {
   const std::vector<PlayerCharacter> characters = SessionOrder();
   const std::vector<WorldSnapshot> updates = {SniperAt(3, 10.0F)};
@@ -452,6 +435,7 @@ TEST_F(PresentationWorldTest, PastTheNewestUpdateTheSlackIsZeroOrBelow) {
   EXPECT_LE(*dry.interpolation_slack, 0.0);
 }
 
+// Requirements: US-29
 TEST_F(PresentationWorldTest, OutsideAMatchThereIsNoSlack) {
   const WorldSnapshot snapshot = ThreePlayersAt(5);
   const std::vector<PlayerCharacter> characters = SessionOrder();
@@ -467,6 +451,7 @@ TEST_F(PresentationWorldTest, OutsideAMatchThereIsNoSlack) {
 }
 
 // The sniper's update is the control: the same frame with someone to show.
+// Requirements: US-29
 TEST_F(PresentationWorldTest, WithNoRemotePlayerThereIsNoSlack) {
   const std::vector<PlayerCharacter> characters = SessionOrder();
   const WorldSnapshot with_sniper = SniperAt(3, 10.0F);

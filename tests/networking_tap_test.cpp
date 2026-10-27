@@ -136,6 +136,7 @@ class NetworkingTapTest : public ::testing::Test {
   std::optional<PeerId> peer_;
 };
 
+// Requirements: US-31
 TEST_F(NetworkingTapTest, TheClientReportsWhatItSendsAndReceivesWithTheServerAsItsRemoteEnd) {
   const auto before = std::chrono::system_clock::now();
   ASSERT_EQ(client_->Send(MakePayload("ping"), Reliability::kReliable), SendOutcome::kAccepted);
@@ -158,6 +159,7 @@ TEST_F(NetworkingTapTest, TheClientReportsWhatItSendsAndReceivesWithTheServerAsI
   }
 }
 
+// Requirements: US-31
 TEST_F(NetworkingTapTest, TheServerReportsWhatItSendsAndReceivesWithItsListenAddressAsItsLocalEnd) {
   ASSERT_EQ(client_->Send(MakePayload("ping"), Reliability::kReliable), SendOutcome::kAccepted);
   ReceiveOnServer();
@@ -178,6 +180,7 @@ TEST_F(NetworkingTapTest, TheServerReportsWhatItSendsAndReceivesWithItsListenAdd
   }
 }
 
+// Requirements: US-31
 TEST_F(NetworkingTapTest, ABroadcastIsReportedOncePerPeerThatAcceptedIt) {
   ASSERT_TRUE(server_->Broadcast(MakePayload("all"), Reliability::kReliable).has_value());
   ReceiveOnClient();
@@ -190,6 +193,7 @@ TEST_F(NetworkingTapTest, ABroadcastIsReportedOncePerPeerThatAcceptedIt) {
 
 // The send to the connected peer, in the same setup, is the control: it is
 // reported, so the dropped ones are left out for being dropped.
+// Requirements: US-31
 TEST_F(NetworkingTapTest, ASendTheTransportDropsIsNotReported) {
   EXPECT_EQ(server_->Send(PeerId{42}, MakePayload("nobody"), Reliability::kReliable), SendOutcome::kDropped);
   ASSERT_EQ(server_->Send(*peer_, MakePayload("somebody"), Reliability::kReliable), SendOutcome::kAccepted);
@@ -202,6 +206,7 @@ TEST_F(NetworkingTapTest, ASendTheTransportDropsIsNotReported) {
   EXPECT_TRUE(client_tap_.Reports().empty());
 }
 
+// Requirements: US-31
 TEST(UnspecifiedEndpointLikeTest, IsTheUnspecifiedAddressOfTheEndpointsFamilyOnPortZero) {
   const Ipv6Address ipv6_loopback{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
 
@@ -212,6 +217,7 @@ TEST(UnspecifiedEndpointLikeTest, IsTheUnspecifiedAddressOfTheEndpointsFamilyOnP
 }
 
 // The IPv4 tests above are the control: there the client's local end is 0.0.0.0.
+// Requirements: US-31
 TEST(NetworkingTapIpv6Test, AClientOfAnIpv6ServerReportsTheUnspecifiedIpv6AddressAsItsLocalEnd) {
   RecordingTap tap;
   std::unique_ptr<Server> server;

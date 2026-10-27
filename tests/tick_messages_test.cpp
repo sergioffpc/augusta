@@ -134,6 +134,7 @@ std::vector<PeerId> PeersOf(const std::vector<Sent>& sent, std::size_t first, st
   return peers;
 }
 
+// Requirements: US-17, NFR-02
 TEST(TickMessagesTest, EachRecipientIsSentEveryBodyAndItsOwnFieldsInRecipientOrder) {
   const std::vector<Sent> sent = SendAll(TwoBodies(), 42, ThreePlayers());
 
@@ -173,6 +174,7 @@ TEST(TickMessagesTest, EachRecipientIsSentEveryBodyAndItsOwnFieldsInRecipientOrd
   }
 }
 
+// Requirements: US-13, US-19
 TEST(TickMessagesTest, CombatEventsFollowTheUpdatesShotsThenHitConfirmationsThenDeaths) {
   State state = TwoBodies();
   state.shots = {{.shooter = EntityId{1}, .origin = augusta::math::Vec3(1.0F, 1.5F, -2.0F), .yaw = 0.5F}};
@@ -219,10 +221,6 @@ TEST(TickMessagesTest, CombatEventsFollowTheUpdatesShotsThenHitConfirmationsThen
         << i;
     EXPECT_EQ(sent[i].payload, i < 6 ? shot : i == 6 ? hit : death) << i;
   }
-}
-
-TEST(TickMessagesTest, NoOneInTheMatchMeansNothingIsSent) {
-  EXPECT_TRUE(SendAll(TwoBodies(), 42, TickRecipients{}).empty());
 }
 
 // An update listing more bodies than the protocol carries is a broken

@@ -374,6 +374,7 @@ TEST(CaptureReplayTest, APlayerWhoLeftIsTakenOutBeforeTheTickOfItsLeave) {
 
 // The live server takes out the bodies of those who left an ended Match after
 // its last tick: their Leaves on that tick do not take them out before it.
+// Requirements: US-21
 TEST(CaptureReplayTest, ALeaveAfterTheLastTickLeavesThatTickAsItRan) {
   Replay replay = ReplayOf(CaptureOf({Captured{.offset = 4, .event = capture::Leave{.player = 2}}, EndAt(4)}));
 
@@ -429,6 +430,7 @@ TEST(CaptureReplayTest, ItEndsAtTheWorldsMatchEndAndChecksItAgainstTheCapturesOn
 }
 
 // A capture cut short ends at its last record, with no Match end to hold the World's to.
+// Requirements: US-21
 TEST(CaptureReplayTest, ACaptureCutShortEndsAtItsLastRecord) {
   capture::Capture capture = CaptureOf({CommandAt(7, 1, Command{})});
   capture.torn = true;
@@ -517,6 +519,7 @@ TEST(ReplayCheckTest, OnlyTheFirstDivergenceIsReported) {
   EXPECT_FALSE(check.Check(9, {}, std::nullopt).has_value());
 }
 
+// Requirements: NFR-09
 TEST(ReplayCheckTest, ADivergenceIsDescribedWithBothSides) {
   const Divergence death{.marker = Divergence::Marker::kDeath,
                          .offset = 4,

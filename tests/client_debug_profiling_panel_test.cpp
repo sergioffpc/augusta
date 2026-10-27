@@ -61,6 +61,7 @@ bool HasText(const Panel& panel, std::string_view text) {
   return std::ranges::find(texts, text) != texts.end();
 }
 
+// Requirements: US-29
 TEST(ProfilingPanelTest, IsTheProfilingPanel) {
   const ProfilingPanel profiling(kWatched);
 
@@ -70,6 +71,7 @@ TEST(ProfilingPanelTest, IsTheProfilingPanel) {
   EXPECT_EQ(panel.title, "Profiling");
 }
 
+// Requirements: US-29
 TEST(ProfilingPanelTest, TheButtonOpensACaptureWindowOfTheDefaultThreeHundredFrames) {
   ProfilingPanel profiling(kWatched);
 
@@ -78,6 +80,7 @@ TEST(ProfilingPanelTest, TheButtonOpensACaptureWindowOfTheDefaultThreeHundredFra
   EXPECT_EQ(profiling.Update(Press()), CaptureChange::kOpens);
 }
 
+// Requirements: US-29
 TEST(ProfilingPanelTest, NFrameTicksCloseTheWindow) {
   ProfilingPanel profiling(kWatched);
   ASSERT_EQ(profiling.Update(Press()), CaptureChange::kOpens);
@@ -89,6 +92,7 @@ TEST(ProfilingPanelTest, NFrameTicksCloseTheWindow) {
   EXPECT_EQ(profiling.Tick(), CaptureChange::kNone);
 }
 
+// Requirements: US-29
 TEST(ProfilingPanelTest, FrameTicksOutsideACaptureDoNothing) {
   ProfilingPanel profiling(kWatched);
   ASSERT_EQ(profiling.Update(Drag(1.0F)), CaptureChange::kNone);
@@ -98,6 +102,7 @@ TEST(ProfilingPanelTest, FrameTicksOutsideACaptureDoNothing) {
   EXPECT_EQ(profiling.Tick(), CaptureChange::kNone);
 }
 
+// Requirements: US-29
 TEST(ProfilingPanelTest, TheButtonAndTheSliderAreGreyedOutDuringACaptureOnly) {
   ProfilingPanel profiling(kWatched);
   ASSERT_EQ(profiling.Update(Drag(2.0F)), CaptureChange::kNone);
@@ -114,6 +119,7 @@ TEST(ProfilingPanelTest, TheButtonAndTheSliderAreGreyedOutDuringACaptureOnly) {
   EXPECT_FALSE(Find<Slider>(profiling.BuildPanel()).disabled);
 }
 
+// Requirements: US-29
 TEST(ProfilingPanelTest, ThePressOfAButtonDuringACaptureOpensNoSecondWindow) {
   ProfilingPanel profiling(kWatched);
   ASSERT_EQ(profiling.Update(Drag(2.0F)), CaptureChange::kNone);
@@ -124,6 +130,7 @@ TEST(ProfilingPanelTest, ThePressOfAButtonDuringACaptureOpensNoSecondWindow) {
   EXPECT_EQ(profiling.Tick(), CaptureChange::kCloses);
 }
 
+// Requirements: US-29
 TEST(ProfilingPanelTest, TheSliderChangesNWhenIdle) {
   ProfilingPanel profiling(kWatched);
 
@@ -133,6 +140,7 @@ TEST(ProfilingPanelTest, TheSliderChangesNWhenIdle) {
   EXPECT_EQ(Find<Button>(profiling.BuildPanel()).label, "Capture 13 frames");
 }
 
+// Requirements: US-29
 TEST(ProfilingPanelTest, TheSliderRangesFromOneToThreeThousandSixHundredFrames) {
   ProfilingPanel profiling(kWatched);
 
@@ -145,12 +153,14 @@ TEST(ProfilingPanelTest, TheSliderRangesFromOneToThreeThousandSixHundredFrames) 
   EXPECT_EQ(Find<Slider>(profiling.BuildPanel()).value, 1.0F);
 }
 
+// Requirements: US-29
 TEST(ProfilingPanelTest, TheSliderShowsNAsAWholeNumber) {
   const ProfilingPanel profiling(kWatched);
 
   EXPECT_TRUE(Find<Slider>(profiling.BuildPanel()).whole_numbers);
 }
 
+// Requirements: US-29
 TEST(ProfilingPanelTest, TheSliderDoesNotChangeNDuringACapture) {
   ProfilingPanel profiling(kWatched);
   ASSERT_EQ(profiling.Update(Drag(2.0F)), CaptureChange::kNone);
@@ -163,6 +173,7 @@ TEST(ProfilingPanelTest, TheSliderDoesNotChangeNDuringACapture) {
   EXPECT_EQ(profiling.Tick(), CaptureChange::kCloses);
 }
 
+// Requirements: US-29
 TEST(ProfilingPanelTest, AnotherPanelsEventChangesNothing) {
   ProfilingPanel profiling(kWatched);
 
@@ -176,6 +187,7 @@ TEST(ProfilingPanelTest, AnotherPanelsEventChangesNothing) {
   EXPECT_EQ(profiling.Update(Press()), CaptureChange::kOpens);
 }
 
+// Requirements: US-29
 TEST(ProfilingPanelTest, TheProgressTextCountsTheFramesOfTheWindow) {
   ProfilingPanel profiling(kWatched);
   ASSERT_EQ(profiling.Update(Drag(3.0F)), CaptureChange::kNone);
@@ -191,6 +203,7 @@ TEST(ProfilingPanelTest, TheProgressTextCountsTheFramesOfTheWindow) {
   EXPECT_TRUE(HasText(profiling.BuildPanel(), "Not capturing"));
 }
 
+// Requirements: US-29
 TEST(ProfilingPanelTest, TheAftermathLinesSayItIsEnabledAttachedAndWhereADumpLands) {
   const ProfilingPanel profiling(kWatched);
 
@@ -201,6 +214,7 @@ TEST(ProfilingPanelTest, TheAftermathLinesSayItIsEnabledAttachedAndWhereADumpLan
   EXPECT_TRUE(HasText(panel, "Dumps land in: " + std::filesystem::path("C:/augusta/dumps").string()));
 }
 
+// Requirements: US-29
 TEST(ProfilingPanelTest, TheAftermathLinesSayWhenItIsNeitherEnabledNorAttached) {
   const ProfilingPanel profiling(GpuCrashDumpStatus{.enabled = false, .attached = false, .directory = "dumps"});
 
