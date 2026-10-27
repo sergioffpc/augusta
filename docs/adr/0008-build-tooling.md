@@ -8,6 +8,19 @@ fuzzers are excluded from it and build through one `augusta_tests` target, which
 `make test` builds before `ctest` and CI builds wherever it runs them: building
 a binary never waits on the test suite.
 
+Beside it, each test area has an `augusta_tests_<area>` target that builds only
+that area's test executables. An area is what an executable tests: a runtime
+module's name, `client` or `server` for a Runtime's tests, or a tool's name for
+the tests of a tool that has them. Each test executable names exactly one, as a
+`ctest` label on its `gtest_discover_tests` call, and the targets are made from
+those labels alone (`cmake/TestAreas.cmake`), so labelling an executable is all
+that adding it to an area takes. `make test TAGS="<area> ..."` builds the union
+of those areas' targets when every tag is an area, and `augusta_tests`
+otherwise, then runs the tests carrying those labels: a change to one module
+neither waits for nor runs the whole suite. The area check
+(`checks/test_areas.cmake`, under `make check`) refuses an executable with no
+area, with two, or with one that is no module's, Runtime's or tool's.
+
 Linux (the server, the client and the shared core, including the sanitizer and
 fuzzing builds) builds with LLVM's toolchain alone, Ubuntu's packages of it:
 clang compiles against libc++ and libc++abi, lld links, compiler-rt and

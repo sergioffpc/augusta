@@ -7,16 +7,21 @@
 # the same way, with no build. Included by both, so it reads only files.
 
 # The names an area may take: a runtime module's (src/modules/<module>),
-# client and server for their Runtimes' tests, and a tool's (tools/<tool>).
-# Every other label (check, property, netcode) is not an area.
+# client and server for their Runtimes' tests, and the name of a tool whose
+# tests ctest runs (tools/<tool>/tests). Every other label (check, property,
+# netcode) is not an area.
 function(augusta_test_area_vocabulary source_dir out_vocabulary)
   file(GLOB modules LIST_DIRECTORIES true RELATIVE "${source_dir}/src/modules" "${source_dir}/src/modules/*")
-  file(GLOB tools LIST_DIRECTORIES true RELATIVE "${source_dir}/tools" "${source_dir}/tools/*")
+  file(GLOB tool_tests RELATIVE "${source_dir}/tools" "${source_dir}/tools/*/tests/CMakeLists.txt")
   set(vocabulary client server)
-  foreach(name IN LISTS modules tools)
-    if(IS_DIRECTORY "${source_dir}/src/modules/${name}" OR IS_DIRECTORY "${source_dir}/tools/${name}")
-      list(APPEND vocabulary ${name})
+  foreach(module IN LISTS modules)
+    if(IS_DIRECTORY "${source_dir}/src/modules/${module}")
+      list(APPEND vocabulary ${module})
     endif()
+  endforeach()
+  foreach(listfile IN LISTS tool_tests)
+    string(REGEX REPLACE "/.*" "" tool "${listfile}")
+    list(APPEND vocabulary ${tool})
   endforeach()
   list(REMOVE_DUPLICATES vocabulary)
   set(${out_vocabulary} ${vocabulary} PARENT_SCOPE)

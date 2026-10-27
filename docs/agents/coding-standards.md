@@ -105,6 +105,16 @@ merely passes through; a test of plumbing no requirement describes names none.
 CI refuses a marker that names an ID `docs/REQUIREMENTS.md` does not have
 (`scripts/requirements-matrix.py --check`).
 
+A new test executable names its area as a `ctest` label on its
+`gtest_discover_tests` call: the one runtime module it tests, `client` or
+`server` for a Runtime's tests, or the tool's name for a tool's tests (ADR-0008,
+ADR-0013). The area is what the executable tests, not what it links: an
+executable that links animation only to build fixture Clips takes the area of
+the module it tests. The `check`, `property` and `netcode` labels go beside it
+(`PROPERTIES LABELS "protocol;property"`), and the area check
+(`checks/test_areas.cmake`) refuses an executable with none, two or an unknown
+one.
+
 Reach for a property-based test (RapidCheck) when an invariant holds over a
 whole input domain — a serialization round-trip, a value that must never go
 negative, a state that must converge — not in place of example-based tests,

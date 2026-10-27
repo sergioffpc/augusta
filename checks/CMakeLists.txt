@@ -1,6 +1,6 @@
 # Checks of the repository's structure rather than of a feature: the
-# architecture's boundaries, the Glue rule, the platforms augustad configures
-# for and the Linux client's staging. Each is a `cmake -P` script that builds
+# architecture's boundaries, the Glue rule, the test areas, the platforms
+# augustad configures for and the Linux client's staging. Each is a `cmake -P` script that builds
 # nothing, so they configure with the rest of the build, not behind
 # augusta_tests. The scripts' own pytest tests sit beside them; CI runs those.
 
@@ -64,6 +64,17 @@ add_test(
     -DGENERATOR=${CMAKE_GENERATOR} -P ${CMAKE_CURRENT_SOURCE_DIR}/glue_boundary.cmake
 )
 
+# Every test executable names exactly one area (ADR-0008): the area check
+# refuses a gtest_discover_tests call with no area label, with two, or with one
+# that is no module's, Runtime's or tool's name (cmake/TestAreas.cmake), each
+# first proved on a planted violation. A source scan, so it builds nothing.
+add_test(
+  NAME augusta_test_areas
+  COMMAND
+    ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR} -P
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_areas.cmake
+)
+
 # What the Linux client's tarball is checked for before a release publishes it
 # (scripts/stage-client.sh, ADR-0058): the check itself, against a stand-in for
 # augustac's build, so it runs on every pull request although augustac's Linux
@@ -84,6 +95,7 @@ set_tests_properties(
   augusta_server_platform
   augusta_server_boundary
   augusta_glue_boundary
+  augusta_test_areas
   PROPERTIES LABELS check
 )
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")

@@ -190,6 +190,15 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
   property test carries the `ctest` label `property`, which is how the nightly
   selects them. A failing case the runner shrinks is kept as an example-based
   regression test.
+- **Every test executable carries one area**, a `ctest` label naming what it
+  tests: the runtime module (`animation`, `audio`, `networking`, ...), `client`
+  or `server` for a Runtime's tests, or the tool (`agent`). It is the module the
+  executable tests, not every module it links, and a fuzz target's seed tests
+  take the area of the input they decode. So `make test TAGS=<area>` builds and
+  runs that module's own tests alone (ADR-0008); the integration tests that only
+  use it stay with the full regression. The `check`, `property` and `netcode`
+  labels stay beside the area. The area check refuses an executable with none,
+  two or an unknown one.
 - **Coverage** is a report for finding untested deterministic logic, not a gate:
   a minimum percentage pushes toward tests written for the number.
 - **Each test names the requirements it checks** (`docs/REQUIREMENTS.md`'s

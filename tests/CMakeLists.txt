@@ -12,17 +12,17 @@ set(VCPKG_APPLOCAL_DEPS OFF)
 
 add_executable(augusta_version_tests version_test.cpp)
 target_link_libraries(augusta_version_tests PRIVATE augusta_version GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_version_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_version_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS version)
 
 add_executable(augusta_logging_tests logging_test.cpp)
 target_link_libraries(augusta_logging_tests PRIVATE augusta_logging GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_logging_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_logging_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS logging)
 
 # proc_files.h is private to the module, hence its directory.
 add_executable(augusta_hardware_tests hardware_test.cpp)
 target_include_directories(augusta_hardware_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/hardware)
 target_link_libraries(augusta_hardware_tests PRIVATE augusta_hardware GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_hardware_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_hardware_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS hardware)
 
 add_executable(augusta_version_benchmarks version_benchmark.cpp)
 target_link_libraries(augusta_version_benchmarks PRIVATE augusta_version benchmark::benchmark benchmark::benchmark_main)
@@ -75,35 +75,35 @@ target_compile_definitions(
 # another module's include path.
 add_executable(augusta_limits_tests limits_test.cpp)
 target_link_libraries(augusta_limits_tests PRIVATE augusta_limits GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_limits_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_limits_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS limits)
 
 # Links augusta_tick alone, so the build fails if its header ever needs another
 # module's include path.
 add_executable(augusta_tick_tests tick_test.cpp)
 target_link_libraries(augusta_tick_tests PRIVATE augusta_tick GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_tick_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_tick_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS tick)
 
 add_executable(augusta_supervisor_tests supervisor_test.cpp)
 target_link_libraries(
   augusta_supervisor_tests
   PRIVATE augusta_failure augusta_supervisor GTest::gtest GTest::gtest_main
 )
-gtest_discover_tests(augusta_supervisor_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_supervisor_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS supervisor)
 
 add_executable(augusta_failure_tests failure_test.cpp)
 target_link_libraries(augusta_failure_tests PRIVATE augusta_failure GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_failure_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_failure_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS failure)
 
 add_executable(augusta_application_tests application_test.cpp)
 target_link_libraries(
   augusta_application_tests
   PRIVATE augusta_application augusta_failure augusta_logging GTest::gtest GTest::gtest_main
 )
-gtest_discover_tests(augusta_application_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_application_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS application)
 
 add_executable(augusta_config_tests config_test.cpp)
 target_link_libraries(augusta_config_tests PRIVATE augusta_config GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_config_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_config_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS config)
 
 # The example configs are what a new install is copied from, so a test keeps each loading.
 add_executable(augusta_client_config_tests client_config_test.cpp)
@@ -113,7 +113,7 @@ target_compile_definitions(
   PRIVATE AUGUSTA_EXAMPLE_CLIENT_CONFIG="${CMAKE_SOURCE_DIR}/config/augustac.example.yaml"
 )
 # Links PhysX through augusta_input, so the same first-launch cost applies as below.
-gtest_discover_tests(augusta_client_config_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_client_config_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS config)
 
 add_executable(augusta_server_config_tests server_config_test.cpp)
 target_link_libraries(augusta_server_config_tests PRIVATE augusta_server_config GTest::gtest GTest::gtest_main)
@@ -121,12 +121,12 @@ target_compile_definitions(
   augusta_server_config_tests
   PRIVATE AUGUSTA_EXAMPLE_SERVER_CONFIG="${CMAKE_SOURCE_DIR}/config/augustad.example.yaml"
 )
-gtest_discover_tests(augusta_server_config_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_server_config_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS config)
 
 add_executable(augusta_parameters_tests parameters_test.cpp)
 target_link_libraries(augusta_parameters_tests PRIVATE augusta_gameplay augusta_limits GTest::gtest GTest::gtest_main)
 # Links PhysX through augusta_gameplay, so the same first-launch cost applies as below.
-gtest_discover_tests(augusta_parameters_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_parameters_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS gameplay)
 
 add_executable(augusta_parameters_loader_tests parameters_loader_test.cpp)
 target_link_libraries(
@@ -141,7 +141,7 @@ target_compile_definitions(
     AUGUSTA_EXAMPLE_PARAMETERS="${CMAKE_SOURCE_DIR}/tools/composer/examples/authoring/scripts/parameters/rules_of_engagement.lua"
 )
 target_include_directories(augusta_parameters_loader_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/scenario)
-gtest_discover_tests(augusta_parameters_loader_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_parameters_loader_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS scenario)
 
 add_executable(augusta_protocol_tests protocol_test.cpp)
 target_link_libraries(
@@ -149,12 +149,12 @@ target_link_libraries(
   PRIVATE augusta_limits augusta_protocol augusta_tick augusta_version GTest::gtest GTest::gtest_main
 )
 # Links PhysX through augusta_physics, so the same first-launch cost applies as below.
-gtest_discover_tests(augusta_protocol_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_protocol_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS protocol)
 
 # A Match capture's records, in the protocol's encoding (ADR-0050).
 add_executable(augusta_protocol_capture_tests protocol_capture_test.cpp)
 target_link_libraries(augusta_protocol_capture_tests PRIVATE augusta_protocol GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_protocol_capture_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_protocol_capture_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS protocol)
 
 add_executable(augusta_protocol_property_tests protocol_property_test.cpp)
 target_link_libraries(
@@ -167,7 +167,7 @@ target_link_libraries(
 target_compile_options(augusta_protocol_property_tests PRIVATE $<$<CXX_COMPILER_ID:Clang>:-Wno-deprecated-declarations>)
 # The property label is how the nightly selects the property tests to run at
 # a high case count (ADR-0013).
-gtest_discover_tests(augusta_protocol_property_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS property)
+gtest_discover_tests(augusta_protocol_property_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS "protocol;property")
 
 add_executable(augusta_simulation_property_tests simulation_property_test.cpp)
 target_link_libraries(
@@ -188,25 +188,25 @@ target_compile_options(
   PRIVATE $<$<CXX_COMPILER_ID:Clang>:-Wno-deprecated-declarations>
 )
 # Links PhysX, so the same first-launch cost applies as below.
-gtest_discover_tests(augusta_simulation_property_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS property)
+gtest_discover_tests(augusta_simulation_property_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS "simulation;property")
 
 add_executable(augusta_match_tests match_test.cpp)
 target_link_libraries(augusta_match_tests PRIVATE augusta_host_match GTest::gtest GTest::gtest_main)
 # Links networking (for PeerId), so the same first-launch cost applies as below.
-gtest_discover_tests(augusta_match_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_match_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS host)
 
 add_executable(augusta_command_queue_tests command_queue_test.cpp)
 target_link_libraries(augusta_command_queue_tests PRIVATE augusta_host_commands GTest::gtest GTest::gtest_main)
 # Links PhysX through augusta_gameplay, so the same first-launch cost applies as below.
-gtest_discover_tests(augusta_command_queue_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_command_queue_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS host)
 
 add_executable(augusta_misbehaviour_tests misbehaviour_test.cpp)
 target_link_libraries(augusta_misbehaviour_tests PRIVATE augusta_host_misbehaviour GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_misbehaviour_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_misbehaviour_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS host)
 
 add_executable(augusta_heartbeat_tests heartbeat_test.cpp)
 target_link_libraries(augusta_heartbeat_tests PRIVATE augusta_host_heartbeat GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_heartbeat_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_heartbeat_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS host)
 
 add_executable(augusta_metrics_liveness_tests metrics_liveness_test.cpp)
 target_link_libraries(
@@ -214,7 +214,7 @@ target_link_libraries(
   PRIVATE augusta_server_metrics_liveness GTest::gtest GTest::gtest_main
 )
 target_include_directories(augusta_metrics_liveness_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/server)
-gtest_discover_tests(augusta_metrics_liveness_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_metrics_liveness_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS server)
 
 # Over real HTTP on the loopback, on a port the test finds free, with the
 # acceptor's failures injected (see faults.h) and the log line they end in read
@@ -233,13 +233,13 @@ target_link_libraries(
     GTest::gtest_main
 )
 target_include_directories(augusta_metrics_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/server)
-gtest_discover_tests(augusta_metrics_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_metrics_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS server)
 
 # What the Host counts, collected as the endpoint collects it, without HTTP.
 add_executable(augusta_host_metrics_tests host_metrics_test.cpp)
 target_link_libraries(augusta_host_metrics_tests PRIVATE augusta_host GTest::gtest GTest::gtest_main)
 # Links networking and PhysX through augusta_host, so the same first-launch cost applies as below.
-gtest_discover_tests(augusta_host_metrics_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_host_metrics_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS host)
 
 # Reads what it records back as the metrics endpoint collects it.
 add_executable(augusta_metrics_connection_health_tests metrics_connection_health_test.cpp)
@@ -249,18 +249,18 @@ target_link_libraries(
 )
 target_include_directories(augusta_metrics_connection_health_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/server)
 # Links networking (for ConnectionStats), so the same first-launch cost applies as below.
-gtest_discover_tests(augusta_metrics_connection_health_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_metrics_connection_health_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS server)
 
 add_executable(augusta_admission_tests admission_test.cpp)
 target_link_libraries(augusta_admission_tests PRIVATE augusta_host_admission GTest::gtest GTest::gtest_main)
 target_include_directories(augusta_admission_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/host)
 # Links networking (for PeerId), so the same first-launch cost applies as below.
-gtest_discover_tests(augusta_admission_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_admission_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS host)
 
 add_executable(augusta_replication_tests replication_test.cpp)
 target_link_libraries(augusta_replication_tests PRIVATE augusta_simulation GTest::gtest GTest::gtest_main)
 # Links PhysX, so the same first-launch cost applies as below.
-gtest_discover_tests(augusta_replication_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_replication_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS simulation)
 
 add_executable(augusta_simulation_tests simulation_test.cpp)
 # Links augusta_animation and ozz-animation's offline libraries for the Clips it
@@ -270,7 +270,7 @@ target_link_libraries(
   PRIVATE augusta_simulation augusta_animation ozz::animation_offline GTest::gtest GTest::gtest_main
 )
 # Links PhysX, so the same first-launch cost applies as below.
-gtest_discover_tests(augusta_simulation_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_simulation_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS simulation)
 
 # The Shooter's delay's cap held to a real client's budget: simulation's cap
 # against presentation's Interpolation delay (ADR-0044).
@@ -280,7 +280,7 @@ target_link_libraries(
   PRIVATE augusta_simulation augusta_presentation GTest::gtest GTest::gtest_main
 )
 # Links PhysX, so the same first-launch cost applies as below.
-gtest_discover_tests(augusta_shooters_delay_budget_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_shooters_delay_budget_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS simulation)
 
 # Client and server agree on the pose (ADR-0061): simulation's Authoritative
 # State over the protocol to presentation's interpolation, each posed by
@@ -299,7 +299,7 @@ target_link_libraries(
     GTest::gtest_main
 )
 # Links PhysX, so the same first-launch cost applies as below.
-gtest_discover_tests(augusta_pose_agreement_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_pose_agreement_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS simulation)
 
 # SimulationWorld with a Game policy script the test chooses (ADR-0022). Links
 # augusta_animation and ozz-animation's offline libraries for the Clips it
@@ -329,7 +329,7 @@ target_compile_definitions(
 )
 target_include_directories(augusta_policy_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/scenario)
 # Links PhysX, so the same first-launch cost applies as below.
-gtest_discover_tests(augusta_policy_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_policy_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS policy)
 
 # What a hook's answer becomes once C++ validates it, apart from any script:
 # the policy module's private reading of answers (answers.h).
@@ -339,7 +339,7 @@ target_link_libraries(
   augusta_policy_actions_tests
   PRIVATE augusta_policy augusta_scripting GTest::gtest GTest::gtest_main
 )
-gtest_discover_tests(augusta_policy_actions_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_policy_actions_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS policy)
 
 # The example scenario's shipped rules, loaded out of a pack built with
 # augusta_assets' pack encoder and run through SimulationWorld (ADR-0013).
@@ -363,7 +363,7 @@ target_compile_definitions(
     AUGUSTA_EXAMPLE_RULES="${CMAKE_SOURCE_DIR}/tools/composer/examples/authoring/scripts/rules/last_man_standing.lua"
 )
 # Links PhysX, so the same first-launch cost applies as below.
-gtest_discover_tests(augusta_example_rules_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_example_rules_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS policy)
 
 add_executable(augusta_networking_tests networking_test.cpp)
 target_link_libraries(
@@ -376,7 +376,7 @@ target_compile_definitions(augusta_networking_tests PRIVATE NOMINMAX WIN32_LEAN_
 # protobuf, and abseil as DLLs, and a fresh (especially Debug-config) build's first
 # launch can take longer than 5s once Windows Defender scans the newly written
 # binaries - CTest's discovery run then times out even though the test itself is fine.
-gtest_discover_tests(augusta_networking_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_networking_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS networking)
 
 # Which flags a send goes out with is a header private to the networking
 # module, so it is tested apart from a live connection through a private
@@ -392,7 +392,7 @@ target_link_libraries(
     GTest::gtest_main
 )
 # Links GameNetworkingSockets, so the same first-launch cost applies as above.
-gtest_discover_tests(augusta_send_flags_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_send_flags_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS networking)
 
 # What a transport event does to the peers is decided in a header private to
 # the networking module, tested apart from a live connection the same way.
@@ -400,23 +400,23 @@ add_executable(augusta_transport_events_tests transport_events_test.cpp)
 target_include_directories(augusta_transport_events_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/networking)
 target_link_libraries(augusta_transport_events_tests PRIVATE augusta_networking GTest::gtest GTest::gtest_main)
 # Links GameNetworkingSockets, so the same first-launch cost applies as above.
-gtest_discover_tests(augusta_transport_events_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_transport_events_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS networking)
 
 add_executable(augusta_physics_tests physics_test.cpp)
 target_link_libraries(augusta_physics_tests PRIVATE augusta_physics GTest::gtest GTest::gtest_main)
 # DISCOVERY_TIMEOUT above the 5s default, same reason as the networking tests
 # above: the PhysX DLLs make a fresh build's first launch slow under Windows Defender.
-gtest_discover_tests(augusta_physics_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_physics_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS physics)
 
 add_executable(augusta_body_part_tests body_part_test.cpp)
 target_link_libraries(augusta_body_part_tests PRIVATE augusta_gameplay GTest::gtest GTest::gtest_main)
 # Links PhysX through augusta_gameplay, so the same first-launch cost applies as above.
-gtest_discover_tests(augusta_body_part_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_body_part_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS gameplay)
 
 add_executable(augusta_hitbox_tests hitbox_test.cpp)
 target_link_libraries(augusta_hitbox_tests PRIVATE augusta_gameplay GTest::gtest GTest::gtest_main)
 # Links PhysX through augusta_gameplay, so the same first-launch cost applies as above.
-gtest_discover_tests(augusta_hitbox_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_hitbox_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS gameplay)
 
 # A Character's Clips loaded from packs the test writes, of archives it
 # authors with ozz-animation's offline libraries, as the cooker does.
@@ -457,7 +457,7 @@ target_compile_definitions(
   PRIVATE AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs"
 )
 # Links PhysX through augusta_gameplay, so the same first-launch cost applies as above.
-gtest_discover_tests(augusta_server_content_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_server_content_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS scenario)
 
 add_executable(augusta_ballistics_tests ballistics_test.cpp)
 target_link_libraries(augusta_ballistics_tests PRIVATE augusta_gameplay GTest::gtest GTest::gtest_main)
@@ -469,7 +469,7 @@ target_compile_definitions(
   PRIVATE AUGUSTA_GOLDEN_TRAJECTORIES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/golden_trajectories.txt"
 )
 # Links PhysX through augusta_gameplay, so the same first-launch cost applies as above.
-gtest_discover_tests(augusta_ballistics_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_ballistics_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS gameplay)
 add_custom_target(
   augusta_golden_trajectories
   COMMAND
@@ -483,44 +483,44 @@ add_executable(augusta_reconciliation_tests reconciliation_test.cpp)
 target_link_libraries(augusta_reconciliation_tests PRIVATE augusta_prediction GTest::gtest GTest::gtest_main)
 target_include_directories(augusta_reconciliation_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/prediction)
 # Links augusta_physics publicly, so the same PhysX DLL launch cost applies.
-gtest_discover_tests(augusta_reconciliation_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_reconciliation_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS prediction)
 
 add_executable(augusta_correction_tests correction_test.cpp)
 target_link_libraries(augusta_correction_tests PRIVATE augusta_presentation GTest::gtest GTest::gtest_main)
 target_include_directories(augusta_correction_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/presentation)
 # Links augusta_prediction publicly (so PhysX), same first-launch cost as above.
-gtest_discover_tests(augusta_correction_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_correction_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS presentation)
 
 add_executable(augusta_input_tests input_test.cpp)
 target_link_libraries(augusta_input_tests PRIVATE augusta_input GTest::gtest GTest::gtest_main)
 # Links PhysX through augusta_physics, so the same first-launch cost applies as above.
-gtest_discover_tests(augusta_input_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_input_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS input)
 
 add_executable(augusta_interpolation_tests interpolation_test.cpp)
 target_link_libraries(augusta_interpolation_tests PRIVATE augusta_presentation GTest::gtest GTest::gtest_main)
 # Links augusta_prediction publicly (so PhysX), same first-launch cost as above.
-gtest_discover_tests(augusta_interpolation_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_interpolation_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS presentation)
 
 add_executable(augusta_local_view_tests local_view_test.cpp)
 target_link_libraries(augusta_local_view_tests PRIVATE augusta_presentation GTest::gtest GTest::gtest_main)
 # Links augusta_prediction publicly (so PhysX), same first-launch cost as above.
-gtest_discover_tests(augusta_local_view_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_local_view_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS presentation)
 
 add_executable(augusta_tracers_tests tracers_test.cpp)
 target_link_libraries(augusta_tracers_tests PRIVATE augusta_presentation GTest::gtest GTest::gtest_main)
 # Links augusta_prediction publicly (so PhysX), same first-launch cost as above.
-gtest_discover_tests(augusta_tracers_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_tracers_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS presentation)
 
 add_executable(augusta_effects_tests effects_test.cpp)
 target_link_libraries(augusta_effects_tests PRIVATE augusta_presentation GTest::gtest GTest::gtest_main)
 # Links augusta_prediction publicly (so PhysX), same first-launch cost as above.
-gtest_discover_tests(augusta_effects_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_effects_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS presentation)
 
 add_executable(augusta_audio_cues_tests audio_cues_test.cpp)
 target_link_libraries(augusta_audio_cues_tests PRIVATE augusta_presentation GTest::gtest GTest::gtest_main)
 target_include_directories(augusta_audio_cues_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/presentation)
 # Links augusta_prediction publicly (so PhysX), same first-launch cost as above.
-gtest_discover_tests(augusta_audio_cues_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_audio_cues_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS presentation)
 
 add_executable(augusta_presentation_tests presentation_test.cpp)
 # Links augusta_animation and ozz-animation's offline libraries for the Clips of
@@ -530,7 +530,7 @@ target_link_libraries(
   PRIVATE augusta_presentation augusta_animation ozz::animation_offline GTest::gtest GTest::gtest_main
 )
 # Links augusta_prediction publicly (so PhysX), same first-launch cost as above.
-gtest_discover_tests(augusta_presentation_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_presentation_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS presentation)
 
 add_executable(augusta_prediction_tests prediction_test.cpp)
 # Links augusta_presentation too: a new Match must not show as a correction. And
@@ -548,16 +548,16 @@ target_link_libraries(
 )
 target_include_directories(augusta_prediction_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/presentation)
 # Links augusta_physics publicly, so the same PhysX DLL launch cost applies.
-gtest_discover_tests(augusta_prediction_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_prediction_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS prediction)
 
 add_executable(augusta_map_tests map_test.cpp)
 target_link_libraries(augusta_map_tests PRIVATE augusta_physics GTest::gtest GTest::gtest_main)
 # Links PhysX through augusta_physics, so the same first-launch cost applies as below.
-gtest_discover_tests(augusta_map_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_map_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS physics)
 
 add_executable(augusta_policy_loader_tests policy_loader_test.cpp)
 target_link_libraries(augusta_policy_loader_tests PRIVATE augusta_policy_loader GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_policy_loader_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_policy_loader_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS policy)
 
 # Links augusta_animation and ozz-animation's offline libraries for the Clips its
 # prediction is built with (clips_fixture.h).
@@ -597,7 +597,7 @@ target_compile_definitions(
   PRIVATE AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs"
 )
 # Links networking and PhysX, so the same first-launch cost applies as above.
-gtest_discover_tests(augusta_session_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_session_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS host)
 
 # augustad's application boundary (ADR-0033): its startup and runtime
 # failures, each ending in one classified outcome, on the golden server pack.
@@ -621,7 +621,7 @@ target_compile_definitions(
   PRIVATE AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs"
 )
 # Links networking and PhysX, so the same first-launch cost applies as above.
-gtest_discover_tests(augusta_server_application_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_server_application_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS server)
 
 # A Match capture's file (ADR-0050) through the capture module alone: written,
 # read back and refused, with no server; its framing reached through frame.h,
@@ -632,12 +632,12 @@ target_link_libraries(
   PRIVATE augusta_capture augusta_protocol GTest::gtest GTest::gtest_main
 )
 target_include_directories(augusta_capture_format_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/capture)
-gtest_discover_tests(augusta_capture_format_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_capture_format_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS capture)
 
 # Match captures (ADR-0050): a Capturer's files, read back, with no Host.
 add_executable(augusta_capturer_tests capturer_test.cpp)
 target_link_libraries(augusta_capturer_tests PRIVATE augusta_host GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_capturer_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_capturer_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS host)
 
 # A Replay (ADR-0051): a Match capture re-run on a fresh SimulationWorld and
 # checked against its markers, with no network.
@@ -655,12 +655,12 @@ target_link_libraries(
     GTest::gtest
     GTest::gtest_main
 )
-gtest_discover_tests(augusta_server_replay_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_server_replay_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS host)
 
 # Which captures a replay server replays (ADR-0051), from directories of them.
 add_executable(augusta_replay_catalog_tests replay_catalog_test.cpp)
 target_link_libraries(augusta_replay_catalog_tests PRIVATE augusta_host GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_replay_catalog_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_replay_catalog_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS host)
 
 # A replay server (ADR-0051) over loopback, on a Match a live Host captured.
 # Links augusta_animation and ozz-animation's offline libraries for the Clips
@@ -685,7 +685,7 @@ target_link_libraries(
 )
 target_include_directories(augusta_replay_server_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/link)
 # Links networking and PhysX, so the same first-launch cost applies as above.
-gtest_discover_tests(augusta_replay_server_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_replay_server_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS host)
 
 # A capture directory kept within a count and a size (ADR-0050, #461).
 add_executable(augusta_capture_retention_tests capture_retention_test.cpp)
@@ -693,7 +693,7 @@ target_link_libraries(
   augusta_capture_retention_tests
   PRIVATE augusta_host augusta_logging GTest::gtest GTest::gtest_main
 )
-gtest_discover_tests(augusta_capture_retention_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_capture_retention_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS host)
 
 # A Captured player (ADR-0050): its Script read from a capture the capture module
 # writes, and its pacing and progress from Server views built by hand.
@@ -702,7 +702,7 @@ target_link_libraries(
   augusta_reenactment_tests
   PRIVATE augusta_harness augusta_host_commands GTest::gtest GTest::gtest_main
 )
-gtest_discover_tests(augusta_reenactment_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_reenactment_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS harness)
 
 # A Match capture that cannot be written, optional or strict (ADR-0050,
 # ADR-0033): its write and flush failures injected (see faults.h), seen from the
@@ -722,7 +722,7 @@ target_link_libraries(
     GTest::gtest_main
 )
 # Links networking and PhysX through augusta_host, so the same first-launch cost applies as above.
-gtest_discover_tests(augusta_capture_runtime_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_capture_runtime_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS host)
 
 # What a player's ticks add up to, from Prediction States built by hand.
 add_executable(augusta_netcode_stats_tests netcode_stats_test.cpp)
@@ -731,7 +731,7 @@ target_link_libraries(
   PRIVATE augusta_harness augusta_math augusta_prediction GTest::gtest GTest::gtest_main
 )
 # Links PhysX through augusta_prediction, so the same first-launch cost applies as above.
-gtest_discover_tests(augusta_netcode_stats_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_netcode_stats_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS harness)
 
 # How often and how far Reconciliation moved the body, from Prediction States built by hand.
 add_executable(augusta_correction_tally_tests correction_tally_test.cpp)
@@ -740,13 +740,13 @@ target_link_libraries(
   PRIVATE augusta_math augusta_prediction GTest::gtest GTest::gtest_main
 )
 # Links PhysX through augusta_prediction, so the same first-launch cost applies as above.
-gtest_discover_tests(augusta_correction_tally_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_correction_tally_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS prediction)
 
 # The Command each Intent yields and how it ends, from Server views built by hand.
 add_executable(augusta_intent_tests intent_test.cpp)
 target_link_libraries(augusta_intent_tests PRIVATE augusta_harness augusta_math GTest::gtest GTest::gtest_main)
 # Links PhysX through augusta_harness, so the same first-launch cost applies as above.
-gtest_discover_tests(augusta_intent_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_intent_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS harness)
 
 # Links augusta_animation and ozz-animation's offline libraries for the Clips its
 # prediction is built with (clips_fixture.h).
@@ -764,7 +764,7 @@ target_link_libraries(
     GTest::gtest_main
 )
 # Links networking and PhysX, so the same first-launch cost applies as above.
-gtest_discover_tests(augusta_runner_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_runner_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS harness)
 
 # Local transport failures at the runtime seams (ADR-0033): a real Host,
 # Session, Runner and ServerRuntime over loopback, the transport made to fail
@@ -790,7 +790,7 @@ target_include_directories(
   PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/host ${CMAKE_SOURCE_DIR}/src/modules/link
 )
 # Links networking and PhysX, so the same first-launch cost applies as above.
-gtest_discover_tests(augusta_transport_failure_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_transport_failure_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS host)
 
 # The Link's conversions (ADR-0038), with no transport: what one peer sends
 # reaches the other's engine types unchanged, and a tick's Commands are split
@@ -798,7 +798,7 @@ gtest_discover_tests(augusta_transport_failure_tests DISCOVERY_TIMEOUT 30)
 add_executable(augusta_link_messages_tests link_messages_test.cpp)
 target_link_libraries(augusta_link_messages_tests PRIVATE augusta_link_messages GTest::gtest GTest::gtest_main)
 # Links PhysX through augusta_physics, so the same first-launch cost applies as above.
-gtest_discover_tests(augusta_link_messages_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_link_messages_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS link)
 
 # What the Link decides about the transport beneath it is in headers private to
 # the link module, tested apart from a live connection through a private
@@ -818,13 +818,13 @@ target_link_libraries(
     GTest::gtest_main
 )
 # Links networking and PhysX, so the same first-launch cost applies as above.
-gtest_discover_tests(augusta_link_transport_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_link_transport_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS link)
 
 add_executable(augusta_tick_messages_tests tick_messages_test.cpp)
 target_link_libraries(augusta_tick_messages_tests PRIVATE augusta_host augusta_protocol GTest::gtest GTest::gtest_main)
 target_include_directories(augusta_tick_messages_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/host)
 # Links networking and PhysX through augusta_host, so the same first-launch cost applies as above.
-gtest_discover_tests(augusta_tick_messages_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_tick_messages_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS host)
 
 add_executable(augusta_simulation_mapping_tests simulation_mapping_test.cpp)
 # Links augusta_animation and ozz-animation's offline libraries for the Clips it
@@ -835,7 +835,7 @@ target_link_libraries(
 )
 target_include_directories(augusta_simulation_mapping_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/host)
 # Links PhysX through augusta_physics, so the same first-launch cost applies as above.
-gtest_discover_tests(augusta_simulation_mapping_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_simulation_mapping_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS host)
 
 # The example soldier holding the example rifle, as a server loads and poses
 # them from the golden server pack (ADR-0064, ADR-0066).
@@ -847,19 +847,19 @@ target_compile_definitions(
   PRIVATE AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs"
 )
 # Links PhysX through augusta_physics, so the same first-launch cost applies as above.
-gtest_discover_tests(augusta_example_soldier_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_example_soldier_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS host)
 
 add_executable(augusta_assets_tests assets_test.cpp)
 target_link_libraries(augusta_assets_tests PRIVATE augusta_assets GTest::gtest GTest::gtest_main)
 # WritePack/Encode*/Pack::Load round-trip coverage, through augusta_assets'
 # public pack encoder (augusta/pack_encoder.h).
-gtest_discover_tests(augusta_assets_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_assets_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS assets)
 
 # The client's cue sounds; builds real packs with augusta_assets' pack
 # encoder, as augusta_assets_tests does.
 add_executable(augusta_cues_tests cues_test.cpp)
 target_link_libraries(augusta_cues_tests PRIVATE augusta_assets augusta_cues GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_cues_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_cues_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS audio)
 
 # Loads the golden packs the Python cooker wrote from its example scenario
 # (ADR-0013); the cooker's own tests keep it writing them byte for byte.
@@ -874,7 +874,7 @@ target_compile_definitions(
   augusta_cooked_pack_tests
   PRIVATE AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs"
 )
-gtest_discover_tests(augusta_cooked_pack_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_cooked_pack_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS assets)
 
 # The crash lines' format, against the log sink's, and the handler itself in
 # death tests; on Windows they read the minidump a crash writes through dbghelp.
@@ -884,7 +884,7 @@ target_link_libraries(
   PRIVATE augusta_crash augusta_logging GTest::gtest GTest::gtest_main $<$<PLATFORM_ID:Windows>:dbghelp>
 )
 target_compile_definitions(augusta_crash_tests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
-gtest_discover_tests(augusta_crash_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_crash_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS crash)
 
 # The crash lines' timestamp against the log sink's over every second to the
 # year 9999.
@@ -896,7 +896,7 @@ target_link_libraries(
 # RapidCheck's Maybe uses std::aligned_storage, deprecated since C++23 (see
 # augusta_protocol_property_tests).
 target_compile_options(augusta_crash_property_tests PRIVATE $<$<CXX_COMPILER_ID:Clang>:-Wno-deprecated-declarations>)
-gtest_discover_tests(augusta_crash_property_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS property)
+gtest_discover_tests(augusta_crash_property_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS "crash;property")
 
 # The renderer's GPU half builds only with the client (AUGUSTA_CLIENT), but the
 # geometry it builds on the CPU (vertices.h) is free of any GPU API, private to
@@ -904,7 +904,7 @@ gtest_discover_tests(augusta_crash_property_tests DISCOVERY_TIMEOUT 30 PROPERTIE
 add_executable(augusta_renderer_vertices_tests renderer_vertices_test.cpp)
 target_include_directories(augusta_renderer_vertices_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/renderer)
 target_link_libraries(augusta_renderer_vertices_tests PRIVATE augusta_renderer_vertices GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_renderer_vertices_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_renderer_vertices_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS renderer)
 
 # And which Vulkan device it draws with (vulkan_device_choice.h).
 add_executable(augusta_renderer_vulkan_device_choice_tests renderer_vulkan_device_choice_test.cpp)
@@ -913,7 +913,7 @@ target_link_libraries(
   augusta_renderer_vulkan_device_choice_tests
   PRIVATE augusta_renderer_vulkan_device_choice GTest::gtest GTest::gtest_main
 )
-gtest_discover_tests(augusta_renderer_vulkan_device_choice_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_renderer_vulkan_device_choice_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS renderer)
 
 # And the files its GPU crash dumps are written to (gpu_crash_dump_files.h).
 add_executable(augusta_renderer_gpu_crash_dump_files_tests renderer_gpu_crash_dump_files_test.cpp)
@@ -921,7 +921,7 @@ target_link_libraries(
   augusta_renderer_gpu_crash_dump_files_tests
   PRIVATE augusta_renderer_gpu_crash_dump_files GTest::gtest GTest::gtest_main
 )
-gtest_discover_tests(augusta_renderer_gpu_crash_dump_files_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_renderer_gpu_crash_dump_files_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS renderer)
 
 if(AUGUSTA_CLIENT)
   # The client Runtime's internal targets build with the client, on Windows
@@ -929,11 +929,11 @@ if(AUGUSTA_CLIENT)
   # private headers are reached through its directory, as the renderer's are.
   add_executable(augusta_client_scene_tests client_scene_test.cpp)
   target_link_libraries(augusta_client_scene_tests PRIVATE augusta_client_content GTest::gtest GTest::gtest_main)
-  gtest_discover_tests(augusta_client_scene_tests DISCOVERY_TIMEOUT 30)
+  gtest_discover_tests(augusta_client_scene_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS client)
 
   add_executable(augusta_client_character_tests client_character_test.cpp)
   target_link_libraries(augusta_client_character_tests PRIVATE augusta_client_content GTest::gtest GTest::gtest_main)
-  gtest_discover_tests(augusta_client_character_tests DISCOVERY_TIMEOUT 30)
+  gtest_discover_tests(augusta_client_character_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS client)
 
   add_executable(augusta_client_frame_mapping_tests client_frame_mapping_test.cpp)
   target_link_libraries(
@@ -943,7 +943,7 @@ if(AUGUSTA_CLIENT)
   target_include_directories(augusta_client_frame_mapping_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/client)
   # Links networking and PhysX through the harness, so the same first-launch
   # cost applies as above.
-  gtest_discover_tests(augusta_client_frame_mapping_tests DISCOVERY_TIMEOUT 30)
+  gtest_discover_tests(augusta_client_frame_mapping_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS client)
 
   add_executable(augusta_client_lobby_readiness_tests client_lobby_readiness_test.cpp)
   target_link_libraries(
@@ -951,12 +951,12 @@ if(AUGUSTA_CLIENT)
     PRIVATE augusta_client_lobby_readiness GTest::gtest GTest::gtest_main
   )
   target_include_directories(augusta_client_lobby_readiness_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/client)
-  gtest_discover_tests(augusta_client_lobby_readiness_tests DISCOVERY_TIMEOUT 30)
+  gtest_discover_tests(augusta_client_lobby_readiness_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS client)
 
   # The files a Run leaves (see run_files.h), over a temporary directory.
   add_executable(augusta_client_run_files_tests client_run_files_test.cpp)
   target_link_libraries(augusta_client_run_files_tests PRIVATE augusta_client_run_files GTest::gtest GTest::gtest_main)
-  gtest_discover_tests(augusta_client_run_files_tests DISCOVERY_TIMEOUT 30)
+  gtest_discover_tests(augusta_client_run_files_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS client)
 
   # What a launch tells the player of the Run before it, and the Session in
   # the log once admitted (see client_run.h).
@@ -971,7 +971,7 @@ if(AUGUSTA_CLIENT)
       GTest::gtest
       GTest::gtest_main
   )
-  gtest_discover_tests(augusta_client_run_tests DISCOVERY_TIMEOUT 30)
+  gtest_discover_tests(augusta_client_run_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS client)
 
   add_executable(augusta_client_phases_tests client_phases_test.cpp)
   target_link_libraries(
@@ -989,7 +989,7 @@ if(AUGUSTA_CLIENT)
     augusta_client_phases_tests
     PRIVATE AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs"
   )
-  gtest_discover_tests(augusta_client_phases_tests DISCOVERY_TIMEOUT 30)
+  gtest_discover_tests(augusta_client_phases_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS client)
 
   add_executable(augusta_client_net_stats_tests client_net_stats_test.cpp)
   target_link_libraries(augusta_client_net_stats_tests PRIVATE augusta_client_net_stats GTest::gtest GTest::gtest_main)
@@ -997,7 +997,7 @@ if(AUGUSTA_CLIENT)
   # NOMINMAX, as augusta_client_net_stats has it: net_stats.h's includes pull in
   # <windows.h>, whose min/max macros would break the headers included after it.
   target_compile_definitions(augusta_client_net_stats_tests PRIVATE NOMINMAX)
-  gtest_discover_tests(augusta_client_net_stats_tests DISCOVERY_TIMEOUT 30)
+  gtest_discover_tests(augusta_client_net_stats_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS client)
 
   # Drives the Renderer (ADR-0059) on lavapipe, Mesa's software Vulkan driver,
   # in a hidden window, so it runs on CI's runners, which have no GPU; under the
@@ -1095,7 +1095,7 @@ if(AUGUSTA_CLIENT)
       augusta_client_renderer_smoke_tests
       PROPERTIES CROSSCOMPILING_EMULATOR "${CMAKE_COMMAND};-E;env;${smoke_test_environment};--"
     )
-    gtest_discover_tests(augusta_client_renderer_smoke_tests DISCOVERY_TIMEOUT 30)
+    gtest_discover_tests(augusta_client_renderer_smoke_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS renderer)
   else()
     message(STATUS "Renderer smoke test not built: ${no_smoke_test_reason}")
   endif()
@@ -1109,7 +1109,7 @@ if(AUGUSTA_CLIENT)
     augusta_client_window_glfw_keys_tests
     PRIVATE augusta_window glfw GTest::gtest GTest::gtest_main
   )
-  gtest_discover_tests(augusta_client_window_glfw_keys_tests DISCOVERY_TIMEOUT 30)
+  gtest_discover_tests(augusta_client_window_glfw_keys_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS window)
 
   # The window itself, hidden, which needs a display: on Linux CI's runner gives
   # it a virtual X server, as the renderer smoke test's (nightly-jobs.yml). It
@@ -1118,7 +1118,7 @@ if(AUGUSTA_CLIENT)
   add_executable(augusta_client_window_tests client_window_test.cpp)
   target_include_directories(augusta_client_window_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/window)
   target_link_libraries(augusta_client_window_tests PRIVATE augusta_window glfw GTest::gtest GTest::gtest_main)
-  gtest_discover_tests(augusta_client_window_tests DISCOVERY_TIMEOUT 30)
+  gtest_discover_tests(augusta_client_window_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS window)
 endif()
 
 # Before the build's kind decides below which sources its fuzz seeds test takes.
@@ -1180,7 +1180,7 @@ if(AUGUSTA_DEBUG_TOOLS)
       PRIVATE augusta_client_debug_profiling_panel GTest::gtest GTest::gtest_main
     )
     target_include_directories(augusta_client_debug_profiling_panel_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/client)
-    gtest_discover_tests(augusta_client_debug_profiling_panel_tests DISCOVERY_TIMEOUT 30)
+    gtest_discover_tests(augusta_client_debug_profiling_panel_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS client)
   endif()
   # Which debug tools the client's Debug index lists (debug_index_entries.h),
   # private to the client Runtime, as debug_profiling_panel.h is.
@@ -1198,7 +1198,7 @@ if(AUGUSTA_DEBUG_TOOLS)
     )
     target_include_directories(augusta_client_debug_index_entries_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/client)
     # Links PhysX through augusta_presentation, as augusta_tracers_tests does.
-    gtest_discover_tests(augusta_client_debug_index_entries_tests DISCOVERY_TIMEOUT 30)
+    gtest_discover_tests(augusta_client_debug_index_entries_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS client)
   endif()
   # The Network Debug panel (debug_network_panel.h), private to the client
   # Runtime, as net_stats.h is.
@@ -1209,7 +1209,7 @@ if(AUGUSTA_DEBUG_TOOLS)
       PRIVATE augusta_client_debug_network_panel GTest::gtest GTest::gtest_main
     )
     target_include_directories(augusta_client_debug_network_panel_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/client)
-    gtest_discover_tests(augusta_client_debug_network_panel_tests DISCOVERY_TIMEOUT 30)
+    gtest_discover_tests(augusta_client_debug_network_panel_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS client)
   endif()
   if(TARGET augusta_client_renderer_smoke_tests)
     target_sources(
@@ -1224,25 +1224,25 @@ if(AUGUSTA_DEBUG_TOOLS)
   # What the DebugHud shows (augusta_hud), free of any GPU API.
   add_executable(augusta_hud_tests hud_test.cpp)
   target_link_libraries(augusta_hud_tests PRIVATE augusta_hud GTest::gtest GTest::gtest_main)
-  gtest_discover_tests(augusta_hud_tests DISCOVERY_TIMEOUT 30)
+  gtest_discover_tests(augusta_hud_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS hud)
 
   # The Debug overlays' shapes and their tessellation, the Debug index and
   # Debug interaction (augusta_debug), free of any GPU API.
   add_executable(augusta_debug_tests debug_test.cpp debug_index_test.cpp debug_interaction_test.cpp)
   target_link_libraries(augusta_debug_tests PRIVATE augusta_debug GTest::gtest GTest::gtest_main)
-  gtest_discover_tests(augusta_debug_tests DISCOVERY_TIMEOUT 30)
+  gtest_discover_tests(augusta_debug_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS debug)
 
   # The Physics Debug overlays, their panel and their shapes (presentation's
   # physics_overlays.h), free of any GPU API.
   add_executable(augusta_physics_overlays_tests physics_overlays_test.cpp)
   target_link_libraries(augusta_physics_overlays_tests PRIVATE augusta_presentation GTest::gtest GTest::gtest_main)
   # Links augusta_prediction publicly (so PhysX), as augusta_tracers_tests does.
-  gtest_discover_tests(augusta_physics_overlays_tests DISCOVERY_TIMEOUT 30)
+  gtest_discover_tests(augusta_physics_overlays_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS presentation)
   # The pcapng's blocks and its file writer (augusta_pcapng, ADR-0076).
   add_executable(augusta_pcapng_tests pcapng_test.cpp pcapng_file_writer_test.cpp)
   target_link_libraries(augusta_pcapng_tests PRIVATE augusta_pcapng augusta_logging GTest::gtest GTest::gtest_main)
   target_include_directories(augusta_pcapng_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/pcapng)
-  gtest_discover_tests(augusta_pcapng_tests DISCOVERY_TIMEOUT 30)
+  gtest_discover_tests(augusta_pcapng_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS pcapng)
 
   # The Shipping-only test as an object library that nothing builds or runs:
   # only so that its file has a compile command for clang-tidy, which lints
@@ -1255,7 +1255,7 @@ if(AUGUSTA_DEBUG_TOOLS)
 else()
   add_executable(augusta_shipping_config_tests shipping_config_test.cpp)
   # Links PhysX through augusta_input, as augusta_client_config_tests does.
-  gtest_discover_tests(augusta_shipping_config_tests DISCOVERY_TIMEOUT 30)
+  gtest_discover_tests(augusta_shipping_config_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS config)
   target_sources(augusta_protocol_decode_seeds_tests PRIVATE fuzz/protocol_decode_seeds_shipping.cpp)
 endif()
 target_link_libraries(
