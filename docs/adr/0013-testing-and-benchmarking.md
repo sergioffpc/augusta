@@ -190,20 +190,38 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
   property test carries the `ctest` label `property`, which is how the nightly
   selects them. A failing case the runner shrinks is kept as an example-based
   regression test.
+- **Every test executable carries one area**, a `ctest` label naming what it
+  tests: the runtime module (`animation`, `audio`, `networking`, ...), `client`
+  or `server` for a Runtime's tests, or the tool (`agent`). It is the module the
+  executable tests, not every module it links, and a fuzz target's seed tests
+  take the area of the input they decode. So `make test TAGS=<area>` builds and
+  runs that module's own tests alone (ADR-0008); the integration tests that only
+  use it stay with the full regression. An executable's labels are its one area
+  and, beside it, only `check`, `property` or `netcode`. The area check refuses
+  an executable with no area, with more than one, or with any other label.
 - **Coverage** is a report for finding untested deterministic logic, not a gate:
   a minimum percentage pushes toward tests written for the number.
-- **Each test names the requirements it checks** (`docs/REQUIREMENTS.md`'s
-  `US-nn` and `NFR-nn`) on a `// Requirements:` line directly above it, so which
-  tests exercise a requirement is read from the code rather than kept in a table
-  beside it that drifts. `scripts/requirements-matrix.py` reads them: CI fails
-  on one that names a requirement the document does not have, and the test
-  report's requirements matrix lists every requirement with the tests that name
-  it and how each did that night. A requirement no test can check, such as
-  NFR-04, which the Windows and Linux builds themselves check, is named instead
-  by the CI jobs that check it, on a `# Requirements:` line directly above the
-  job's key: the matrix lists those jobs beside the tests and shows the
-  requirement as checked in CI, without reading the jobs' results. A requirement
-  nothing names shows as untested.
+- **Every test names at least one requirement it checks**
+  (`docs/REQUIREMENTS.md`'s `US-nn` and `NFR-nn`) on a `// Requirements:` line
+  directly above it, so which tests exercise a requirement is read from the code
+  rather than kept in a table beside it that drifts. A test that no requirement
+  fits means one of two things: a requirement is missing, and the document gains
+  or amends one; or the test checks nothing a requirement could state, and it is
+  deleted or folded into one that does. The one exception is a disabled test
+  (`DISABLED_`), which regenerates reference data or fuzz seeds and checks
+  nothing. A requirement no test can check, such as NFR-04, which the Windows
+  and Linux builds themselves check, is named instead by the CI jobs that check
+  it, on a `# Requirements:` line directly above the job's key. The rule holds
+  the other way too: every requirement a release met (version `vN`) is named by
+  at least one test or CI job; a planned one need not be until its release, but
+  a test landing ahead of it may name it.
+  `scripts/requirements-matrix.py --check` enforces both directions in CI: it
+  fails on a test that names no requirement, on a met requirement nothing names,
+  and on a marker that names a requirement the document does not have or stands
+  above no test or job. The test report's requirements matrix lists every
+  requirement with the tests that name it and how each did that night, and the
+  CI jobs beside them: a requirement only jobs name shows as checked in CI,
+  without reading the jobs' results.
 - **The test report** is the nightly's tests in one HTML report
   (`scripts/test-report.sh`): its `ctest` runs (the whole Linux suite, the
   property tests, TSan and the netcode profiles), which `ctest` writes as JUnit

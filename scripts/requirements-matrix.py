@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 r"""Which tests and CI jobs check each requirement and how tests did (ADR-0013).
 
-A test names the requirements it exercises (docs/REQUIREMENTS.md's US-nn and
+Every test names the requirements it checks (docs/REQUIREMENTS.md's US-nn and
 NFR-nn) on a comment line directly above it, in the comment block that
 describes it, if any:
 
@@ -17,10 +17,12 @@ fixture) names it the same way, directly above its key in a GitHub workflow:
 --check reads those lines in every C++ test under tests/ and tools/*/tests/
 and in every workflow under .github/workflows/, and fails on one that names a
 requirement the document doesn't have, or that is not directly above a test or
-a job. Given ctest's JUnit XML (--junit), it writes instead an HTML matrix of
-every requirement, the tests and CI jobs that name it and each test's results
-(--output), and prints a one-line summary of it. A job's outcome is not read:
-the matrix shows it as checked in CI.
+a job. It fails too on a test that names none, unless it is disabled
+(DISABLED_), and on a requirement a release met (vN) that no test or job names;
+a planned one need not be named yet. Given ctest's JUnit XML (--junit), it
+writes instead an HTML matrix of every requirement, the tests and CI jobs that
+name it and each test's results (--output), and prints a one-line summary of
+it. A job's outcome is not read: the matrix shows it as checked in CI.
 
   scripts/requirements-matrix.py --check
   scripts/requirements-matrix.py --junit <junit-dir> --output requirements.html
@@ -36,6 +38,10 @@ import xml.etree.ElementTree as ET
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
 _REQUIREMENT = re.compile(r"^### ((?:US|NFR)-\d+): (.+)$", re.MULTILINE)
+# A requirement's version line, and the version of one a release met (vN),
+# rather than one still planned.
+_VERSION = re.compile(r"^Version: (.+)$", re.MULTILINE)
+_RELEASED = re.compile(r"^v\d+$")
 _MARKER = re.compile(r"^\s*//\s*Requirements:(.*)$")
 _COMMENT = re.compile(r"^\s*//")
 _YAML_MARKER = re.compile(r"^\s*#\s*Requirements:(.*)$")
@@ -66,6 +72,20 @@ ul { margin: 0; padding-left: 1rem; }
 .not-run, .untested { color: #9a6700; }
 .checked-in-ci { color: #0969da; }
 """
+
+
+@dataclasses.dataclass
+class Requirement:
+    """A requirement's title, its line in the document and its version."""
+
+    title: str
+    line: int
+    version: str
+
+    @property
+    def met(self):
+        """Whether a release met it (vN), so a test or a job must name it."""
+        return bool(_RELEASED.match(self.version))
 
 
 @dataclasses.dataclass
@@ -107,8 +127,23 @@ def _css_class(outcome):
 
 
 def requirements(document):
-    """Each requirement's ID and title, in the document's order."""
-    return dict(_REQUIREMENT.findall(document.read_text(encoding="utf-8")))
+    """Each requirement by its ID, in the document's order."""
+    text = document.read_text(encoding="utf-8")
+    headings = list(_REQUIREMENT.finditer(text))
+    known = {}
+    for index, heading in enumerate(headings):
+        end = (
+            headings[index + 1].start()
+            if index + 1 < len(headings)
+            else len(text)
+        )
+        version = _VERSION.search(text, heading.end(), end)
+        known[heading.group(1)] = Requirement(
+            heading.group(2),
+            text.count("\n", 0, heading.start()) + 1,
+            version.group(1) if version else "",
+        )
+    return known
 
 
 def sources():
@@ -152,7 +187,12 @@ def _strays(path, lines, marker, claimed, what, errors):
 
 
 def marked_tests(path, errors):
-    """The tests in path that name requirements; a stray marker is an error."""
+    """The tests in path that name requirements.
+
+    A stray marker is an error, and so is a test that names none, unless
+    GoogleTest disables it (DISABLED_): those regenerate reference data and
+    fuzz seeds, and check nothing.
+    """
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines()
     tests = []
@@ -160,9 +200,13 @@ def marked_tests(path, errors):
     for match in _TEST.finditer(text):
         line = text.count("\n", 0, match.start())
         ids = _ids_above(lines, line, _COMMENT, _MARKER, claimed)
+        name = f"{match.group(1)}.{match.group(2)}"
         if ids is not None:
-            name = f"{match.group(1)}.{match.group(2)}"
             tests.append(Test(name, path, line + 1, ids))
+        elif not any(part.startswith("DISABLED_") for part in match.groups()):
+            errors.append(
+                f"{_relative(path)}:{line + 1}: {name} names no requirement"
+            )
     _strays(path, lines, _MARKER, claimed, "a test", errors)
     return tests
 
@@ -202,16 +246,30 @@ def marked_jobs(path, errors):
     return jobs
 
 
-def check(named, known, errors):
-    """Adds an error for each unknown requirement a test or a job names."""
+def check(named, known, document, errors):
+    """Adds an error for each unknown requirement a test or a job names.
+
+    It also adds one for each requirement of the document that a release met
+    (vN) and that none names. A requirement still planned need not be named
+    yet.
+    """
     for each in named:
         where = f"{_relative(each.path)}:{each.line}: {each.label}"
         for requirement in each.requirements:
             if requirement not in known:
                 errors.append(
                     f"{where} names {requirement!r}, which"
-                    " docs/REQUIREMENTS.md does not have"
+                    f" {_relative(document)} does not have"
                 )
+    checked = {
+        requirement for each in named for requirement in each.requirements
+    }
+    for requirement, defined in known.items():
+        if defined.met and requirement not in checked:
+            errors.append(
+                f"{_relative(document)}:{defined.line}: {requirement},"
+                f" met in {defined.version}, is named by no test or CI job"
+            )
 
 
 def results(junit):
@@ -274,7 +332,7 @@ def render(known, tests, jobs, by_test):
     """The matrix's HTML page, and the one-line summary of it."""
     rows = []
     counts = dict.fromkeys(_OUTCOMES, 0)
-    for requirement, title in known.items():
+    for requirement, defined in known.items():
         named = [test for test in tests if requirement in test.requirements]
         items = [_test_item(test, runs_of(test, by_test)) for test in named]
         items += [
@@ -283,7 +341,7 @@ def render(known, tests, jobs, by_test):
         outcome = _worst({each for _, each in items}, "untested")
         counts[outcome] += 1
         rows.append(
-            f"<tr><td>{requirement}</td><td>{html.escape(title)}</td>"
+            f"<tr><td>{requirement}</td><td>{html.escape(defined.title)}</td>"
             f'<td class="{_css_class(outcome)}">{outcome}</td>'
             f"<td>{len(items)}</td>"
             f"<td><ul>{''.join(item for item, _ in items)}</ul></td></tr>"
@@ -337,11 +395,12 @@ def main():
     if not args.check and not (args.junit and args.output):
         parser.error("either --check, or --junit and --output")
 
-    known = requirements(_ROOT / "docs" / "REQUIREMENTS.md")
+    document = _ROOT / "docs" / "REQUIREMENTS.md"
+    known = requirements(document)
     errors = []
     tests = [test for path in sources() for test in marked_tests(path, errors)]
     jobs = [job for path in workflows() for job in marked_jobs(path, errors)]
-    check([*tests, *jobs], known, errors)
+    check([*tests, *jobs], known, document, errors)
     if args.check:
         for error in errors:
             print(error, file=sys.stderr)

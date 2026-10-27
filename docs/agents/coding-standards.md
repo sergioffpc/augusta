@@ -98,12 +98,21 @@ A non-functional requirement with a measure a test can check (NFR-02, NFR-03,
 NFR-05, NFR-06) gets one, through the Harness, ticked by hand rather than by a
 clock (ADR-0013).
 
-A test that checks a requirement's acceptance criteria or measure names it on a
-`// Requirements: US-07, US-08` line directly above the test macro, as the last
-line of its comment if it has one. Name only what the test checks, not what it
-merely passes through; a test of plumbing no requirement describes names none.
-CI refuses a marker that names an ID `docs/REQUIREMENTS.md` does not have
-(`scripts/requirements-matrix.py --check`).
+Every test names at least one requirement whose acceptance criteria or measure
+it checks, on a `// Requirements: US-07, US-08` line directly above the test
+macro, as the last line of its comment if it has one. Name only what the test
+checks, not what it merely passes through. A test that no requirement fits means
+either a requirement is missing (add or amend it in `docs/REQUIREMENTS.md`) or
+the test shouldn't exist (delete it, or fold it into one that checks a
+requirement); never leave it unmarked. Only a disabled test (`DISABLED_`), a
+regenerator of reference data or fuzz seeds, names none. CI refuses a test that
+names no requirement, a marker that names an ID the document does not have, and
+a requirement met in a release (`vN`) that no test or CI job names
+(`scripts/requirements-matrix.py --check`, ADR-0013).
+
+A new test executable names the one area it tests, not what it links, as a
+`ctest` label on its `gtest_discover_tests` call, with only `check`, `property`
+or `netcode` beside it (ADR-0013's rule; `make check` enforces it).
 
 Reach for a property-based test (RapidCheck) when an invariant holds over a
 whole input domain — a serialization round-trip, a value that must never go

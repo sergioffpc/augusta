@@ -462,6 +462,7 @@ TEST(LinkMessagesTest, TheRosterTheServerSendsReachesTheClientUnchanged) {
   }
 }
 
+// Requirements: NFR-20
 TEST(LinkMessagesTest, AMatchStartReachesTheClientWithItsMatchId) {
   const boost::uuids::uuid match = boost::uuids::time_generator_v7{}();
 

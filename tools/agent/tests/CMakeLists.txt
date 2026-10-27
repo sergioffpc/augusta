@@ -35,7 +35,7 @@ target_compile_definitions(
 )
 # Links PhysX through augusta_physics, whose first launch can outlast the
 # default discovery timeout (see tests/CMakeLists.txt).
-gtest_discover_tests(augusta_agent_run_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_agent_run_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS agent)
 
 # The netcode under an impaired link: whole runs under the transport's simulated
 # latency, jitter, loss and reordering, minutes each, so they carry the label
@@ -56,4 +56,4 @@ target_compile_definitions(
   augusta_agent_netcode_tests
   PRIVATE AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs"
 )
-gtest_discover_tests(augusta_agent_netcode_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS netcode TIMEOUT 900)
+gtest_discover_tests(augusta_agent_netcode_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS "agent;netcode" TIMEOUT 900)

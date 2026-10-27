@@ -125,6 +125,7 @@ TEST(ParseClientConfigTest, DefaultsTheServerAddress) {
   EXPECT_EQ(config->server_address, augusta::config::kDefaultServerAddress);
 }
 
+// Requirements: US-28
 TEST(ParseClientConfigTest, DefaultsTheLogLevel) {
   const auto config = ParseClientConfig(
       "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: k.pub\n", kFileDir);
@@ -133,6 +134,7 @@ TEST(ParseClientConfigTest, DefaultsTheLogLevel) {
   EXPECT_EQ(config->log_level, augusta::config::kDefaultLogLevel);
 }
 
+// Requirements: US-28
 TEST(ParseClientConfigTest, ReadsALogLevel) {
   const auto config = ParseClientConfig(
       "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: "
