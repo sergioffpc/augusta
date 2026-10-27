@@ -653,11 +653,17 @@ Version: v1
 
 ```text
 Source:      Player client
-Stimulus:    Network latency up to 100 ms
+Stimulus:    Network latency up to 100 ms, with packets lost or reordered; a
+             peer that closes its connection, times out or is dropped
 Environment: Typical broadband connection
-Artifact:    State synchronization system
-Response:    Bullet and player state remain visually consistent
-Measure:     Desync correction completes within 150 ms in 95% of cases
+Artifact:    State synchronization system and transport
+Response:    Bullet and player state remain visually consistent; reliable
+             messages arrive once and in order, while a tick's Commands and
+             Authoritative State updates travel unreliably; a peer that leaves
+             is reported, and its Session ends without stopping the server
+Measure:     Desync correction completes within 150 ms in 95% of cases; no
+             reliable message is lost, repeated or reordered; every peer that
+             closes, times out or is dropped is reported once
 ```
 
 ### NFR-03: Ballistics Determinism
@@ -867,15 +873,20 @@ Version: v1
 ```text
 Source:      A peer, or a file from outside (pack, Match capture)
 Stimulus:    Arbitrary bytes: empty, truncated, oversized, out of range or with
-             bytes left over
+             bytes left over; more messages than are taken in
 Environment: Client or server at any time; the fuzzer under ASan
-Artifact:    Protocol decoding, pack loading and Match capture reading
+Artifact:    Protocol decoding, pack loading, Match capture reading and the
+             queues messages wait in
 Response:    The input is refused with a typed error, nothing is allocated from
-             a length that was not checked, and the process keeps running
+             a length that was not checked, and the process keeps running; a
+             queue a peer fills is bounded and keeps only the newest: the
+             server's queue of each client's Commands, and a client's queues
+             of the Authoritative State updates, Shots and Hit confirmations
+             it is sent
 Measure:     No crash, hang (5 s per input) or sanitizer report across every
              fuzz run (about 60 s per target per pull request, 30 min nightly);
              every payload decoding accepts encodes again and decodes to the
-             same value
+             same value; no queue holds more than its bound
 ```
 
 The fuzz targets' seeds and regressions replay under ctest on every preset
