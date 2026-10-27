@@ -75,6 +75,7 @@ std::string ContextOf(const Failure& failure, std::string_view key) {
   return {};
 }
 
+// Requirements: NFR-18
 TEST(ApplicationTest, ARuntimeFailureReachesTheOutcomeWithItsTypedCause) {
   Trace trace;
   Program<FakeRuntime> program = Succeeding(trace);
@@ -91,6 +92,7 @@ TEST(ApplicationTest, ARuntimeFailureReachesTheOutcomeWithItsTypedCause) {
   EXPECT_EQ(outcome->detail, "x");
 }
 
+// Requirements: NFR-18
 TEST(ApplicationTest, AnInitializationFailureIsTheOutcomeAndNothingIsConstructed) {
   Trace trace;
   Program<FakeRuntime> program = Succeeding(trace);
@@ -106,6 +108,7 @@ TEST(ApplicationTest, AnInitializationFailureIsTheOutcomeAndNothingIsConstructed
   EXPECT_EQ(trace, (Trace{"initialize"}));
 }
 
+// Requirements: NFR-18
 TEST(ApplicationTest, AConstructionFailureIsTheOutcomeAndNothingRuns) {
   Trace trace;
   Program<FakeRuntime> program = Succeeding(trace);
@@ -121,6 +124,7 @@ TEST(ApplicationTest, AConstructionFailureIsTheOutcomeAndNothingRuns) {
   EXPECT_EQ(trace, (Trace{"initialize", "construct"}));
 }
 
+// Requirements: NFR-18
 TEST(ApplicationTest, AnExceptionEscapingInitializationIsAClassifiedDependencyFailure) {
   Trace trace;
   Program<FakeRuntime> program = Succeeding(trace);
@@ -135,6 +139,7 @@ TEST(ApplicationTest, AnExceptionEscapingInitializationIsAClassifiedDependencyFa
   EXPECT_TRUE(trace.empty());
 }
 
+// Requirements: NFR-18
 TEST(ApplicationTest, AnExceptionEscapingConstructionIsAClassifiedDependencyFailure) {
   Trace trace;
   Program<FakeRuntime> program = Succeeding(trace);
@@ -153,6 +158,7 @@ TEST(ApplicationTest, AnExceptionEscapingConstructionIsAClassifiedDependencyFail
 
 // Construction that has already classified its failure throws it whole, and it
 // keeps its Code: a broken invariant is not taken for a dependency's failure.
+// Requirements: NFR-18
 TEST(ApplicationTest, AClassifiedFailureThrownDuringConstructionKeepsItsCode) {
   Trace trace;
   Program<FakeRuntime> program = Succeeding(trace);
@@ -168,6 +174,7 @@ TEST(ApplicationTest, AClassifiedFailureThrownDuringConstructionKeepsItsCode) {
   EXPECT_EQ(outcome->detail, "string too long");
 }
 
+// Requirements: NFR-18
 TEST(ApplicationTest, AnExceptionEscapingTheRunIsAClassifiedWorkerFailureAfterWhichTheRuntimeIsReleased) {
   Trace trace;
   Program<FakeRuntime> program = Succeeding(trace);
@@ -185,6 +192,7 @@ TEST(ApplicationTest, AnExceptionEscapingTheRunIsAClassifiedWorkerFailureAfterWh
   EXPECT_EQ(trace, (Trace{"initialize", "construct", "run", "released"}));
 }
 
+// Requirements: NFR-18
 TEST(ApplicationTest, ARuntimeThatStopsAsAskedEndsWithNoFailureOnceItIsReleased) {
   Trace trace;
 
@@ -212,6 +220,7 @@ std::pair<std::string, int> Concluded(const Outcome& outcome) {
   return {testing::internal::GetCapturedStdout(), status};
 }
 
+// Requirements: NFR-18
 TEST(ApplicationTest, ATerminalFailureWritesOneTerminalEventAndExitsNonZero) {
   const Failure failure{.code = Code::kWorkerFailed, .context = {{.key = "thread", .value = "network"}}, .detail = "x"};
 
@@ -228,6 +237,7 @@ TEST(ApplicationTest, ATerminalFailureWritesOneTerminalEventAndExitsNonZero) {
 
 // A client's terminal event also says which file holds its Run's log, so the
 // player knows what to send (ADR-0027); it is still the one terminal event.
+// Requirements: NFR-18
 TEST(ApplicationTest, ATerminalFailureWithARunLogGivesItsPathInTheOneTerminalEvent) {
   augusta::logging::Init();
   augusta::logging::SetLogLevel(augusta::logging::Severity::kInfo);
@@ -250,6 +260,7 @@ TEST(ApplicationTest, ATerminalFailureWithARunLogGivesItsPathInTheOneTerminalEve
 }
 
 // A stop as asked leaves nothing to send, so it names no log.
+// Requirements: NFR-18
 TEST(ApplicationTest, AStopAsAskedWithARunLogNamesNoLog) {
   augusta::logging::Init();
   augusta::logging::SetLogLevel(augusta::logging::Severity::kInfo);
@@ -262,6 +273,7 @@ TEST(ApplicationTest, AStopAsAskedWithARunLogNamesNoLog) {
   EXPECT_EQ(Occurrences(written, "log="), 0U) << written;
 }
 
+// Requirements: NFR-18
 TEST(ApplicationTest, EveryDispositionOfTerminalFailureExitsNonZero) {
   for (const Code code : {Code::kPeerConnectionLost, Code::kMetricsEndpointFailed, Code::kTransportInitFailed,
                           Code::kInvalidConfiguration}) {
@@ -269,6 +281,7 @@ TEST(ApplicationTest, EveryDispositionOfTerminalFailureExitsNonZero) {
   }
 }
 
+// Requirements: NFR-18
 TEST(ApplicationTest, AStopAsAskedExitsZeroWithoutAnErrorLine) {
   const auto [written, status] = Concluded(std::nullopt);
 

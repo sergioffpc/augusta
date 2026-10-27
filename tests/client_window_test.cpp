@@ -47,8 +47,10 @@ class WindowTest : public ::testing::Test {
   OsEvents os_{Internals::Glfw(window_)};
 };
 
+// Requirements: US-20
 TEST_F(WindowTest, PollsNoEventsBeforeTheOsDeliversAny) { EXPECT_TRUE(window_.Poll().empty()); }
 
+// Requirements: US-06, US-20
 TEST_F(WindowTest, PollsTheKeyAndMouseEventsSinceTheLastPollInOrder) {
   os_.Key(GLFW_KEY_W, GLFW_PRESS);
   os_.CursorAt(10.0, 20.0);
@@ -72,6 +74,7 @@ TEST_F(WindowTest, PollsTheKeyAndMouseEventsSinceTheLastPollInOrder) {
   EXPECT_EQ(std::get<KeyEvent>(events[3]).state, KeyState::kReleased);
 }
 
+// Requirements: US-20
 TEST_F(WindowTest, PollsEachEventOnce) {
   os_.Key(GLFW_KEY_SPACE, GLFW_PRESS);
   ASSERT_EQ(window_.Poll().size(), 1U);
@@ -79,6 +82,7 @@ TEST_F(WindowTest, PollsEachEventOnce) {
   EXPECT_TRUE(window_.Poll().empty());
 }
 
+// Requirements: US-20
 TEST_F(WindowTest, PollsNoKeyRepeatsAndNoKeysItDoesNotName) {
   os_.Key(GLFW_KEY_A, GLFW_REPEAT);
   os_.Key(GLFW_KEY_KP_5, GLFW_PRESS);
@@ -87,6 +91,7 @@ TEST_F(WindowTest, PollsNoKeyRepeatsAndNoKeysItDoesNotName) {
   EXPECT_TRUE(window_.Poll().empty());
 }
 
+// Requirements: NFR-04
 TEST_F(WindowTest, ReportsTheConfiguredSizeUntilClosed) {
   static_cast<void>(window_.Poll());
 

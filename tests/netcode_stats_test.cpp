@@ -22,6 +22,7 @@ State StateAt(const Vec3& total_correction, std::uint32_t total_rounds_fired = 0
   return state;
 }
 
+// Requirements: NFR-02
 TEST(NetcodeTallyTest, StartsAtNothing) {
   const NetcodeStats stats = NetcodeTally().Stats();
 
@@ -32,6 +33,7 @@ TEST(NetcodeTallyTest, StartsAtNothing) {
   EXPECT_EQ(stats.hit_confirmations, 0U);
 }
 
+// Requirements: NFR-02
 TEST(NetcodeTallyTest, CountsOnlyTheTicksPlayedInAMatch) {
   NetcodeTally tally;
   tally.RecordTick(StateAt({}), false);
@@ -41,6 +43,7 @@ TEST(NetcodeTallyTest, CountsOnlyTheTicksPlayedInAMatch) {
   EXPECT_EQ(tally.Stats().match_ticks, 2U);
 }
 
+// Requirements: NFR-02
 TEST(NetcodeTallyTest, ATickWhoseTotalCorrectionMovedIsOneCorrectionOfThatLength) {
   NetcodeTally tally;
   tally.RecordTick(StateAt({}), true);
@@ -53,6 +56,7 @@ TEST(NetcodeTallyTest, ATickWhoseTotalCorrectionMovedIsOneCorrectionOfThatLength
   EXPECT_FLOAT_EQ(stats.largest_correction_m, 0.5F);
 }
 
+// Requirements: NFR-02
 TEST(NetcodeTallyTest, ACorrectionBackTowardsWhereTheBodyWasStillCounts) {
   NetcodeTally tally;
   tally.RecordTick(StateAt(Vec3(1.0F, 0.0F, 0.0F)), true);
@@ -63,6 +67,7 @@ TEST(NetcodeTallyTest, ACorrectionBackTowardsWhereTheBodyWasStillCounts) {
   EXPECT_FLOAT_EQ(stats.largest_correction_m, 1.0F);
 }
 
+// Requirements: NFR-02
 TEST(NetcodeTallyTest, CountsTheRoundsFiredInAMatch) {
   NetcodeTally tally;
   tally.RecordTick(StateAt({}, 1), true);
@@ -75,6 +80,7 @@ TEST(NetcodeTallyTest, CountsTheRoundsFiredInAMatch) {
   EXPECT_EQ(tally.Stats().rounds_fired, 3U);
 }
 
+// Requirements: NFR-02
 TEST(NetcodeTallyTest, AddsUpTheHitConfirmationsItIsHanded) {
   NetcodeTally tally;
   tally.RecordHitConfirmations(2);
@@ -84,6 +90,7 @@ TEST(NetcodeTallyTest, AddsUpTheHitConfirmationsItIsHanded) {
   EXPECT_EQ(tally.Stats().hit_confirmations, 5U);
 }
 
+// Requirements: NFR-02
 TEST(NetcodeStatsTest, AddingAnotherPlayersSumsTheCountsAndKeepsTheLargerCorrection) {
   NetcodeStats all{
       .match_ticks = 10, .corrections = 1, .largest_correction_m = 0.5F, .rounds_fired = 4, .hit_confirmations = 2};
@@ -97,11 +104,13 @@ TEST(NetcodeStatsTest, AddingAnotherPlayersSumsTheCountsAndKeepsTheLargerCorrect
   EXPECT_EQ(all.hit_confirmations, 7U);
 }
 
+// Requirements: NFR-02
 TEST(NetcodeStatsTest, TheCorrectionRateIsTheShareOfMatchTicksWithACorrection) {
   EXPECT_EQ(NetcodeStats{}.CorrectionRate(), 0.0F);
   EXPECT_FLOAT_EQ((NetcodeStats{.match_ticks = 200, .corrections = 5}).CorrectionRate(), 0.025F);
 }
 
+// Requirements: NFR-02
 TEST(NetcodeStatsTest, TheHitRateIsTheShareOfRoundsFiredTheServerConfirmedAsHits) {
   EXPECT_EQ(NetcodeStats{}.HitRate(), 0.0F);
   EXPECT_FLOAT_EQ((NetcodeStats{.rounds_fired = 40, .hit_confirmations = 10}).HitRate(), 0.25F);

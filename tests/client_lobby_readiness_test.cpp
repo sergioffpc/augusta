@@ -42,6 +42,7 @@ ServerView InLobby(std::uint32_t version, std::vector<RosterEntry> roster) {
   return view;
 }
 
+// Requirements: US-16
 TEST(LobbyReadinessTest, PlansTheOtherPlayersCharactersEachOnceInRosterOrder) {
   const LobbyReadiness readiness;
 
@@ -55,6 +56,7 @@ TEST(LobbyReadinessTest, PlansTheOtherPlayersCharactersEachOnceInRosterOrder) {
   EXPECT_EQ(plan->characters_to_load, (std::vector<std::string>{"c", "a"}));
 }
 
+// Requirements: US-16
 TEST(LobbyReadinessTest, PlansNoCharacterAlreadyLoaded) {
   LobbyReadiness readiness;
   readiness.MarkLoaded("a");
@@ -66,6 +68,7 @@ TEST(LobbyReadinessTest, PlansNoCharacterAlreadyLoaded) {
   EXPECT_EQ(plan->characters_to_load, (std::vector<std::string>{"b"}));
 }
 
+// Requirements: US-16
 TEST(LobbyReadinessTest, PlansNothingOnceReadyForThatRoster) {
   LobbyReadiness readiness;
   readiness.MarkReady(1);
@@ -73,6 +76,7 @@ TEST(LobbyReadinessTest, PlansNothingOnceReadyForThatRoster) {
   EXPECT_FALSE(readiness.Plan(InLobby(1, {{.session = Session(2), .character = "a"}})).has_value());
 }
 
+// Requirements: US-16
 TEST(LobbyReadinessTest, PlansAgainForANewRoster) {
   LobbyReadiness readiness;
   readiness.MarkLoaded("a");
@@ -86,6 +90,7 @@ TEST(LobbyReadinessTest, PlansAgainForANewRoster) {
   EXPECT_EQ(plan->characters_to_load, (std::vector<std::string>{"b"}));
 }
 
+// Requirements: US-16
 TEST(LobbyReadinessTest, PlansReadyEvenWithNothingToLoad) {
   const LobbyReadiness readiness;
 
@@ -96,6 +101,7 @@ TEST(LobbyReadinessTest, PlansReadyEvenWithNothingToLoad) {
   EXPECT_TRUE(plan->characters_to_load.empty());
 }
 
+// Requirements: US-16
 TEST(LobbyReadinessTest, PlansNothingOutsideTheLobby) {
   const LobbyReadiness readiness;
 

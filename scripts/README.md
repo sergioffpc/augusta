@@ -28,8 +28,9 @@ it; this index says which one to look at.
 - [`coverage-report.sh`](coverage-report.sh) turns a `linux-coverage` ctest run
   into an llvm-cov HTML report and an LCOV file for the editor.
 - [`requirements-matrix.py`](requirements-matrix.py) checks the tests'
-  `// Requirements:` lines against `docs/REQUIREMENTS.md` (`--check`), or writes
-  the matrix of each requirement's tests and results.
+  `// Requirements:` lines and the CI jobs' `# Requirements:` lines in
+  `.github/workflows/` against `docs/REQUIREMENTS.md` (`--check`), or writes the
+  matrix of each requirement's tests and results, and the CI jobs that check it.
 - [`test-report.sh`](test-report.sh) joins the nightly's JUnit results,
   requirements matrix and coverage into the test report the documentation site
   publishes.

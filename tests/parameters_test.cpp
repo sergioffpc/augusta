@@ -21,6 +21,7 @@ using augusta::parameters::Validate;
 const Parameters kUsable{.stamina = {.deplete_per_second = 0.2F, .regen_per_second = 0.1F, .forced_walk_below = 0.1F},
                          .player_count = 1};
 
+// Requirements: US-22
 TEST(ValidateTest, UsableParametersPass) { EXPECT_TRUE(Validate(kUsable).has_value()); }
 
 // Requirements: US-22
@@ -58,6 +59,7 @@ TEST(ValidateTest, APlayerCountOfZeroOrAboveTheMostAMatchHoldsIsNamed) {
   }
 }
 
+// Requirements: US-22
 TEST(ValidateTest, DefaultParametersPass) { EXPECT_TRUE(Validate(Parameters{}).has_value()); }
 
 // One value of a Parameters, set to something the simulation cannot run on, and
@@ -103,6 +105,7 @@ TEST(ValidateTest, EachRifleAmmoOrHealthValueOutsideItsRangeIsNamedByItsPath) {
   }
 }
 
+// Requirements: US-22
 TEST(ValidateTest, ARecoilPatternMayBeEmptyOrHoldTheMostKicksTheWireCarries) {
   Parameters none = kUsable;
   none.rifle.recoil_pattern.clear();
@@ -113,6 +116,7 @@ TEST(ValidateTest, ARecoilPatternMayBeEmptyOrHoldTheMostKicksTheWireCarries) {
   EXPECT_TRUE(Validate(most).has_value());
 }
 
+// Requirements: US-22
 TEST(IsValidTickRateTest, IntegerRatesFromOneTo255AreValid) {
   for (const std::uint8_t rate :
        {std::uint8_t{1}, std::uint8_t{30}, std::uint8_t{60}, std::uint8_t{240}, std::uint8_t{255}}) {
@@ -120,6 +124,7 @@ TEST(IsValidTickRateTest, IntegerRatesFromOneTo255AreValid) {
   }
 }
 
+// Requirements: US-22
 TEST(IsValidTickRateTest, ZeroIsNotValid) {
   for (const std::uint8_t rate : {std::uint8_t{0}}) {
     EXPECT_FALSE(IsValidTickRate(rate)) << rate;

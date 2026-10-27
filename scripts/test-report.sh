@@ -7,8 +7,8 @@
 #                      coverage totals, linking to
 #   results.html       a row per test, a column per run, each result linked to
 #                      its output (junit2html)
-#   requirements.html  every requirement, the tests that name it and how they
-#                      did (scripts/requirements-matrix.py)
+#   requirements.html  every requirement, the tests and CI jobs that name it
+#                      and how the tests did (scripts/requirements-matrix.py)
 #   coverage/          the llvm-cov report as it is
 #
 # A report, never a gate: nothing here fails on a failed test or a percentage.
@@ -74,12 +74,12 @@ $(results_rows "${results[@]}")
     results_section="<p>No test results: no run got as far as its tests.</p>"
   fi
 
-  # With no results at all it still lists every requirement and its tests.
+  # With no results at all it still lists every requirement and its checks.
   local requirements_summary
   requirements_summary="$(python3 "${SCRIPTS}/requirements-matrix.py" \
     --junit "${junit}" --output "${output}/requirements.html")"
   requirements_section="<p>${requirements_summary}.</p>
-<p><a href=\"requirements.html\">Every requirement's tests</a></p>"
+<p><a href=\"requirements.html\">Every requirement's checks</a></p>"
 
   if [[ -f "${coverage}/index.html" && -f "${coverage}/summary.txt" ]]; then
     cp -r "${coverage}" "${output}/coverage"

@@ -49,6 +49,7 @@ std::string ContextOf(const Failure& failure, std::string_view key) {
   return {};
 }
 
+// Requirements: US-22
 TEST(ServerContentTest, EachCharacterLoadsWithItsClips) {
   const auto key = augusta::assets::ReadEd25519PublicKeyFile(kPacks / "test.pub");
   ASSERT_TRUE(key.has_value());
@@ -110,6 +111,7 @@ TEST_F(ServerContentWithoutTest, ACharacterMissingAClipIsRefusedNamingTheCharact
   EXPECT_EQ(content.error().detail, "clip crouching/left: not found");
 }
 
+// Requirements: US-22
 TEST_F(ServerContentWithoutTest, ACharacterWithoutItsAnimationSkeletonIsRefused) {
   const auto pack = Without(augusta::assets::CharacterAnimationSkeletonPath("soldier"));
 

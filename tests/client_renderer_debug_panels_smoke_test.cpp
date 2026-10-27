@@ -71,6 +71,7 @@ class DebugPanelsSmokeTest : public RendererSmokeTest {
   }
 };
 
+// Requirements: US-29
 TEST_F(DebugPanelsSmokeTest, DrawsAPanelInItsDefaultRegion) {
   renderer_->SetDebugPanels({PanelWithButton(false)});
 
@@ -82,6 +83,7 @@ TEST_F(DebugPanelsSmokeTest, DrawsAPanelInItsDefaultRegion) {
   EXPECT_EQ(CountOtherPixelsIn(frame, {.right = kPanelLeft}), 0U);
 }
 
+// Requirements: US-29
 TEST_F(DebugPanelsSmokeTest, DrawsNothingForNoPanels) {
   renderer_->SetDebugPanels({PanelWithButton(false)});
   RenderFrames();
@@ -94,6 +96,7 @@ TEST_F(DebugPanelsSmokeTest, DrawsNothingForNoPanels) {
   EXPECT_TRUE(renderer_->TakeDebugControlEvents().empty());
 }
 
+// Requirements: US-29
 TEST_F(DebugPanelsSmokeTest, HandsBackAClickedButtonsPress) {
   renderer_->SetDebugPanels({PanelWithButton(false)});
   RenderFrames();
@@ -106,6 +109,7 @@ TEST_F(DebugPanelsSmokeTest, HandsBackAClickedButtonsPress) {
   EXPECT_TRUE(renderer_->TakeDebugControlEvents().empty());
 }
 
+// Requirements: US-29
 TEST_F(DebugPanelsSmokeTest, HandsBackNothingForAGreyedOutButton) {
   renderer_->SetDebugPanels({PanelWithButton(false)});
   RenderFrames();
@@ -119,6 +123,7 @@ TEST_F(DebugPanelsSmokeTest, HandsBackNothingForAGreyedOutButton) {
   EXPECT_TRUE(renderer_->TakeDebugControlEvents().empty());
 }
 
+// Requirements: US-29
 TEST_F(DebugPanelsSmokeTest, HandsBackAClickedTogglesNewState) {
   renderer_->SetDebugPanels(
       {{.id = "index", .title = "Debug", .elements = {debug::Toggle{.id = "hud", .label = "HUD", .on = true}}}});
@@ -133,6 +138,7 @@ TEST_F(DebugPanelsSmokeTest, HandsBackAClickedTogglesNewState) {
 // A panel opens at a default place of its own, the next one free when ImGui
 // first sees it, not at its place in the frame's list: one shown alone first
 // keeps the first place when another comes before it in the list.
+// Requirements: US-29
 TEST_F(DebugPanelsSmokeTest, KeepsEachPanelsDefaultPlaceWhenTheListsOrderChanges) {
   const debug::Panel first{
       .id = "first", .title = "First", .elements = {debug::Button{.id = "press", .label = "First's button"}}};
@@ -153,6 +159,7 @@ TEST_F(DebugPanelsSmokeTest, KeepsEachPanelsDefaultPlaceWhenTheListsOrderChanges
 
 // lavapipe is no NVIDIA GPU, so Aftermath's diagnostics are never on its
 // device, whether Aftermath started or not; a dump would still land somewhere.
+// Requirements: US-29
 TEST_F(DebugPanelsSmokeTest, ReportsAftermathUnattachedOnLavapipe) {
   const GpuCrashDumpStatus status = renderer_->GpuCrashDumps();
 
