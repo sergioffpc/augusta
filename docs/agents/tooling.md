@@ -17,13 +17,17 @@ To use nsys refer to 'C:\Program Files\NVIDIA Corporation\Nsight Systems
 2026.5.1\skills\nsight-systems\SKILL.md'
 
 A whole session is too long to read, so a Development client's Profiling Debug
-panel marks a window of frames for nsys to record alone. Start the client under
-a windowed capture:
+panel marks a window of frames for nsys to record alone. A client the panel runs
+in alone records nothing: start it under a windowed capture, which
+`make profile` (`PRESET=...`, a Development one) does after building it:
 
 ```sh
 nsys profile --capture-range=nvtx --nvtx-capture=augusta.capture \
   --env-var=NSYS_NVTX_PROFILER_REGISTER_ONLY=0 augustac.exe
 ```
+
+nsys stops the client once the window closes and writes the report,
+`augustac-<pid>.nsys-rep` in `build/<preset dir>/profiles` (`PROFILE_DIR=...`).
 
 `NSYS_NVTX_PROFILER_REGISTER_ONLY=0` lets the capture start on a range whose
 message is a plain string, as `augusta.capture` is, rather than a registered
