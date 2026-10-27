@@ -55,14 +55,15 @@ augusta::application::MimallocFacts ReadMimallocFacts() {
 #endif
 
 // Whether augustac may run on what serves its malloc (ADR-0078): mimalloc's
-// facts once application's check says mimalloc serves the process, else the
-// one line for stderr saying why not, as there is no log yet; nullopt in a
+// facts once application's check says mimalloc serves the process, else why
+// not, which main words on stderr as there is no log yet; nullopt in a
 // sanitizer build, which runs its sanitizer's allocator and checks nothing.
 // main asks first, before its command line, so --version fails too.
-std::expected<std::optional<augusta::application::MimallocFacts>, std::string> CheckAllocator() {
+std::expected<std::optional<augusta::application::MimallocFacts>, augusta::application::MimallocError>
+CheckAllocator() {
 #if AUGUSTA_MIMALLOC
   const augusta::application::MimallocFacts facts = ReadMimallocFacts();
-  return augusta::application::CheckMimalloc("augustac", facts).transform([&facts] { return std::optional(facts); });
+  return augusta::application::CheckMimalloc(facts).transform([&facts] { return std::optional(facts); });
 #else
   return std::nullopt;
 #endif
@@ -73,7 +74,7 @@ std::expected<std::optional<augusta::application::MimallocFacts>, std::string> C
 int main(int argc, char** argv) {
   const auto mimalloc = CheckAllocator();
   if (!mimalloc) {
-    std::println(stderr, "{}", mimalloc.error());
+    std::println(stderr, "{}", augusta::application::DescribeMimallocError("augustac", mimalloc.error()));
     return augusta::application::kFailedExitStatus;
   }
   augusta::logging::Init();

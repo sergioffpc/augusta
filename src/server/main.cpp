@@ -1,12 +1,13 @@
 #include <atomic>
 #include <csignal>
+#include <cstdio>  // IWYU pragma: keep - stderr, which include-cleaner traces to glibc's <stdio.h>
+#include <expected>
 #include <optional>
 #include <print>
 #include <string_view>
 #include <utility>
 
 #if AUGUSTA_MIMALLOC
-#include <cstdio>  // IWYU pragma: keep - stderr, which include-cleaner traces to glibc's <stdio.h>
 #include <cstdlib>
 
 #include <mimalloc.h>
@@ -83,21 +84,29 @@ augusta::application::MimallocFacts ReadMimallocFacts() {
 }
 #endif
 
+// Whether augustad may run on what serves its malloc (ADR-0078): mimalloc's
+// facts once application's check says mimalloc serves the process, else why
+// not, which main words on stderr as there is no log yet; nullopt in a
+// sanitizer build, which runs its sanitizer's allocator and checks nothing.
+// main asks first, before its command line, so --version fails too.
+std::expected<std::optional<augusta::application::MimallocFacts>, augusta::application::MimallocError>
+CheckAllocator() {
+#if AUGUSTA_MIMALLOC
+  const augusta::application::MimallocFacts facts = ReadMimallocFacts();
+  return augusta::application::CheckMimalloc(facts).transform([&facts] { return std::optional(facts); });
+#else
+  return std::nullopt;
+#endif
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
-  // Before anything else, the command line included, so --version fails too:
-  // augustad refuses to run on any allocator but mimalloc, saying why in one
-  // line, as there is no log yet (ADR-0078). A sanitizer build runs its
-  // sanitizer's allocator, and checks nothing.
-  std::optional<augusta::application::MimallocFacts> mimalloc;
-#if AUGUSTA_MIMALLOC
-  mimalloc = ReadMimallocFacts();
-  if (const auto served = augusta::application::CheckMimalloc("augustad", *mimalloc); !served) {
-    std::println(stderr, "{}", served.error());
+  const auto mimalloc = CheckAllocator();
+  if (!mimalloc) {
+    std::println(stderr, "{}", augusta::application::DescribeMimallocError("augustad", mimalloc.error()));
     return augusta::application::kFailedExitStatus;
   }
-#endif
 
   // First of the rest, so a crash anywhere after it - startup included - is
   // logged and leaves a core dump (ADR-0047).
@@ -121,7 +130,7 @@ int main(int argc, char** argv) {
   augusta::logging::SetLogLevel(*augusta::logging::ParseSeverity(file_config->log_level));
   LOG_INFO("subsystem=server event=starting version={}", augusta::EngineVersion());
 
-  auto program = augusta::server::ServerProgram(*file_config, mimalloc);
+  auto program = augusta::server::ServerProgram(*file_config, *mimalloc);
   program.run = [run = std::move(program.run)](augusta::server::ServerRuntime& runtime) {
     const SignalTarget target(runtime);
     return run(runtime);

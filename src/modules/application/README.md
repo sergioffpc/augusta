@@ -12,9 +12,9 @@ the phases run, so both executables' threads wake on time.
 It also decides, before either executable reads its command line, whether
 mimalloc serves the process (`CheckMimalloc`): from the facts `main` read of
 mimalloc (redirected, a fresh block in its heap, its version), it answers yes,
-or the one stderr line naming why not: malloc not redirected, or the block
-outside mimalloc's heap. It links no allocator itself, so its tests keep the
-platform's.
+or why not: malloc not redirected, or the block outside mimalloc's heap.
+`DescribeMimallocError` words that reason as the one stderr line `main` writes.
+It links no allocator itself, so its tests keep the platform's.
 
 ## Not its responsibility
 

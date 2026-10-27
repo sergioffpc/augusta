@@ -137,12 +137,26 @@ struct MimallocFacts {
   int version = 0;
 };
 
-/// Whether mimalloc serves executable's process, from facts: nothing when it
-/// does, else the one line main() writes to stderr before it exits nonzero,
-/// with no log and no Run, naming why not - malloc not redirected, or the block
-/// outside mimalloc's heap. Redirection is judged first: without it no block
-/// can be mimalloc's.
-[[nodiscard]] std::expected<void, std::string> CheckMimalloc(std::string_view executable, const MimallocFacts& facts);
+/// Why mimalloc does not serve the process, as CheckMimalloc finds it.
+enum class MimallocError {
+  /// mimalloc-redirect.dll did not redirect the CRT's malloc to mimalloc
+  /// (Windows): mimalloc.dll was not the first DLL the executable loaded, or
+  /// mimalloc-redirect.dll was not beside it.
+  kNotRedirected,
+  /// A block malloc handed out is outside mimalloc's heap: something other
+  /// than mimalloc serves malloc.
+  kBlockOutsideHeap,
+};
+
+/// Whether mimalloc serves the process, from facts: nothing when it does, else
+/// why not. Redirection is judged first: without it no block can be
+/// mimalloc's.
+[[nodiscard]] std::expected<void, MimallocError> CheckMimalloc(const MimallocFacts& facts);
+
+/// The one line main() writes to stderr for error before it exits nonzero,
+/// with no log and no Run: executable (e.g. "augustad") and why mimalloc does
+/// not serve it.
+[[nodiscard]] std::string DescribeMimallocError(std::string_view executable, MimallocError error);
 
 /// The event Conclude writes for a failure, `event=<name>`. What reads a log
 /// back for how its Run ended (the client's run_files.h) matches it.
