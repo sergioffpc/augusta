@@ -29,6 +29,7 @@ const std::filesystem::path kFileDir = std::filesystem::path("file") / "dir";
 // A relative path in a valid config resolves under this one.
 const std::filesystem::path kRoot = kFileDir / "content";
 
+// Requirements: US-28
 TEST(ParseServerConfigTest, InputIsNotAServerSection) {
   const auto config = ParseServerConfig(
       "base_dir: content\ncontent:\n  pack: a.apak\n  public_key: k.pub\nsimulation:\n  tick_rate_hz: 60\ninput:\n  "
@@ -40,6 +41,7 @@ TEST(ParseServerConfigTest, InputIsNotAServerSection) {
   EXPECT_EQ(config.error().subject, "input");
 }
 
+// Requirements: US-28
 TEST(ExampleConfigTest, TheExampleServerConfigLoads) {
   const auto config = LoadServerConfig(AUGUSTA_EXAMPLE_SERVER_CONFIG);
 
@@ -47,6 +49,7 @@ TEST(ExampleConfigTest, TheExampleServerConfigLoads) {
   EXPECT_EQ(config->tick_rate_hz, 60);
 }
 
+// Requirements: US-28
 TEST(ParseServerConfigTest, ReadsEveryKey) {
   const auto config = ParseServerConfig(
       "base_dir: content\ncontent:\n  pack: packs/level.server.apak\n  public_key: keys/signing.pub\nsimulation:\n  "
@@ -70,6 +73,7 @@ constexpr std::string_view kMinimalServerConfig =
 
 std::string ServerConfigWith(std::string_view extra) { return std::string(kMinimalServerConfig) + std::string(extra); }
 
+// Requirements: US-28
 TEST(ParseServerConfigTest, DefaultsTheListenAddress) {
   const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
 
@@ -95,6 +99,7 @@ TEST(ParseServerConfigTest, ReadsACaptureDirectoryRelativeToTheBaseDir) {
   EXPECT_EQ(config->capture_directory, kRoot / "captures" / "firebase");
 }
 
+// Requirements: US-21, US-28
 TEST(ParseServerConfigTest, RejectsAnEmptyCaptureDirectory) {
   const auto config = ParseServerConfig(
       std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  capture: \"\"\n", kFileDir);
@@ -106,6 +111,7 @@ TEST(ParseServerConfigTest, RejectsAnEmptyCaptureDirectory) {
 
 // The reenactments setting is a debug tool's (ADR-0074): its old key is
 // unknown in every build, Development included.
+// Requirements: US-28
 TEST(ParseServerConfigTest, SimulationReenactmentsIsAnUnknownKey) {
   const auto config = ParseServerConfig(
       std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  reenactments: true\n", kFileDir);
@@ -134,6 +140,7 @@ TEST(ParseServerConfigTest, ReadsAReplayServersCapturesRelativeToTheBaseDirAndIt
   EXPECT_EQ(config->replay_max_viewers, 12);
 }
 
+// Requirements: US-21, US-28
 TEST(ParseServerConfigTest, RejectsMostViewersThatAreNotAnIntegerFromOneTo255) {
   for (const std::string_view viewers : {"0", "256", "-1", "two", "1.5"}) {
     const auto config =
@@ -148,6 +155,7 @@ TEST(ParseServerConfigTest, RejectsMostViewersThatAreNotAnIntegerFromOneTo255) {
 }
 
 // A cap on Replays means nothing to a server that serves none.
+// Requirements: US-21, US-28
 TEST(ParseServerConfigTest, RejectsMostViewersWithoutCaptures) {
   const auto config = ParseServerConfig(std::string(kMinimalServerConfig) + "replay:\n  max_viewers: 2\n", kFileDir);
 
@@ -157,6 +165,7 @@ TEST(ParseServerConfigTest, RejectsMostViewersWithoutCaptures) {
 }
 
 // A replay server runs no Match (ADR-0051), so there is none to capture.
+// Requirements: US-21, US-28
 TEST(ParseServerConfigTest, RejectsCapturingOnAReplayServer) {
   const auto config =
       ParseServerConfig(std::string(kServerConfigWithoutTickRate) +
@@ -278,6 +287,7 @@ TEST(ParseServerConfigTest, ReadsALogLevel) {
   EXPECT_EQ(config->log_level, "trace");
 }
 
+// Requirements: US-28
 TEST(ParseServerConfigTest, RejectsAnInvalidLogLevel) {
   const auto config = ParseServerConfig(ServerConfigWith("logging:\n  level: verbose\n"), kFileDir);
 
@@ -286,6 +296,7 @@ TEST(ParseServerConfigTest, RejectsAnInvalidLogLevel) {
   EXPECT_EQ(config.error().subject, "logging.level");
 }
 
+// Requirements: US-28
 TEST(ParseServerConfigTest, RejectsAMissingTickRate) {
   const auto config = ParseServerConfig(kServerConfigWithoutTickRate, kFileDir);
 
@@ -294,6 +305,7 @@ TEST(ParseServerConfigTest, RejectsAMissingTickRate) {
   EXPECT_EQ(config.error().subject, "simulation.tick_rate_hz");
 }
 
+// Requirements: US-28
 TEST(ParseServerConfigTest, AcceptsIntegerTickRatesFromOneTo255) {
   for (const char* rate : {"1", "30", "60", "240", "255"}) {
     const auto config = ParseServerConfig(
@@ -305,6 +317,7 @@ TEST(ParseServerConfigTest, AcceptsIntegerTickRatesFromOneTo255) {
   }
 }
 
+// Requirements: US-28
 TEST(ParseServerConfigTest, RejectsATickRateThatIsNotAnIntegerFromOneTo255) {
   for (const char* rate : {"0", "-60", "256", "59.94", "0.5", "1e2", "abc", "60hz", "6 0", ".inf", ".nan", "0x10"}) {
     const auto config = ParseServerConfig(
@@ -317,6 +330,7 @@ TEST(ParseServerConfigTest, RejectsATickRateThatIsNotAnIntegerFromOneTo255) {
   }
 }
 
+// Requirements: NFR-07
 TEST(ParseServerConfigTest, DefaultsTheMetricsPort) {
   const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
 
@@ -324,6 +338,7 @@ TEST(ParseServerConfigTest, DefaultsTheMetricsPort) {
   EXPECT_EQ(config->metrics_port, augusta::config::kDefaultMetricsPort);
 }
 
+// Requirements: NFR-07
 TEST(ParseServerConfigTest, AcceptsMetricsPortsFromOneTo65535) {
   for (const char* port : {"1", "9100", "9464", "65535"}) {
     const auto config =
@@ -334,6 +349,7 @@ TEST(ParseServerConfigTest, AcceptsMetricsPortsFromOneTo65535) {
   }
 }
 
+// Requirements: NFR-07, US-28
 TEST(ParseServerConfigTest, RejectsAMetricsPortThatIsNotAnIntegerFromOneTo65535) {
   for (const char* port : {"0", "-1", "65536", "9464.5", "abc", "", "0x2508"}) {
     const auto config =
@@ -344,6 +360,7 @@ TEST(ParseServerConfigTest, RejectsAMetricsPortThatIsNotAnIntegerFromOneTo65535)
   }
 }
 
+// Requirements: US-28
 TEST(ParseServerConfigTest, RejectsAStaminaKeyLeftInTheFileAsUnknown) {
   // The stamina rules live in the Parameters script (ADR-0039), not here.
   for (const char* key : {"stamina_deplete_per_second", "stamina_regen_per_second", "stamina_forced_walk_below"}) {
@@ -366,6 +383,7 @@ TEST(ParseServerConfigTest, AParametersKeyLeftInTheFileIsUnknown) {
   EXPECT_EQ(config.error().subject, "parameters");
 }
 
+// Requirements: US-28
 TEST(ParseServerConfigTest, RejectsAMissingBaseDir) {
   const auto config =
       ParseServerConfig("content:\n  pack: a.apak\n  public_key: k.pub\nsimulation:\n  tick_rate_hz: 60\n", kFileDir);
@@ -375,6 +393,7 @@ TEST(ParseServerConfigTest, RejectsAMissingBaseDir) {
   EXPECT_EQ(config.error().subject, "base_dir");
 }
 
+// Requirements: US-28
 TEST(ParseServerConfigTest, RejectsAKeyThatBelongsToTheClient) {
   const auto config = ParseServerConfig(ServerConfigWith("network:\n  server_address: x\n"), kFileDir);
 
@@ -383,6 +402,7 @@ TEST(ParseServerConfigTest, RejectsAKeyThatBelongsToTheClient) {
   EXPECT_EQ(config.error().subject, "network.server_address");
 }
 
+// Requirements: US-28
 TEST(DescribeServerConfigErrorTest, SaysWhatATickRateMustBe) {
   const auto message = DescribeServerConfigError(
       {.code = ConfigErrorCode::kInvalidNumber, .subject = "simulation.tick_rate_hz", .reason = {}, .file = {}});
@@ -390,6 +410,7 @@ TEST(DescribeServerConfigErrorTest, SaysWhatATickRateMustBe) {
   EXPECT_EQ(message, "'simulation.tick_rate_hz' must be an integer from 1 to 255");
 }
 
+// Requirements: US-21, US-28
 TEST(DescribeServerConfigErrorTest, SaysWhatTheMostViewersMustBe) {
   const auto message = DescribeServerConfigError(
       {.code = ConfigErrorCode::kInvalidNumber, .subject = "replay.max_viewers", .reason = {}, .file = {}});
@@ -397,6 +418,7 @@ TEST(DescribeServerConfigErrorTest, SaysWhatTheMostViewersMustBe) {
   EXPECT_EQ(message, "'replay.max_viewers' must be an integer from 1 to 255");
 }
 
+// Requirements: NFR-07, US-28
 TEST(DescribeServerConfigErrorTest, SaysWhatAMetricsPortMustBe) {
   const auto message = DescribeServerConfigError(
       {.code = ConfigErrorCode::kInvalidNumber, .subject = "metrics.port", .reason = {}, .file = {}});
@@ -428,6 +450,7 @@ class LoadServerConfigTest : public ::testing::Test {
   std::filesystem::path directory_;
 };
 
+// Requirements: US-28
 TEST_F(LoadServerConfigTest, ReadsTheFileAndResolvesBaseDirAgainstItsDirectory) {
   const auto file = Write("augustad.yaml",
                           "base_dir: .\ncontent:\n  pack: level.apak\n  public_key: k.pub\nsimulation:\n  "

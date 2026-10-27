@@ -38,6 +38,7 @@ version only when it is cut (ENGINEERING.md, Milestones).
     - [US-25: Play in VR](#us-25-play-in-vr)
     - [US-26: Play on a Team](#us-26-play-on-a-team)
     - [US-27: Talk to my Team](#us-27-talk-to-my-team)
+    - [US-28: Start Only on a Valid Configuration](#us-28-start-only-on-a-valid-configuration)
 - [Non-Functional Requirements](#non-functional-requirements)
     - [NFR-01: Server Tick Rate (Performance)](#nfr-01-server-tick-rate-performance)
     - [NFR-02: Network Latency Tolerance](#nfr-02-network-latency-tolerance)
@@ -554,6 +555,46 @@ Then only my dead teammates hear me, and I still hear my Team's radio
 ```
 
 Speech is never captured, and there is none in the Lobby (ADR-0069).
+
+### US-28: Start Only on a Valid Configuration
+
+Version: v1
+
+As an operator, I want each executable's YAML and command line checked at
+startup, so that a mistake stops it, naming the file and the key, rather than
+letting it run misconfigured.
+
+```text
+Given an augustac.yaml or augustad.yaml with an unknown, duplicate, missing or
+      mistyped key, or a key only the other executable reads
+When the executable starts
+Then it refuses to start, naming the file and the key
+
+Given a config file that cannot be read or is not a YAML mapping
+When the executable starts
+Then it refuses to start, naming the file
+
+Given a valid config
+When the executable starts
+Then it runs with each key the file sets, and each key the file leaves out
+     takes its default
+
+Given a config whose base_dir and paths are relative
+When the executable starts
+Then base_dir resolves against the config file's directory, and every other
+     path against base_dir
+
+Given augustac or augustad run with --help or --version
+When it starts
+Then it prints its usage or its version and exits
+
+Given an option the executable does not take
+When it starts
+Then it refuses the command line and prints its usage
+```
+
+A key that sets another requirement's behaviour, such as `--replay` or
+`metrics.port`, is checked under that requirement too (ADR-0034).
 
 ---
 
