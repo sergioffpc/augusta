@@ -5,9 +5,9 @@
 
 #include "allocator_candidate.h"
 
-// jemalloc, whose malloc replaces the C library's at link time on Linux, and
-// which registers itself as the default malloc zone on macOS. Its arenas.lookup
-// finds the arena that allocated a block, and fails for a block it did not.
+// jemalloc, on Linux alone, where its malloc replaces the C library's at link
+// time. Its arenas.lookup finds the arena that allocated a block, and fails for
+// a block it did not.
 namespace augusta::benchmarks {
 
 extern const std::string_view kCandidate = "jemalloc";

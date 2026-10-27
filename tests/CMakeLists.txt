@@ -88,10 +88,12 @@ target_link_libraries(augusta_benchmarks PRIVATE augusta_hot_path_benchmarks ben
 #
 # Not built here, so not in the results: snmalloc on Windows, where replacing
 # the CRT's malloc takes Microsoft Detours; jemalloc on Windows, whose port
-# builds it with a prefix and no override; gperftools on Windows, whose
-# override needs a static CRT, which this project's triplet does not link;
-# oneTBB on macOS, where its proxy does not replace malloc; google/tcmalloc
-# and rpmalloc anywhere, which have no vcpkg port.
+# builds it with a prefix and no override; jemalloc on macOS, whose port builds
+# it with a prefix and whose malloc zone a static link leaves out (#1402);
+# gperftools on Windows, whose override needs a static CRT, which this
+# project's triplet does not link; oneTBB on macOS, where its proxy does not
+# replace malloc; google/tcmalloc and rpmalloc anywhere, which have no vcpkg
+# port.
 if(AUGUSTA_ALLOCATOR_BENCHMARKS)
   add_library(augusta_allocator_benchmark_common OBJECT allocator_benchmark_main.cpp allocator_churn_benchmark.cpp)
   target_link_libraries(augusta_allocator_benchmark_common PUBLIC benchmark::benchmark)
@@ -167,8 +169,10 @@ if(AUGUSTA_ALLOCATOR_BENCHMARKS)
     # jemalloc's and gperftools' ports install pkg-config files, no CMake
     # package.
     find_package(PkgConfig REQUIRED)
-    pkg_check_modules(jemalloc REQUIRED IMPORTED_TARGET jemalloc)
-    augusta_allocator_benchmark(jemalloc SOURCES allocator_jemalloc.cpp LIBRARIES PkgConfig::jemalloc)
+    if(NOT APPLE)
+      pkg_check_modules(jemalloc REQUIRED IMPORTED_TARGET jemalloc)
+      augusta_allocator_benchmark(jemalloc SOURCES allocator_jemalloc.cpp LIBRARIES PkgConfig::jemalloc)
+    endif()
 
     pkg_check_modules(tcmalloc_minimal REQUIRED IMPORTED_TARGET libtcmalloc_minimal)
     augusta_allocator_benchmark(gperftools SOURCES allocator_gperftools.cpp LIBRARIES PkgConfig::tcmalloc_minimal)
