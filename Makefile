@@ -133,6 +133,9 @@ else
 INCLUDE_EXCLUDES := $(TIDY_EXCLUDES) ":(exclude)tests/client_*"
 JOBS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu)
 endif
+# Nor the allocator benchmarks' own files, anywhere: only a configure that asks
+# for them (TAGS="allocator") compiles them, which CI's never does.
+INCLUDE_EXCLUDES += ":(exclude)tests/allocator_*"
 INCLUDE_SOURCES := $(filter-out $(TIDY_SOURCES),$(shell $(LINT_LS_FILES) -- "src/*.cpp" "tests/*.cpp" "tools/agent/tests/*.cpp" $(INCLUDE_EXCLUDES)))
 # One target per file, so a parallel make runs them side by side.
 TIDY_CHECKS := $(addprefix tidy/,$(TIDY_SOURCES))
@@ -160,7 +163,7 @@ help:
 	$(info )
 	$(info Test:)
 	$(info $()  test             build, then compile the tests and run ctest, or TAGS="property ..." the tests with any of those labels alone)
-	$(info $()  labels           configure, then list the labels TAGS picks from (the GoogleTest ones once test has built them))
+	$(info $()  labels           configure, then list the labels TAGS picks from (the GoogleTest ones once test has built them, allocator with TAGS="allocator"))
 	$(info $()  check            configure, then the repository's structural checks (checks/) and their pytest)
 	$(info $()  coverage         test under the linux-coverage preset, then its report into build/x64-linux-coverage/report)
 	$(info $()  profile          build augustac, then run it under nsys, which records the Profiling panel's capture into $(PROFILE_DIR))
@@ -184,8 +187,11 @@ help:
 	$(info )
 	@cmake --list-presets
 
+# TAGS naming allocator asks the configure for the allocator benchmarks
+# (tests/CMakeLists.txt), and for that configure alone: the next one without it
+# has none of them again.
 configure:
-	$(RUN) cmake --preset $(PRESET)
+	$(RUN) cmake --preset $(PRESET) $(if $(filter allocator,$(TAGS)),-DAUGUSTA_ALLOCATOR_BENCHMARKS=ON)
 
 # TARGETS narrows the build to those CMake targets, as the VS Code launch
 # configs' tasks (.vscode/tasks.json) build only the executable they debug.
@@ -197,17 +203,21 @@ build: configure
 # with nothing run.
 space := $() $()
 TAGS_REGEX = "^($(subst $(space),|,$(strip $(TAGS))))$$"
+# The labels every test preset leaves out of a run (netcode, allocator:
+# CMakePresets.json) give way to TAGS, which names them, and to labels, which
+# lists them: an exclusion that matches no label replaces the preset's.
+NO_EXCLUSION := --label-exclude "^$$"
 
 # The tests are not part of build (ADR-0008): augusta_tests builds them.
 test: build
 	$(RUN) cmake --build --preset $(PRESET) --target augusta_tests
-	$(RUN) ctest --preset $(PRESET) --parallel $(JOBS) $(if $(strip $(TAGS)),--label-regex $(TAGS_REGEX) --no-tests=error)
+	$(RUN) ctest --preset $(PRESET) --parallel $(JOBS) $(if $(strip $(TAGS)),--label-regex $(TAGS_REGEX) $(NO_EXCLUSION) --no-tests=error)
 
 # The labels ctest knows in this build, which TAGS picks from.
 # gtest_discover_tests labels its tests when they are built, so those show once
-# test has run.
+# test has run; allocator, in a build configured with TAGS="allocator".
 labels: configure
-	$(RUN) ctest --preset $(PRESET) --print-labels
+	$(RUN) ctest --preset $(PRESET) --print-labels $(NO_EXCLUSION)
 
 # The structural checks (checks/CMakeLists.txt) build nothing: configuring
 # registers them, and ctest's check label picks them alone. Then the pytest of

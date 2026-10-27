@@ -238,6 +238,20 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
   has nothing to compare with. Benchmarks are also run by hand when a profile
   (NVTX in Nsight Systems) points at a hot spot. They never gate a pull request,
   and NFR-01 stays the only formal performance target.
+- **Allocator benchmarks, by hand alone.** The same hot paths, and a churn of
+  blocks freed on another thread than the one that allocated them, are built
+  once per general-purpose allocator that can replace malloc/free and new/delete
+  for the whole process on the host, and once with the platform's own:
+  `augusta_allocator_benchmarks_<allocator>`, each a test labelled `allocator`,
+  run one at a time. Each fails at startup unless its allocator serves the
+  process's allocations, and reports the resident set beside each benchmark.
+  Only `make test TAGS="allocator"` builds and runs them, on an otherwise idle
+  machine: every test preset leaves the label out, so CI and the nightly never
+  run them; the allocators come from the vcpkg manifest's `allocators` feature,
+  which only that configure asks for and the next one drops; and a sanitizer
+  preset never builds them, since a sanitizer brings its own allocator. They
+  answer whether to replace the platform's allocator, not whether a change
+  regressed, so they keep no history.
 
 ## Out of scope
 
