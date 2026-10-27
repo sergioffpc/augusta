@@ -70,6 +70,7 @@ TEST_F(PolicyLoaderTest, LoadsTheRulesFromThePack) {
 
 // Every Replay's World runs a policy of its own (ADR-0051): what one keeps
 // between its hooks' calls is none of another's.
+// Requirements: NFR-09
 TEST_F(PolicyLoaderTest, EachPolicyTheMakerMakesStartsAfresh) {
   const Pack pack = MakePack(
       "maker",
@@ -87,6 +88,7 @@ TEST_F(PolicyLoaderTest, EachPolicyTheMakerMakesStartsAfresh) {
   EXPECT_FALSE(EndsTheMatch(second));
 }
 
+// Requirements: US-22
 TEST_F(PolicyLoaderTest, TheMakerOfRulesThatDoNotLoadIsTheirError) {
   const Pack pack = MakePack("maker_broken", {ScriptEntry("rules.lua", "function on_tick(")});
 
@@ -96,6 +98,7 @@ TEST_F(PolicyLoaderTest, TheMakerOfRulesThatDoNotLoadIsTheirError) {
   EXPECT_EQ(make.error().code, PolicyLoadErrorCode::kScriptError);
 }
 
+// Requirements: US-22
 TEST_F(PolicyLoaderTest, ThePolicyMadeForAPackWithoutRulesIsNone) {
   const Pack pack =
       MakePack("maker_none", {ScriptEntry("parameters.lua", "function on_tick() return {draw = true} end")});
@@ -129,6 +132,7 @@ TEST_F(PolicyLoaderTest, RulesWithASyntaxErrorAreAnErrorNamingTheScript) {
   EXPECT_NE(augusta::policy::DescribePolicyLoadError(engine.error()).find("rules.lua"), std::string::npos);
 }
 
+// Requirements: US-22
 TEST_F(PolicyLoaderTest, AnEntryAtTheRulesPathThatIsNotAScriptIsAnError) {
   const Pack pack = MakePack(
       "not_a_script",

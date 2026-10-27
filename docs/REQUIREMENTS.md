@@ -356,6 +356,11 @@ When I fire, another player's Shot is announced, the server confirms my hit,
 Then I hear my own gunshot on the frame I fire, other gunshots and deaths from where
      they happened, and a hit marker, hit-taken or Match end stinger (won if I am the
      Winner, lost otherwise, a Draw included) as my own, each once
+
+Given a cue whose sound has one or more variants
+When it plays
+Then I hear one of them at random, never the one it played last unless it has only
+     one, and each of them over enough plays
 ```
 
 Spatialization itself (Steam Audio, ADR-0010, ADR-0028) is heard, not tested.
@@ -448,6 +453,19 @@ Then a manifest with an unknown or missing entry is refused when cooked; a Param
      script with an unknown, missing, mistyped or out-of-range value, or that reaches
      outside its sandbox, stops the server at startup naming the field; otherwise every
      client is admitted with the server's tick rate and Parameters and plays by them
+
+Given a scenario's cooked packs
+When a server or client starts on them
+Then its content loads whole or is refused naming the part: the Map's colliders and
+     spawn points; each Character's eye, mesh, Hitboxes, Skeleton, weapon socket and
+     animation; the rifle's markers; the scripts and the cue sounds. Anything missing
+     or malformed stops startup, naming the Character, node or asset, and the cooker
+     refuses to write it
+
+Given Rules whose hook fails, goes over its instruction or memory limit, or sets a
+      finalizer
+When the server calls it
+Then the failure is logged, the hook decides nothing, and the tick goes on
 ```
 
 The Parameters set the rifle, its ammo, starting health, stamina and the Player
@@ -698,13 +716,17 @@ Source:      Anyone who can change a pack file on disk or on the node
 Stimulus:    A client or server pack that is corrupted, truncated, tampered with,
              unsigned or signed by another key; or a client whose pack was not
              cooked with the server's
-Environment: Client or server startup; a client joining
-Artifact:    Pack loading and Join admission
+Environment: Client or server startup; a client joining; augusta-inspect or
+             augusta-verify reading the pack
+Artifact:    Pack loading, Join admission and the pack's layout read
 Response:    The process refuses the pack and exits before anything else starts;
-             the server refuses the Join as a pack mismatch
+             the server refuses the Join as a pack mismatch; augusta-inspect
+             still shows the pack's layout, and augusta-verify names the
+             entries, format version and size it verified
 Measure:     No byte of a pack is trusted before its BLAKE3 hash and Ed25519
              signature verify against the key the process was given; every
-             refused pack names why
+             refused pack names why; the layout read, with no key, returns
+             every field of the header, index and trailer as written
 ```
 
 ADR-0018 and ADR-0031 define the hash, the signature and the header's client
