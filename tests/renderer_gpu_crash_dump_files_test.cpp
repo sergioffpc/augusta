@@ -45,6 +45,7 @@ class GpuCrashDumpFilesTest : public testing::Test {
 
 constexpr std::array kDump{std::byte{'g'}, std::byte{'p'}, std::byte{'u'}};
 
+// Requirements: NFR-10
 TEST_F(GpuCrashDumpFilesTest, EachDumpIsWrittenWhereTheNamingPutsItsNumberFromOne) {
   GpuCrashDumpFiles files(
       [this](std::uint32_t n) { return Directory() / "dumps" / std::format("run-{}.nv-gpudmp", n); });
@@ -60,6 +61,7 @@ TEST_F(GpuCrashDumpFilesTest, EachDumpIsWrittenWhereTheNamingPutsItsNumberFromOn
   EXPECT_EQ(Read(*second), "gpu");
 }
 
+// Requirements: NFR-10
 TEST_F(GpuCrashDumpFilesTest, ADumpThatCannotBeWrittenIsReportedWithItsPathAndWhy) {
   // A file where its folder should be.
   std::filesystem::create_directories(Directory());

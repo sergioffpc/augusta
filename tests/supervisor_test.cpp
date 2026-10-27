@@ -54,6 +54,7 @@ std::string ContextOf(const Failure& failure, std::string_view key) {
   return {};
 }
 
+// Requirements: NFR-18
 TEST(SupervisorTest, NothingHasFailedAndNoStopIsRequestedAtFirst) {
   const Supervisor supervisor;
 
@@ -62,6 +63,7 @@ TEST(SupervisorTest, NothingHasFailedAndNoStopIsRequestedAtFirst) {
   EXPECT_FALSE(supervisor.Failure().has_value());
 }
 
+// Requirements: NFR-18
 TEST(SupervisorTest, AWorkerRunsUntilStopIsRequestedAndIsJoined) {
   Supervisor supervisor;
   std::atomic<bool> finished{false};
@@ -78,6 +80,7 @@ TEST(SupervisorTest, AWorkerRunsUntilStopIsRequestedAndIsJoined) {
   EXPECT_FALSE(supervisor.Failure().has_value());
 }
 
+// Requirements: NFR-18
 TEST(SupervisorTest, AWorkerThatThrowsIsTheTypedFirstCauseAndStopsTheOthers) {
   Supervisor supervisor;
   std::atomic<bool> other_stopped{false};
@@ -101,6 +104,7 @@ TEST(SupervisorTest, AWorkerThatThrowsIsTheTypedFirstCauseAndStopsTheOthers) {
   EXPECT_EQ(failure->detail, "address rejected");
 }
 
+// Requirements: NFR-18
 TEST(SupervisorTest, AFailureWhileStoppingDoesNotReplaceTheFirstCause) {
   Supervisor supervisor;
   supervisor.Spawn("network", [&]() -> WorkerResult {
@@ -120,6 +124,7 @@ TEST(SupervisorTest, AFailureWhileStoppingDoesNotReplaceTheFirstCause) {
 // Every worker fails at once while a stop is requested from outside: one of
 // them is the first cause, and every one is joined. Under the sanitizers
 // (ADR-0013) a race in recording failures during a concurrent shutdown shows here.
+// Requirements: NFR-18
 TEST(SupervisorTest, FailuresRacingAStopFromOutsideLeaveOneFirstCauseAndEveryWorkerJoined) {
   constexpr int kWorkers = 8;
   Supervisor supervisor;
@@ -153,6 +158,7 @@ TEST(SupervisorTest, FailuresRacingAStopFromOutsideLeaveOneFirstCauseAndEveryWor
   EXPECT_TRUE(ContextOf(*failure, kThreadContextKey).starts_with("worker"));
 }
 
+// Requirements: NFR-18
 TEST(SupervisorTest, AFailureAWorkerReturnsIsTheFirstCauseWithItsOwnCodeAndContext) {
   Supervisor supervisor;
   std::atomic<bool> other_stopped{false};
@@ -178,6 +184,7 @@ TEST(SupervisorTest, AFailureAWorkerReturnsIsTheFirstCauseWithItsOwnCodeAndConte
   EXPECT_EQ(failure->detail, "refused");
 }
 
+// Requirements: NFR-18
 TEST(SupervisorTest, AFailureAfterAStopFromOutsideIsStillTheFirstCause) {
   Supervisor supervisor;
   supervisor.Spawn("network", [&]() -> WorkerResult {
@@ -193,6 +200,7 @@ TEST(SupervisorTest, AFailureAfterAStopFromOutsideIsStillTheFirstCause) {
   EXPECT_EQ(supervisor.Failure()->detail, "disconnect failed");
 }
 
+// Requirements: NFR-18
 TEST(SupervisorTest, SomethingThrownThatIsNotAnExceptionIsStillAFailure) {
   Supervisor supervisor;
   constexpr int kNotAnException = 42;
@@ -204,6 +212,7 @@ TEST(SupervisorTest, SomethingThrownThatIsNotAnExceptionIsStillAFailure) {
   EXPECT_TRUE(supervisor.StopRequested());
 }
 
+// Requirements: NFR-18
 TEST(SupervisorTest, RunOnTheCallingThreadReturnsWhenItsBodyDoes) {
   Supervisor supervisor;
   int runs = 0;
@@ -218,6 +227,7 @@ TEST(SupervisorTest, RunOnTheCallingThreadReturnsWhenItsBodyDoes) {
   EXPECT_FALSE(supervisor.Failure().has_value());
 }
 
+// Requirements: NFR-18
 TEST(SupervisorTest, AStopRequestedFromOutsideStopsEveryWorkerWithoutAFailure) {
   Supervisor supervisor;
   supervisor.Spawn("network", [&] { return UntilStopped(supervisor); });
@@ -230,6 +240,7 @@ TEST(SupervisorTest, AStopRequestedFromOutsideStopsEveryWorkerWithoutAFailure) {
   EXPECT_FALSE(supervisor.Failure().has_value());
 }
 
+// Requirements: NFR-18
 TEST(SupervisorTest, DestroyingItStopsAndJoinsItsWorkers) {
   std::atomic<bool> finished{false};
   {
@@ -244,6 +255,7 @@ TEST(SupervisorTest, DestroyingItStopsAndJoinsItsWorkers) {
   EXPECT_TRUE(finished);
 }
 
+// Requirements: NFR-18
 TEST(SupervisorTest, NoWorkIsAdmittedOnceATerminalFailureHasRequestedTheStop) {
   Supervisor supervisor;
   supervisor.Run("simulation", []() -> WorkerResult { throw std::runtime_error("authority lost"); });
@@ -267,6 +279,7 @@ TEST(SupervisorTest, NoWorkIsAdmittedOnceATerminalFailureHasRequestedTheStop) {
   EXPECT_EQ(supervisor.Failure()->detail, "authority lost");
 }
 
+// Requirements: NFR-18
 TEST(SupervisorTest, AWorkerThatCannotBeCreatedIsTheFirstCauseAndTheOthersAreStoppedAndJoined) {
   Faults faults;
   Supervisor supervisor(faults);
@@ -297,6 +310,7 @@ TEST(SupervisorTest, AWorkerThatCannotBeCreatedIsTheFirstCauseAndTheOthersAreSto
   EXPECT_EQ(failure->detail, "resource temporarily unavailable");
 }
 
+// Requirements: NFR-18
 TEST(SupervisorTest, AWorkerMadeToFailWhileRunningIsTheFirstCause) {
   Faults faults;
   Supervisor supervisor(faults);
@@ -315,6 +329,7 @@ TEST(SupervisorTest, AWorkerMadeToFailWhileRunningIsTheFirstCause) {
   EXPECT_EQ(supervisor.Failure()->detail, "injected");
 }
 
+// Requirements: NFR-18
 TEST(SupervisorTest, TheFirstCauseIsDescribedWithItsThread) {
   Supervisor supervisor;
   supervisor.Run("network", []() -> WorkerResult { throw std::runtime_error("address rejected"); });

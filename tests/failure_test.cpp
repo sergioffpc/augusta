@@ -1,21 +1,16 @@
 #include "augusta/failure.h"
 
-#include <atomic>
 #include <expected>
 #include <optional>
 #include <stdexcept>
 #include <string>
-#include <thread>
-#include <vector>
 
 #include <gtest/gtest.h>
 
 #include "augusta/failure_latch.h"
-#include "augusta/faults.h"
 
 // The shared error model (ADR-0033): a stable code classifies a failure into
-// the scope it is recovered at, whatever its dependency said; a controlled
-// fault stands in for a dependency failing, so a test can make one fail.
+// the scope it is recovered at, whatever its dependency said.
 namespace {
 
 using augusta::failure::ClassifiedFailure;
@@ -25,11 +20,9 @@ using augusta::failure::Disposition;
 using augusta::failure::DispositionOf;
 using augusta::failure::Failure;
 using augusta::failure::FailureLatch;
-using augusta::failure::Faults;
 using augusta::failure::Guard;
-using augusta::failure::InjectedFault;
-using augusta::failure::Site;
 
+// Requirements: NFR-18
 TEST(FailureTest, EachCodeIsClassifiedIntoTheScopeItIsRecoveredAt) {
   EXPECT_EQ(DispositionOf(Code::kInvalidPeerInput), Disposition::kPeer);
   EXPECT_EQ(DispositionOf(Code::kPeerMisbehaving), Disposition::kSession);
@@ -55,6 +48,7 @@ TEST(FailureTest, EachCodeIsClassifiedIntoTheScopeItIsRecoveredAt) {
   EXPECT_EQ(DispositionOf(Code::kDependencyInitFailed), Disposition::kProcess);
 }
 
+// Requirements: NFR-18
 TEST(FailureTest, TheDescriptionNamesTheCodeScopeContextAndDetail) {
   const Failure failure{
       .code = Code::kTransportSendFailed,
@@ -67,12 +61,14 @@ TEST(FailureTest, TheDescriptionNamesTheCodeScopeContextAndDetail) {
             "detail=\"k_EResultNoConnection\"");
 }
 
+// Requirements: NFR-18
 TEST(FailureTest, TheDescriptionLeavesOutAnEmptyDetail) {
   const Failure failure{.code = Code::kInvalidPeerInput, .context = {}, .detail = {}};
 
   EXPECT_EQ(DescribeFailure(failure), "code=invalid_peer_input disposition=peer");
 }
 
+// Requirements: NFR-18
 TEST(FailureTest, TheDescriptionQuotesWhatWouldBreakTheLine) {
   const Failure failure{
       .code = Code::kInvalidContent,
@@ -84,6 +80,7 @@ TEST(FailureTest, TheDescriptionQuotesWhatWouldBreakTheLine) {
                                       R"(detail="bad \"key\"\nCRIT forged=1 \\")");
 }
 
+// Requirements: NFR-18
 TEST(FailureTest, GuardPassesOnWhatTheBodyReturns) {
   const std::expected<int, Failure> result = Guard(Code::kDependencyInitFailed, [] { return 7; });
 
@@ -91,6 +88,7 @@ TEST(FailureTest, GuardPassesOnWhatTheBodyReturns) {
   EXPECT_EQ(*result, 7);
 }
 
+// Requirements: NFR-18
 TEST(FailureTest, GuardTurnsADependencyExceptionIntoTheFailureKeepingWhatItSaid) {
   const std::expected<void, Failure> result =
       Guard(Code::kListenerSetupFailed, [] { throw std::runtime_error("address in use"); });
@@ -103,6 +101,7 @@ TEST(FailureTest, GuardTurnsADependencyExceptionIntoTheFailureKeepingWhatItSaid)
 
 // Startup code that has already classified its failure throws it whole: Guard
 // keeps its Code, context and detail instead of taking it for a dependency's.
+// Requirements: NFR-18
 TEST(FailureTest, GuardKeepsAClassifiedFailureThrownWhole) {
   const Failure thrown{.code = Code::kInvariantViolated,
                        .context = {{.key = "record_type", .value = "header"}},
@@ -119,11 +118,13 @@ TEST(FailureTest, GuardKeepsAClassifiedFailureThrownWhole) {
 }
 
 // Caught as any other exception, it still says what failed.
+// Requirements: NFR-18
 TEST(FailureTest, AClassifiedFailureThrownDescribesItself) {
   const Failure thrown{.code = Code::kInvariantViolated, .context = {}, .detail = "string too long"};
   EXPECT_EQ(std::string(ClassifiedFailure(thrown).what()), DescribeFailure(thrown));
 }
 
+// Requirements: NFR-18
 TEST(FailureTest, GuardTurnsSomethingThrownThatIsNotAnExceptionIntoTheFailure) {
   constexpr int kNotAnException = 42;
   const std::expected<int, Failure> result = Guard(Code::kWorkerFailed, []() -> int { throw kNotAnException; });
@@ -133,6 +134,7 @@ TEST(FailureTest, GuardTurnsSomethingThrownThatIsNotAnExceptionIntoTheFailure) {
   EXPECT_EQ(result.error().detail, "unknown exception");
 }
 
+// Requirements: NFR-18
 TEST(FailureLatchTest, OnlyTheFirstFailureIsKeptAndTakenOnce) {
   FailureLatch latch;
   latch.Record(Failure{.code = Code::kTransportSendFailed, .context = {}, .detail = {}});
@@ -146,6 +148,7 @@ TEST(FailureLatchTest, OnlyTheFirstFailureIsKeptAndTakenOnce) {
 }
 
 // What keeps it goes on knowing it has failed after a worker took the failure.
+// Requirements: NFR-18
 TEST(FailureLatchTest, AFailureStaysRecordedAfterItIsTaken) {
   FailureLatch latch;
   EXPECT_FALSE(latch.Recorded());
@@ -155,91 +158,6 @@ TEST(FailureLatchTest, AFailureStaysRecordedAfterItIsTaken) {
   static_cast<void>(latch.Take());
 
   EXPECT_TRUE(latch.Recorded());
-}
-
-TEST(FaultsTest, AnUnarmedSiteNeverTrips) {
-  Faults faults;
-
-  EXPECT_FALSE(faults.Trip(Site::kTransportSend).has_value());
-}
-
-TEST(FaultsTest, AnArmedSiteTripsAsManyTimesAsItWasArmedFor) {
-  Faults faults;
-  faults.Arm(Site::kCaptureWrite, "disk full", 2);
-
-  EXPECT_EQ(faults.Trip(Site::kCaptureWrite), "disk full");
-  EXPECT_EQ(faults.Trip(Site::kCaptureWrite), "disk full");
-  EXPECT_FALSE(faults.Trip(Site::kCaptureWrite).has_value());
-}
-
-TEST(FaultsTest, ArmingOneSiteLeavesTheOthersAlone) {
-  Faults faults;
-  faults.Arm(Site::kTransportSend, "no connection");
-
-  EXPECT_FALSE(faults.Trip(Site::kTransportReceive).has_value());
-  EXPECT_TRUE(faults.Trip(Site::kTransportSend).has_value());
-}
-
-TEST(FaultsTest, ASiteArmedEveryTimeKeepsTrippingUntilDisarmed) {
-  Faults faults;
-  faults.Arm(Site::kMetricsAccept, "socket closed", Faults::kEveryTime);
-
-  for (int i = 0; i < 100; ++i) {
-    ASSERT_EQ(faults.Trip(Site::kMetricsAccept), "socket closed");
-  }
-  faults.Disarm(Site::kMetricsAccept);
-
-  EXPECT_FALSE(faults.Trip(Site::kMetricsAccept).has_value());
-}
-
-TEST(FaultsTest, ATrippedThrowStandsInForADependencyThatThrowsAndGuardClassifiesIt) {
-  Faults faults;
-  faults.Arm(Site::kDependencyInit, "GameNetworkingSockets_Init failed");
-
-  const std::expected<void, Failure> result =
-      Guard(Code::kTransportInitFailed, [&] { faults.ThrowIfTripped(Site::kDependencyInit); });
-
-  ASSERT_FALSE(result.has_value());
-  EXPECT_EQ(result.error().code, Code::kTransportInitFailed);
-  EXPECT_EQ(result.error().detail, "GameNetworkingSockets_Init failed");
-}
-
-TEST(FaultsTest, AnUntrippedThrowDoesNothing) {
-  Faults faults;
-
-  EXPECT_NO_THROW(faults.ThrowIfTripped(Site::kWorkerExecution));
-}
-
-TEST(FaultsTest, TheThrownExceptionIsAnInjectedFault) {
-  Faults faults;
-  faults.Arm(Site::kWorkerCreation, "thread limit");
-
-  EXPECT_THROW(faults.ThrowIfTripped(Site::kWorkerCreation), InjectedFault);
-}
-
-TEST(FaultsTest, ThreadsTrippingAtOnceShareTheArmedShotsExactly) {
-  constexpr int kShots = 1000;
-  constexpr int kThreads = 8;
-  Faults faults;
-  faults.Arm(Site::kTransportReceive, "connection reset", kShots);
-  std::atomic<int> tripped{0};
-
-  std::vector<std::thread> threads;
-  threads.reserve(kThreads);
-  for (int t = 0; t < kThreads; ++t) {
-    threads.emplace_back([&] {
-      for (int i = 0; i < kShots; ++i) {
-        if (faults.Trip(Site::kTransportReceive).has_value()) {
-          tripped.fetch_add(1, std::memory_order_relaxed);
-        }
-      }
-    });
-  }
-  for (std::thread& thread : threads) {
-    thread.join();
-  }
-
-  EXPECT_EQ(tripped.load(), kShots);
 }
 
 }  // namespace

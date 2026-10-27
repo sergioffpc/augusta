@@ -18,6 +18,7 @@ DebugIndex HudAndProfiling() {
   });
 }
 
+// Requirements: US-29
 TEST(DebugIndexTest, ShowsEachEntryAsOneToggleInOrder) {
   const Panel panel = HudAndProfiling().BuildPanel();
 
@@ -35,6 +36,7 @@ TEST(DebugIndexTest, ShowsEachEntryAsOneToggleInOrder) {
   EXPECT_FALSE(profiling->on);
 }
 
+// Requirements: US-29
 TEST(DebugIndexTest, AToggleEventSwitchesItsEntryAndLeavesTheOthers) {
   DebugIndex index = HudAndProfiling();
   ASSERT_TRUE(index.IsOn("hud"));
@@ -49,6 +51,7 @@ TEST(DebugIndexTest, AToggleEventSwitchesItsEntryAndLeavesTheOthers) {
   EXPECT_TRUE(index.IsOn("profiling"));
 }
 
+// Requirements: US-29
 TEST(DebugIndexTest, IgnoresAnotherPanelsEvent) {
   DebugIndex index = HudAndProfiling();
 

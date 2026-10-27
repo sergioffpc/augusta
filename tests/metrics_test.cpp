@@ -205,6 +205,7 @@ TEST_F(MetricsEndpointTest, APortInUseIsRefused) {
   EXPECT_ANY_THROW(MetricsEndpoint(port_, last_tick_end_, {server_metrics_}));
 }
 
+// Requirements: NFR-07
 TEST_F(MetricsEndpointTest, APeerThatDisconnectsMidRequestDoesNotStopTheEndpoint) {
   const MetricsEndpoint endpoint(port_, last_tick_end_, {server_metrics_});
   {
@@ -218,6 +219,7 @@ TEST_F(MetricsEndpointTest, APeerThatDisconnectsMidRequestDoesNotStopTheEndpoint
   EXPECT_TRUE(endpoint.Available());
 }
 
+// Requirements: NFR-07
 TEST_F(MetricsEndpointTest, AnAcceptFailureThatClearsWithinTheAttemptsIsRecoveredFrom) {
   faults_.Arm(Site::kMetricsAccept, "Too many open files", static_cast<std::uint32_t>(kMetricsAcceptAttempts - 1));
   const MetricsEndpoint endpoint(port_, last_tick_end_, {server_metrics_}, &faults_);
@@ -227,6 +229,7 @@ TEST_F(MetricsEndpointTest, AnAcceptFailureThatClearsWithinTheAttemptsIsRecovere
   EXPECT_TRUE(endpoint.Available());
 }
 
+// Requirements: NFR-07
 TEST_F(MetricsEndpointTest, AnAcceptFailureOnEveryAttemptMakesTheEndpointUnavailableAndClosesItsPort) {
   faults_.Arm(Site::kMetricsAccept, "Too many open files", static_cast<std::uint32_t>(kMetricsAcceptAttempts));
   const MetricsEndpoint endpoint(port_, last_tick_end_, {server_metrics_}, &faults_);
@@ -236,6 +239,7 @@ TEST_F(MetricsEndpointTest, AnAcceptFailureOnEveryAttemptMakesTheEndpointUnavail
   EXPECT_TRUE(Refused(port_));
 }
 
+// Requirements: NFR-07
 TEST_F(MetricsEndpointTest, APersistentAcceptFailureIsRetriedWithWaitsThenLoggedOnce) {
   augusta::logging::Init();
   augusta::logging::SetLogLevel(augusta::logging::Severity::kInfo);
@@ -262,6 +266,7 @@ TEST_F(MetricsEndpointTest, APersistentAcceptFailureIsRetriedWithWaitsThenLogged
       << written;
 }
 
+// Requirements: NFR-07
 TEST_F(MetricsEndpointTest, ARequestThatFailsIsAnswered500AndWarnedOfWhileTheEndpointKeepsServing) {
   augusta::logging::Init();
   augusta::logging::SetLogLevel(augusta::logging::Severity::kInfo);
@@ -281,6 +286,7 @@ TEST_F(MetricsEndpointTest, ARequestThatFailsIsAnswered500AndWarnedOfWhileTheEnd
   EXPECT_EQ(Occurrences(written, "ERROR"), 0U) << written;
 }
 
+// Requirements: NFR-07
 TEST(AcceptRetryDelayTest, EachFailureInARowWaitsTwiceAsLongAsTheOneBefore) {
   EXPECT_EQ(AcceptRetryDelay(1), std::optional{kMetricsFirstAcceptRetry});
   for (int failures = 2; failures < kMetricsAcceptAttempts; ++failures) {
@@ -289,6 +295,7 @@ TEST(AcceptRetryDelayTest, EachFailureInARowWaitsTwiceAsLongAsTheOneBefore) {
   }
 }
 
+// Requirements: NFR-07
 TEST(AcceptRetryDelayTest, TheLastAttemptIsNotRetried) {
   EXPECT_EQ(AcceptRetryDelay(kMetricsAcceptAttempts), std::nullopt);
   EXPECT_EQ(AcceptRetryDelay(kMetricsAcceptAttempts + 1), std::nullopt);

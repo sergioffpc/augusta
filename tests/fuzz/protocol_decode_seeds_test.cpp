@@ -192,6 +192,7 @@ BytesWire ReadFile(const std::string& path) {
   return payload;
 }
 
+// Requirements: NFR-12
 TEST(ProtocolDecodeSeedsTest, EveryMessageKindHasASeed) {
   std::set<std::size_t> kinds;
   for (const Seed& seed : Seeds()) {
@@ -200,6 +201,7 @@ TEST(ProtocolDecodeSeedsTest, EveryMessageKindHasASeed) {
   EXPECT_EQ(kinds.size(), std::variant_size_v<MessageWire>);
 }
 
+// Requirements: NFR-12
 TEST(ProtocolDecodeSeedsTest, EverySeedIsWhatEncodeWrites) {
   for (const Seed& seed : Seeds()) {
     SCOPED_TRACE(seed.name);

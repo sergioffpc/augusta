@@ -90,6 +90,7 @@ void SetWorld(Renderer& renderer) {
   renderer.SetCharacterMesh(std::string(kCharacter), CharacterMesh());
 }
 
+// Requirements: NFR-04
 TEST_F(RendererSmokeTest, OpensItsWindowAtTheConfiguredSize) {
   const window::Size size = window_.GetSize();
 
@@ -97,6 +98,7 @@ TEST_F(RendererSmokeTest, OpensItsWindowAtTheConfiguredSize) {
   EXPECT_EQ(size.height, kHeight);
 }
 
+// Requirements: NFR-04
 TEST_F(RendererSmokeTest, CapturesNothingBeforeTheFirstFrame) {
   const CapturedFrame frame = renderer_->CaptureFrame();
 
@@ -105,6 +107,7 @@ TEST_F(RendererSmokeTest, CapturesNothingBeforeTheFirstFrame) {
   EXPECT_TRUE(frame.pixels.empty());
 }
 
+// Requirements: US-17, NFR-04
 TEST_F(RendererSmokeTest, DrawsTheSceneAndARemotePlayerFromTheCamera) {
   SetWorld(*renderer_);
   const std::vector<RemotePlayer> players{PlayerAt(0.0F, {1.0F, 0.0F, 0.0F})};
@@ -118,6 +121,7 @@ TEST_F(RendererSmokeTest, DrawsTheSceneAndARemotePlayerFromTheCamera) {
   EXPECT_TRUE(IsClearColor(Pixel(frame, kLeftX, kCentreY)));
 }
 
+// Requirements: US-17
 TEST_F(RendererSmokeTest, HidesAPlayerBehindTheScene) {
   SetWorld(*renderer_);
   RemotePlayer behind = PlayerAt(1.7F, {1.0F, 0.0F, 0.0F});
@@ -130,6 +134,7 @@ TEST_F(RendererSmokeTest, HidesAPlayerBehindTheScene) {
   EXPECT_TRUE(IsLitIn(Pixel(frame, kRightX, kCentreY), kBlue));
 }
 
+// Requirements: US-17
 TEST_F(RendererSmokeTest, DrawsEveryPlayerOnceMoreArriveThanEverBefore) {
   SetWorld(*renderer_);
   const std::vector<RemotePlayer> one{PlayerAt(0.0F, {1.0F, 0.0F, 0.0F})};
@@ -143,6 +148,7 @@ TEST_F(RendererSmokeTest, DrawsEveryPlayerOnceMoreArriveThanEverBefore) {
   EXPECT_TRUE(IsLitIn(Pixel(frame, kLeftX, kCentreY), kGreen));
 }
 
+// Requirements: US-17
 TEST_F(RendererSmokeTest, DrawsNoPlayersForAnEmptySpan) {
   SetWorld(*renderer_);
   const std::vector<RemotePlayer> players{PlayerAt(0.0F, {1.0F, 0.0F, 0.0F})};
@@ -155,6 +161,7 @@ TEST_F(RendererSmokeTest, DrawsNoPlayersForAnEmptySpan) {
   EXPECT_TRUE(IsLitIn(Pixel(frame, kRightX, kCentreY), kBlue));
 }
 
+// Requirements: US-17
 TEST_F(RendererSmokeTest, SkipsAPlayerWhoseCharacterHasNoMesh) {
   SetWorld(*renderer_);
   const std::vector<RemotePlayer> players{PlayerAt(0.0F, {1.0F, 0.0F, 0.0F}, "characters/unknown"),
@@ -167,6 +174,7 @@ TEST_F(RendererSmokeTest, SkipsAPlayerWhoseCharacterHasNoMesh) {
   EXPECT_TRUE(IsLitIn(Pixel(frame, kLeftX, kCentreY), kGreen));
 }
 
+// Requirements: US-19
 TEST_F(RendererSmokeTest, AddsATracersGlowToTheSceneBehindIt) {
   SetWorld(*renderer_);
   const CapturedFrame without = RenderFrames();
@@ -187,6 +195,7 @@ TEST_F(RendererSmokeTest, AddsATracersGlowToTheSceneBehindIt) {
   EXPECT_EQ(lit[3], kOpaque);
 }
 
+// Requirements: US-06
 TEST_F(RendererSmokeTest, DrawsTheCrosshairOverAPlayerAtTheFramesCentre) {
   SetWorld(*renderer_);
   const std::vector<RemotePlayer> players{PlayerAt(0.0F, {1.0F, 0.0F, 0.0F})};
@@ -204,6 +213,7 @@ TEST_F(RendererSmokeTest, DrawsTheCrosshairOverAPlayerAtTheFramesCentre) {
   EXPECT_TRUE(IsLitIn(Pixel(frame, kCentreX, kCentreY), kRed));
 }
 
+// Requirements: NFR-04
 TEST_F(RendererSmokeTest, ThrowsOnAnOutOfRangeMeshIndex) {
   SceneMesh mesh = CharacterMesh();
   mesh.indices.back() = 4;
@@ -212,6 +222,7 @@ TEST_F(RendererSmokeTest, ThrowsOnAnOutOfRangeMeshIndex) {
   EXPECT_THROW(renderer_->SetCharacterMesh(std::string(kCharacter), mesh), std::runtime_error);
 }
 
+// Requirements: NFR-04
 TEST_F(RendererSmokeTest, TearsDownSoThatAnotherRendererCanStart) {
   renderer_->RenderFrame();
   renderer_.reset();

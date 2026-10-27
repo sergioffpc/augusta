@@ -37,6 +37,7 @@ std::filesystem::path FreshDirectory() {
   return directory;
 }
 
+// Requirements: US-29
 TEST(ParseClientConfigTest, TheDebugHudIsOnByDefault) {
   const auto config = ParseClientConfig(
       "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: k.pub\n", kFileDir);
@@ -45,6 +46,7 @@ TEST(ParseClientConfigTest, TheDebugHudIsOnByDefault) {
   EXPECT_TRUE(config->debug.hud);
 }
 
+// Requirements: US-29
 TEST(ParseClientConfigTest, DebugHudFalseTurnsTheHudOff) {
   const auto config = ParseClientConfig(
       "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: "
@@ -55,6 +57,7 @@ TEST(ParseClientConfigTest, DebugHudFalseTurnsTheHudOff) {
   EXPECT_FALSE(config->debug.hud);
 }
 
+// Requirements: US-29
 TEST(ParseClientConfigTest, RejectsADebugHudThatIsNotTrueOrFalse) {
   const auto config = ParseClientConfig(
       "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: "
@@ -66,6 +69,7 @@ TEST(ParseClientConfigTest, RejectsADebugHudThatIsNotTrueOrFalse) {
   EXPECT_EQ(config.error().subject, "debug.hud");
 }
 
+// Requirements: US-29
 TEST(ParseClientConfigTest, TheProfilingPanelIsOffByDefault) {
   const auto config = ParseClientConfig(
       "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: k.pub\n", kFileDir);
@@ -74,6 +78,7 @@ TEST(ParseClientConfigTest, TheProfilingPanelIsOffByDefault) {
   EXPECT_FALSE(config->debug.profiling_panel);
 }
 
+// Requirements: US-29
 TEST(ParseClientConfigTest, DebugProfilingPanelTrueTurnsThePanelOn) {
   const auto config = ParseClientConfig(
       "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: "
@@ -84,6 +89,7 @@ TEST(ParseClientConfigTest, DebugProfilingPanelTrueTurnsThePanelOn) {
   EXPECT_TRUE(config->debug.profiling_panel);
 }
 
+// Requirements: US-29
 TEST(ParseClientConfigTest, RejectsADebugProfilingPanelThatIsNotTrueOrFalse) {
   const auto config = ParseClientConfig(
       "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: "
@@ -95,6 +101,7 @@ TEST(ParseClientConfigTest, RejectsADebugProfilingPanelThatIsNotTrueOrFalse) {
   EXPECT_EQ(config.error().subject, "debug.profiling.panel");
 }
 
+// Requirements: US-29
 TEST(ParseClientConfigTest, TheNetworkPanelIsOffByDefault) {
   const auto config = ParseClientConfig(
       "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: k.pub\n", kFileDir);
@@ -103,6 +110,7 @@ TEST(ParseClientConfigTest, TheNetworkPanelIsOffByDefault) {
   EXPECT_FALSE(config->debug.network_panel);
 }
 
+// Requirements: US-29
 TEST(ParseClientConfigTest, DebugNetworkPanelTrueTurnsThePanelOn) {
   const auto config = ParseClientConfig(
       "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: "
@@ -113,6 +121,7 @@ TEST(ParseClientConfigTest, DebugNetworkPanelTrueTurnsThePanelOn) {
   EXPECT_TRUE(config->debug.network_panel);
 }
 
+// Requirements: US-29
 TEST(ParseClientConfigTest, RejectsADebugNetworkPanelThatIsNotTrueOrFalse) {
   const auto config = ParseClientConfig(
       "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: "

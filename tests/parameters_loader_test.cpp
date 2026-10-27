@@ -252,6 +252,7 @@ TEST(ParametersLoaderTest, APlayerCountThatIsNotAWholeNumberIsTheWrongType) {
   }
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderTest, AcceptsAWholeNumberWrittenWithoutADecimalPoint) {
   const auto loaded = Load(WithStamina("1", "0", "0"));
 
@@ -326,6 +327,7 @@ TEST(ParametersLoaderTest, AMisspelledKeyIsNeverReadAsAMissingOneOrADefault) {
       ParametersLoadErrorCode::kUnknownKey, "stamina.regen_per_secnd");
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderTest, WhenSeveralKeysAreUnknownTheFirstInNameOrderIsReported) {
   ExpectError("return { zz = 1, aa = 2, stamina = {} }", ParametersLoadErrorCode::kUnknownKey, "aa");
 }
@@ -351,6 +353,7 @@ TEST(ParametersLoaderTest, ANumberThatIsNotFiniteIsOutOfRange) {
   ExpectError(WithStamina("0", "0", "0/0"), ParametersLoadErrorCode::kOutOfRange, "stamina.forced_walk_below");
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderTest, TheForcedWalkThresholdIsAtLeastZeroAndBelowOne) {
   EXPECT_TRUE(Load(WithStamina("0", "0", "0")).has_value());
   ExpectError(WithStamina("0", "0", "-0.1"), ParametersLoadErrorCode::kOutOfRange, "stamina.forced_walk_below");
@@ -409,6 +412,7 @@ TEST(ParametersLoaderSandboxTest, AScriptCannotCatchTheInstructionLimitAndRunOn)
 
 // Lua runs a finalizer outside the instruction limit, so the sandbox refuses a
 // metatable that holds __gc.
+// Requirements: US-22
 TEST(ParametersLoaderSandboxTest, AScriptThatSetsAFinalizerIsAScriptError) {
   const auto loaded = Load("setmetatable({}, {__gc = function() end})\n" + std::string(kValid));
 
@@ -486,6 +490,7 @@ TEST(ParametersLoaderExpressionTest, TheSameScriptLoadedTwiceGivesEqualParameter
   EXPECT_EQ(first->stamina.forced_walk_below, second->stamina.forced_walk_below);
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderTest, ADescriptionNamesTheKeyItIsAbout) {
   const std::string message = DescribeParametersLoadError(
       {.code = ParametersLoadErrorCode::kOutOfRange, .subject = "stamina.regen_per_second"});
@@ -518,6 +523,7 @@ TEST(ParametersLoaderServerTest, AWarningReachesTheCallerAndTheScriptStillLoads)
 
 // The script's Lua state has the sandbox's memory limit: an allocation past it
 // is a script error, not memory taken from the server.
+// Requirements: US-22
 TEST(ParametersLoaderServerTest, AScriptThatAllocatesPastTheMemoryLimitIsAScriptError) {
   const auto loaded = Load("local huge = string.rep('x', 1 << 30)\n" + std::string(kValid));
 
