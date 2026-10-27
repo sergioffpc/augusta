@@ -22,6 +22,7 @@
 #include "augusta/capture_records.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"
+#include "augusta/limits.h"
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
 #include "frame.h"
@@ -271,6 +272,24 @@ TEST(CaptureFormatTest, RecordsOutOfOrderAreRefused) {
   for (const auto& [name, bytes] : cases) {
     EXPECT_EQ(Read(bytes).error().code, ReadErrorCode::kMalformed) << name;
   }
+}
+
+// A Match holds at most limits::kMaxPlayers players, so a capture of one holds
+// at most that many Joins: one with more is no capture of a Match, which the
+// protocol could not carry.
+// Requirements: NFR-12
+TEST(CaptureFormatTest, MoreJoinsThanAMatchHoldsAreRefused) {
+  Capture full = TwoPlayers(MatchEnd{});
+  full.joins.clear();
+  for (std::size_t i = 0; i < augusta::limits::kMaxPlayers; ++i) {
+    full.joins.push_back(
+        Join{.session = Session(static_cast<std::uint8_t>(i + 1)), .character = "soldier", .spawn = {}});
+  }
+  Capture over = full;
+  over.joins.push_back(Join{.session = Session(0xFF), .character = "soldier", .spawn = {}});
+
+  EXPECT_EQ(Read(Bytes(full)), full);
+  EXPECT_EQ(Read(Bytes(over)).error().code, ReadErrorCode::kMalformed);
 }
 
 // Requirements: NFR-12

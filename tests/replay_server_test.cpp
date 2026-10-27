@@ -32,6 +32,7 @@
 #include "augusta/harness.h"
 #include "augusta/host.h"
 #include "augusta/host_metrics.h"
+#include "augusta/limits.h"
 #include "augusta/link.h"
 #include "augusta/link_messages.h"
 #include "augusta/logging.h"
@@ -362,6 +363,27 @@ void Rewrite(const std::filesystem::path& file, const augusta::capture::Capture&
   ASSERT_TRUE(augusta::capture::WriteCapture(out, capture).has_value());
 }
 
+// A capture of the given number of players, each of the scenario's Character
+// and standing apart, that ends at its offset 30.
+augusta::capture::Capture OfPlayers(std::size_t players) {
+  augusta::capture::Capture capture{
+      .header = augusta::capture::Header{.match = boost::uuids::time_generator_v7{}(),
+                                         .engine_version = std::string(augusta::EngineVersion()),
+                                         .server_pack = {},
+                                         .client_pack = {},
+                                         .tick_rate_hz = kTickRate,
+                                         .started = {}},
+      .joins = {},
+      .events = {{.offset = 30, .event = augusta::capture::MatchEnd{}}},
+      .torn = false};
+  for (std::size_t i = 0; i < players; ++i) {
+    capture.joins.push_back({.session = boost::uuids::time_generator_v7{}(),
+                             .character = kCharacter,
+                             .spawn = Vec3(kSpacing * static_cast<float>(i), 0.0F, 0.0F)});
+  }
+  return capture;
+}
+
 class ReplayServerTest : public ::testing::Test {
  protected:
   void SetUp() override { augusta::logging::Init(); }
@@ -502,6 +524,52 @@ TEST_F(ReplayServerTest, AReplayRequestNamingAnythingNotInTheListingIsRefused) {
     EXPECT_TRUE(viewer.ReceivedOf<protocol::MatchStartWire>().empty()) << unknown;
   }
   EXPECT_EQ(server->Viewers(), 0U);
+}
+
+// A capture of more players than a Match holds, limits::kMaxPlayers, is no
+// capture of a Match, which a Replay list or a Replay could not carry: it is
+// left out of the listing, logged once, and unknown to a Replay request, and
+// the server goes on - while one of exactly that many lists and replays.
+// Requirements: US-21
+TEST_F(ReplayServerTest, ACaptureOfMorePlayersThanAMatchHoldsIsLeftOutAndTheServerGoesOn) {
+  const std::string full = CaptureNamed("full");
+  const std::string over = CaptureNamed("over");
+  Rewrite(directory_.Path() / full, OfPlayers(augusta::limits::kMaxPlayers));
+  Rewrite(directory_.Path() / over, OfPlayers(augusta::limits::kMaxPlayers + 1));
+  const std::unique_ptr<ReplayServer> server = Serve();
+
+  testing::internal::CaptureStdout();
+  for (int ask = 0; ask < 2; ++ask) {
+    RawClient asker(server->ListenEndpoint());
+    asker.Send(protocol::ReplayListRequestWire{});
+    ASSERT_TRUE(RunUntil(*server, {&asker}, [&] {
+      return !asker.ReceivedOf<protocol::ReplayListWire>().empty() && asker.State() == ConnectionState::kDisconnected;
+    }));
+    const std::vector<protocol::ReplayListWire> lists = asker.ReceivedOf<protocol::ReplayListWire>();
+    ASSERT_EQ(lists.size(), 1U);
+    ASSERT_EQ(lists[0].replays.size(), 1U);
+    EXPECT_EQ(lists[0].replays[0].name, full);
+    EXPECT_EQ(lists[0].replays[0].characters.size(), augusta::limits::kMaxPlayers);
+  }
+  const std::string log = testing::internal::GetCapturedStdout();
+  const std::string unreadable = "event=capture_unreadable capture=" + over;
+  EXPECT_NE(log.find(unreadable), std::string::npos) << log;
+  EXPECT_EQ(log.find(unreadable), log.rfind(unreadable)) << log;
+  EXPECT_EQ(log.find("event=capture_unreadable capture=" + full), std::string::npos) << log;
+
+  RawClient refused(server->ListenEndpoint());
+  refused.Send(RequestFor(over));
+  ASSERT_TRUE(RunUntil(*server, {&refused}, [&] { return refused.Refused(); }));
+  EXPECT_EQ(refused.Refusal(), protocol::JoinRefusalWire::kUnknownCapture);
+
+  const std::vector<protocol::MessageWire> received = Watch(*server, full);
+  const std::vector<protocol::MatchStartWire> starts = Of<protocol::MatchStartWire>(received);
+  ASSERT_EQ(starts.size(), 1U);
+  EXPECT_EQ(starts[0].players.size(), augusta::limits::kMaxPlayers);
+  ASSERT_FALSE(received.empty());
+  EXPECT_TRUE(std::holds_alternative<protocol::MatchEndWire>(received.back()));
+  EXPECT_FALSE(server->TakeInvariantFailure().has_value());
+  EXPECT_FALSE(server->TakeTransportFailure().has_value());
 }
 
 // Requirements: US-21
