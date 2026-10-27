@@ -1,13 +1,14 @@
 #ifndef AUGUSTA_PHYSICS_PHYSX_STATE_H_
 #define AUGUSTA_PHYSICS_PHYSX_STATE_H_
 
+#include <cstddef>
 #include <mutex>
 
 // The headers this file uses, not PxPhysicsAPI.h: that one also pulls in
 // PxVecMath.h, whose Windows SIMD path reads cl's __m128 union members
 // (m128_u16), which clang-cl's __m128 doesn't have.
 #include <PxPhysics.h>
-#include <extensions/PxDefaultAllocator.h>
+#include <foundation/PxAllocatorCallback.h>
 #include <foundation/PxErrorCallback.h>
 #include <foundation/PxFoundation.h>
 #if AUGUSTA_DEBUG_TOOLS
@@ -29,6 +30,18 @@ class LogErrorCallback : public physx::PxErrorCallback {
   void reportError(physx::PxErrorCode::Enum code, const char* message, const char* file, int line) override;
 };
 
+// Hands PhysX the 16-byte aligned blocks it requires, asking for that alignment
+// on every platform. PxDefaultAllocator relies on plain malloc's alignment
+// outside Windows and Linux, which mimalloc and others don't give a small
+// block on macOS (#1401).
+class PhysxAllocator : public physx::PxAllocatorCallback {
+ public:
+  // NOLINTNEXTLINE(readability-identifier-naming) - name mandated by PxAllocatorCallback's own virtual signature.
+  void* allocate(std::size_t size, const char* type_name, const char* file, int line) override;
+  // NOLINTNEXTLINE(readability-identifier-naming) - name mandated by PxAllocatorCallback's own virtual signature.
+  void deallocate(void* ptr) override;
+};
+
 // PhysX allows one PxFoundation per process, and creating PxPhysics on it is
 // costly, so every World shares one of each, created by the first World and
 // released with the last - a server and several clients in one test process
@@ -38,7 +51,7 @@ struct PhysxProcessState {
   int users = 0;
   // Must outlive the foundation, so they live here rather than in each World.
   LogErrorCallback error_callback;
-  physx::PxDefaultAllocator allocator;
+  PhysxAllocator allocator;
   physx::PxFoundation* foundation = nullptr;
 #if AUGUSTA_DEBUG_TOOLS
   // What samples physics into a recording (StartRecording); null when none does.
