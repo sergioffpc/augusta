@@ -198,9 +198,12 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
   beside it that drifts. `scripts/requirements-matrix.py` reads them: CI fails
   on one that names a requirement the document does not have, and the test
   report's requirements matrix lists every requirement with the tests that name
-  it and how each did that night. A requirement no test names shows as untested,
-  whether no test can check it (NFR-04 is checked by the Windows and Linux
-  builds themselves) or one is missing.
+  it and how each did that night. A requirement no test can check, such as
+  NFR-04, which the Windows and Linux builds themselves check, is named instead
+  by the CI jobs that check it, on a `# Requirements:` line directly above the
+  job's key: the matrix lists those jobs beside the tests and shows the
+  requirement as checked in CI, without reading the jobs' results. A requirement
+  nothing names shows as untested.
 - **The test report** is the nightly's tests in one HTML report
   (`scripts/test-report.sh`): its `ctest` runs (the whole Linux suite, the
   property tests, TSan and the netcode profiles), which `ctest` writes as JUnit
