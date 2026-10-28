@@ -135,6 +135,46 @@ else()
   add_compile_options($<$<CONFIG:Release>:-g>)
 endif()
 
+# Binary hardening: the platform's standard mitigations, on every target, so
+# that a memory-safety bug in augustad, which parses what any peer sends, or in
+# augustac is harder to turn into control of the process. tests/ checks both
+# executables for them (binary_hardening.cmake). The dependencies vcpkg builds
+# are left as they are: none of these changes an ABI.
+if(MSVC)
+  # Control Flow Guard checks every indirect call's target; /CETCOMPAT marks the
+  # image fit for CET's shadow stack, which checks every return wherever the
+  # CPU, Windows and the process's mitigation policy turn it on.
+  add_compile_options(/guard:cf)
+  add_link_options(/guard:cf /CETCOMPAT)
+else()
+  # libc++'s fast hardening mode: the bounds and null checks that cost a
+  # compare each (operator[], front(), an optional's value), which trap rather
+  # than read past the end. Every build, Linux's and macOS's.
+  add_compile_definitions(_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST)
+endif()
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  # A canary in every function with an array or an address-taken local, and a
+  # probe on every stack page a large frame or alloca would skip, so the stack
+  # cannot grow past its guard page into another mapping.
+  add_compile_options(-fstack-protector-strong -fstack-clash-protection)
+  # glibc's checked string and memory functions wherever the compiler knows the
+  # destination's size, at the level that covers sizes known only at run time.
+  # It needs optimisation, so not in a Debug build - every sanitizer preset's,
+  # whose interceptors it would bypass. Undefined first, in case the compiler
+  # predefines another level.
+  add_compile_options("$<$<NOT:$<CONFIG:Debug>>:-U_FORTIFY_SOURCE;-D_FORTIFY_SOURCE=3>")
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
+    # Intel CET's indirect-branch landing pads and shadow-stack marking. lld
+    # marks the executable only when every object it links is marked, which
+    # vcpkg's unhardened static libraries are not: until they are, nothing
+    # enforces it.
+    add_compile_options(-fcf-protection=full)
+  endif()
+  # Full RELRO: every symbol bound at load time, then the whole GOT made
+  # read-only, so no write can redirect a call through it.
+  add_link_options(LINKER:-z,relro,-z,now)
+endif()
+
 # The tools' Python modules (tools/agent, tools/pack) are shared libraries that
 # link the engine's static ones, which on Linux must then be
 # position-independent: the whole build, so the tools link what augustad does.

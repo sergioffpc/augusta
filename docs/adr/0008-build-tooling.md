@@ -99,6 +99,22 @@ MSVC's `cl`, Apple's clang (CMake's `AppleClang`) - rather than build with it by
 accident. The Windows dependencies on `cl` are vcpkg's builds, not the
 project's.
 
+Every target of the root project is built with its platform's standard binary
+hardening, stated once beside the warning flags in the root `CMakeLists.txt`. On
+Linux: `-fstack-protector-strong`, `-fstack-clash-protection`,
+`-fcf-protection=full` on x86-64, full RELRO (`-z relro -z now`) over clang's
+default PIE, and `-D_FORTIFY_SOURCE=3` in every build but Debug, which has no
+optimisation for it to work with and which every sanitizer preset is. On
+Windows: Control Flow Guard (`/guard:cf`) and CET shadow-stack compatibility
+(`/CETCOMPAT`). Wherever the standard library is libc++ (Linux and macOS), its
+fast hardening mode is on in every build: bounds and null checks of a compare
+each. On Linux and Windows a test per executable reads back off `augustad` and
+`augustac` what of it leaves a mark there: BIND_NOW, the stack protector and the
+fortified functions; Control Flow Guard and CET compatibility
+(`tests/binary_hardening.cmake`). The dependencies vcpkg builds keep their
+triplets' flags, as none of these flags changes an ABI; lld then leaves the
+Linux executables unmarked for CET, which needs every linked object marked.
+
 The client (`augustac`, its Renderer and their tests) builds with the
 `AUGUSTA_CLIENT` option, on by default on Windows and Linux, so
 `cmake --preset linux` builds it as `cmake --preset windows` does. Its ports are
