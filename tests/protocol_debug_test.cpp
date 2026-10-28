@@ -264,7 +264,7 @@ TEST(ProtocolDebugTest, TheLargestShotJudgementFitsTheProtocolsMessageSizeLimit)
   const auto encoded = Encode(largest);
 
   ASSERT_TRUE(encoded.has_value());
-  EXPECT_LE(encoded->size(), augusta::protocol::kMaxPayloadSize);
+  EXPECT_LE(encoded->size(), augusta::protocol::kMaxServerPayloadSize);
 }
 
 }  // namespace

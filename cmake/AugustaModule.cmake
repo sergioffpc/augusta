@@ -157,8 +157,9 @@ function(augusta_check_executable_glue)
   get_property(executables GLOBAL PROPERTY AUGUSTA_GLUE_EXECUTABLES)
   list(REMOVE_DUPLICATES executables)
 
-  # What every executable may link besides its Runtime, and what every binary
-  # links (augusta_link_every_binary).
+  # What every executable may link besides its Runtime, what every binary
+  # links (augusta_link_every_binary), and mimalloc, which replaces malloc in
+  # the executables alone (augusta_link_mimalloc, ADR-0078).
   get_property(every_binary GLOBAL PROPERTY AUGUSTA_GLUE_EVERY_BINARY)
   set(
     allowed
@@ -167,6 +168,8 @@ function(augusta_check_executable_glue)
     augusta_failure
     augusta_logging
     augusta_version
+    mimalloc
+    mimalloc-static
     ${every_binary}
   )
   set(links "")

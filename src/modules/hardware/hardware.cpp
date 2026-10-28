@@ -180,4 +180,14 @@ std::string DescribeGpu(const Gpu& gpu) {
                      VendorName(gpu.vendor_id), gpu.device_id, Quoted(gpu.driver), Quoted(gpu.driver_version));
 }
 
+std::string DescribeAllocator(std::optional<int> mimalloc_version) {
+  if (!mimalloc_version) {
+    return "allocator=platform";
+  }
+  constexpr int kMajor = 10000;
+  constexpr int kMinor = 100;
+  return std::format("allocator=mimalloc/{}.{}.{}", *mimalloc_version / kMajor, *mimalloc_version % kMajor / kMinor,
+                     *mimalloc_version % kMinor);
+}
+
 }  // namespace augusta::hardware

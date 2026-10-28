@@ -9,6 +9,7 @@
 #include <fstream>
 #include <ios>
 #include <iterator>
+#include <optional>
 #include <stop_token>
 #include <string>
 #include <string_view>
@@ -81,7 +82,7 @@ ServerConfig ExampleConfig() {
 // How augustad ends with config, faults armed as the test has them, and the
 // transport the environment initialized.
 Outcome Served(const ServerConfig& config, Faults& faults) {
-  auto program = ServerProgram(config, &faults);
+  auto program = ServerProgram(config, std::nullopt, &faults);
   program.initialize = []() -> std::expected<void, Failure> { return {}; };
   return Execute(program);
 }
@@ -131,7 +132,7 @@ TEST(ServerApplicationTest, ATransportThatCannotBeInitializedIsATransportFailure
   Faults faults;
   faults.Arm(Site::kDependencyInit, "GameNetworkingSockets_Init failed");
 
-  const Outcome outcome = Execute(ServerProgram(ExampleConfig(), &faults));
+  const Outcome outcome = Execute(ServerProgram(ExampleConfig(), std::nullopt, &faults));
 
   ASSERT_TRUE(outcome.has_value());
   EXPECT_EQ(outcome->code, Code::kTransportInitFailed);
@@ -354,7 +355,7 @@ TEST(ServerApplicationTest, AStartupFailureIsLoggedOnceByTheBoundaryThatDecidesI
 // How augustad ends with config when a SIGTERM is raised, from a thread beside
 // it as a signal may arrive, once its run has started.
 Outcome ServedUntilSignalled(const ServerConfig& config) {
-  auto program = ServerProgram(config);
+  auto program = ServerProgram(config, std::nullopt);
   program.initialize = []() -> std::expected<void, Failure> { return {}; };
   std::atomic<bool> running{false};
   program.run = [&running, run = std::move(program.run)](ServerRuntime& runtime) {

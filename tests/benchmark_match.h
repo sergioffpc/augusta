@@ -1,6 +1,8 @@
 #ifndef AUGUSTA_TESTS_BENCHMARK_MATCH_H_
 #define AUGUSTA_TESTS_BENCHMARK_MATCH_H_
 
+#include <cassert>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -33,7 +35,10 @@
 // Scripts/Behaviours runs the example scenario's Game policy, loaded from its
 // golden server pack. Each hit takes too little of a health too large for
 // anyone to die, so every tick does the same work and the Match never ends.
-// Needs AUGUSTA_EXAMPLE_PACKS, the directory of the golden packs.
+// The open range is the same Match with the players abreast, skeletal: every
+// round flies its full range past the others, so Lag compensation judges each
+// round in flight against every other player every tick. Needs
+// AUGUSTA_EXAMPLE_PACKS, the directory of the golden packs.
 namespace augusta::benchmarks {
 
 inline constexpr std::uint8_t kTickRate = 60;
@@ -68,6 +73,46 @@ inline simulation::Character SquaresCharacter() {
   for (const auto& square : kBodySquares) {
     character.hitboxes.push_back(
         hitbox::CharacterHitbox{.part = square.part, .triangles = Triangles(square, math::Vec3(0.0F))});
+  }
+  return character_fixture::Rigged(character);
+}
+
+// The example soldier's Joint count (characters/soldier.usda).
+inline constexpr std::size_t kSoldierJoints = 12;
+
+// SquaresCharacter on a Skeleton of joint_count Joints, its Hitboxes bound
+// across them: under its Root, a chain of Joints for each of its body squares,
+// the square bound to the chain's last, and the two arms Rig hangs, so the
+// Hitbox history keeps every Joint but the arms'. Each chain rises in even
+// steps to its square's center, the square on its last Joint, so it is where
+// SquaresCharacter has it and as far from the root as a soldier's Joints hold
+// their hitboxes. joint_count is more than the arms' Joints and the Root.
+inline simulation::Character SkeletalCharacter(std::size_t joint_count) {
+  // The Joints Rig's two arms add (clips_fixture::RigArm).
+  constexpr std::size_t kArmJoints = 6;
+  assert(joint_count > kArmJoints + 1);
+  simulation::Character character{.eye = math::Vec3(0.0F, 1.5F, 0.0F), .hitboxes = {}};
+  const std::size_t chained = joint_count - kArmJoints - 1;
+  for (std::size_t square = 0; square < kBodySquares.size(); ++square) {
+    std::uint32_t parent = 0;
+    // The chains share chained Joints out, the first ones a Joint more.
+    const std::size_t length = (chained / kBodySquares.size()) + (square < chained % kBodySquares.size() ? 1 : 0);
+    const float height = kBodySquares.at(square).height;
+    const math::Vec3 step(0.0F, length > 0 ? height / static_cast<float>(length) : 0.0F, 0.0F);
+    for (std::size_t link = 0; link < length; ++link) {
+      character.skeleton.joints.push_back({.name = character.skeleton.joints.at(parent).name + "/Chain" +
+                                                   std::to_string(square) + "_" + std::to_string(link),
+                                           .parent = parent,
+                                           .translation = step});
+      character.skeleton.rest_transforms.push_back(
+          character.skeleton.rest_transforms.at(parent) *
+          math::ToMat4(step, math::Quat(1.0F, 0.0F, 0.0F, 0.0F), math::Vec3(1.0F)));
+      parent = static_cast<std::uint32_t>(character.skeleton.joints.size() - 1);
+    }
+    // In its last Joint's space, which a chain of none leaves the Root's.
+    const math::Vec3 feet = length > 0 ? math::Vec3(0.0F, -height, 0.0F) : math::Vec3(0.0F);
+    character.hitboxes.push_back(hitbox::CharacterHitbox{
+        .part = kBodySquares.at(square).part, .triangles = Triangles(kBodySquares.at(square), feet), .joint = parent});
   }
   return character_fixture::Rigged(character);
 }
@@ -123,17 +168,30 @@ inline std::vector<simulation::PlayerCommand> MatchCommands(const simulation::St
   return commands;
 }
 
-// The Match warmed up, ready to time: its world and the State of its last tick.
+// The Match warmed up, ready to time: its world, the State of its last tick
+// and how its commands report their Seen time.
 struct FullMatch {
   simulation::World world;
   simulation::State last_state;
+  SeenTimes seen_times = SeenTimes::kLastState;
 };
 
-// The full Match, warmed up with commands reporting seen_times; nullopt, with
-// benchmark skipped saying why, if it cannot be set up or does not do the work
-// it is meant to.
-inline std::optional<FullMatch> StartFullMatch(benchmark::State& benchmark,
-                                               SeenTimes seen_times = SeenTimes::kLastState) {
+// Where a Match stands its players.
+enum class Layout : std::uint8_t {
+  // In a file along -Z, 3 m apart, far enough that no one walks into another:
+  // every round but the front player's strikes the head of the player ahead.
+  kFile,
+  // Abreast along X, 4 m apart, farther than any of their hitboxes reach from
+  // their roots: every round flies its full range, down -Z, past the others.
+  kOpenRange,
+};
+
+// The full Match of character, its players standing as layout has them,
+// warmed up with commands reporting seen_times; nullopt, with benchmark
+// skipped saying why, if it cannot be set up or does not do the work it is
+// meant to: a hit in a file, none and rounds in flight on the open range.
+inline std::optional<FullMatch> StartMatch(benchmark::State& benchmark, SeenTimes seen_times, Layout layout,
+                                           const simulation::Character& character) {
   auto policy = ExamplePolicy();
   if (!policy.has_value()) {
     benchmark.SkipWithError("the example's Game policy does not load");
@@ -144,11 +202,11 @@ inline std::optional<FullMatch> StartFullMatch(benchmark::State& benchmark,
     benchmark.SkipWithError("the floor does not build");
     return std::nullopt;
   }
-  // In a file along -Z, far enough apart that no one walks into another.
+  const math::Vec3 apart = layout == Layout::kFile ? math::Vec3(0.0F, 0.0F, -3.0F) : math::Vec3(4.0F, 0.0F, 0.0F);
   for (std::uint32_t player = 0; player < kPlayers; ++player) {
     world.AddPlayer(
-        static_cast<simulation::EntityId>(player + 1), math::Vec3(0.0F, 0.5F, -3.0F * static_cast<float>(player)),
-        SquaresCharacter(),
+        static_cast<simulation::EntityId>(player + 1),
+        math::Vec3(0.0F, 0.5F, 0.0F) + (apart * static_cast<float>(player)), character,
         simulation::PlayerIdentity{.session = boost::uuids::time_generator_v7{}(), .character = std::string()});
   }
 
@@ -163,11 +221,21 @@ inline std::optional<FullMatch> StartFullMatch(benchmark::State& benchmark,
     }
     previous = std::move(result.state);
   }
-  if (!hit) {
+  if (layout == Layout::kFile && !hit) {
     benchmark.SkipWithError("no round hit a player");
     return std::nullopt;
   }
-  return FullMatch{.world = std::move(world), .last_state = std::move(previous)};
+  if (layout == Layout::kOpenRange && (hit || previous.bullets_in_flight == 0)) {
+    benchmark.SkipWithError("the rounds do not fly their range past the players");
+    return std::nullopt;
+  }
+  return FullMatch{.world = std::move(world), .last_state = std::move(previous), .seen_times = seen_times};
+}
+
+// The full Match in a file, of SquaresCharacter, as StartMatch.
+inline std::optional<FullMatch> StartFullMatch(benchmark::State& benchmark,
+                                               SeenTimes seen_times = SeenTimes::kLastState) {
+  return StartMatch(benchmark, seen_times, Layout::kFile, SquaresCharacter());
 }
 
 }  // namespace augusta::benchmarks

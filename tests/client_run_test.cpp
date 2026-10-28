@@ -115,7 +115,7 @@ TEST_F(ClientRunTest, ALaunchAfterAnyOtherEndWritesNothing) {
 // A Run taken and begun, as augustac's main takes and begins one either side
 // of installing the crash handler.
 augusta::client::Run StartRun(const std::optional<std::filesystem::path>& directory) {
-  return augusta::client::BeginRun(augusta::client::TakeRun(directory));
+  return augusta::client::BeginRun(augusta::client::TakeRun(directory), std::nullopt);
 }
 
 // What StartRun left behind, undone: its log file's sink and its Run in the

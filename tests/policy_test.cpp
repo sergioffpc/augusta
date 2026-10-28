@@ -201,7 +201,8 @@ TEST_F(PolicyTest, AFailingHookIsLoggedDecidesNothingAndTheTickGoesOn) {
            FailingHook{.rules = "function on_tick(match) match.tick = 0 end", .logged = "read-only"},
            FailingHook{.rules = "function on_tick() return function() end end", .logged = "not plain data"},
            FailingHook{.rules = "function on_tick() return 1, 2 end", .logged = "more than one value"},
-           FailingHook{.rules = "function on_tick() local t = {} t[1] = t return t end", .logged = "not plain data"},
+           FailingHook{.rules = "function on_tick() local t = {} t[1] = t return t end",
+                       .logged = "tables nested more than 16 deep, which is not plain data"},
            FailingHook{.rules = "function on_tick() return {1, x = 2} end", .logged = "not plain data"},
            FailingHook{.rules = "on_tick = 5", .logged = "not a function"},
            FailingHook{.rules = "function on_tick() return #string.rep('x', 1 << 30) end",
@@ -242,6 +243,63 @@ TEST_F(PolicyTest, AFailingHookIsLoggedDecidesNothingAndTheTickGoesOn) {
     EXPECT_EQ(second.state.tick, 2U) << hook.rules;
     ASSERT_EQ(second.state.bodies.size(), 1U) << hook.rules;
     EXPECT_EQ(second.state.bodies[0].body.position, WalkedTo(Policy{}, 2)) << hook.rules;
+  }
+}
+
+// A table an answer holds at several places is converted once per place, so a
+// few small tables, each held two or three times by the one above it, would
+// make millions of copies outside the sandbox's limits. The conversion counts
+// every value it builds instead and refuses the answer once past its bound,
+// within the second. An answer of as many values as the bound, or one that
+// holds a table twice, is plain data, which the Match end reader then refuses.
+// Requirements: US-22
+TEST_F(PolicyTest, AnAnswerOfTooManyValuesIsRefusedPromptlyHoweverItSharesItsTables) {
+  for (const FailingHook& hook : {
+           FailingHook{.rules = R"(
+             function on_tick()
+               local t = {}
+               for i = 1, 1000 do t[i] = i end
+               for _ = 1, 15 do t = {t, t} end
+               return t
+             end
+           )",
+                       .logged = "more than 4096 values in all, which is not plain data"},
+           FailingHook{.rules = R"(
+             function on_tick()
+               local t = {}
+               for i = 1, 1000 do t[i] = i end
+               for _ = 1, 15 do t = {t, t, t} end
+               return t
+             end
+           )",
+                       .logged = "more than 4096 values in all, which is not plain data"},
+           FailingHook{.rules = R"(
+             function on_tick()
+               local t = {}
+               for i = 1, 4096 do t[i] = i end
+               return t
+             end
+           )",
+                       .logged = "more than 4096 values in all, which is not plain data"},
+           FailingHook{.rules = R"(
+             function on_tick()
+               local t = {}
+               for i = 1, 4095 do t[i] = i end
+               return t
+             end
+           )",
+                       .logged = "neither {winner = <Session ID>} nor {draw = true}"},
+           FailingHook{.rules = "function on_tick() local t = {1, 2} return {t, t} end",
+                       .logged = "neither {winner = <Session ID>} nor {draw = true}"},
+       }) {
+    World world = WithAlice(WithRules(hook.rules));
+
+    const auto start = std::chrono::steady_clock::now();
+    const std::string log = WithinADeadline([&world] { return LogOfTicks(world, 1); });
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+
+    EXPECT_NE(log.find(hook.logged), std::string::npos) << hook.rules << "\n" << log;
+    EXPECT_LT(elapsed, std::chrono::seconds(1)) << hook.rules;
   }
 }
 
@@ -448,6 +506,131 @@ TEST_F(PolicyTest, AScriptWhoseTopLevelNeverFinishesDoesNotLoad) {
 
   ASSERT_FALSE(engine.has_value());
   EXPECT_NE(engine.error().message.find("instruction limit"), std::string::npos) << engine.error().message;
+}
+
+// What a script sets up to get past the instruction limit, and the statement
+// that then runs into it. Lua runs a message handler with debug hooks off, so
+// one the script put in sol2's default-handler global would loop for ever. Each
+// pending __close runs as the stop unwinds, so 15 000 of them, in Lua or a C
+// function over a long list, would each get a budget of their own.
+struct Escape {
+  std::string setup;
+  std::string run;
+};
+
+// The global sol2 keeps its default message handler in ("sol." and a nut and
+// bolt emoji), as a Lua expression.
+constexpr std::string_view kSolsMessageHandler = R"(_G["sol.\240\159\148\169"])";
+
+constexpr std::string_view kNestsClosers = R"(
+  local function nest(depth)
+    local guard <close> = closer
+    if depth > 0 then nest(depth - 1) end
+    while true do end
+  end
+)";
+
+std::vector<Escape> Escapes() {
+  return {
+      Escape{.setup = std::string(kSolsMessageHandler) + " = function() while true do end end",
+             .run = "while true do end"},
+      Escape{.setup = "closer = setmetatable({}, {__close = function() "
+                      "local sum = 0 for i = 1, 90000 do sum = sum + i end end})" +
+                      std::string(kNestsClosers),
+             .run = "nest(15000)"},
+      Escape{.setup = "closer = setmetatable({}, {__close = table.concat}) for i = 1, 50000 do closer[i] = 'x' end" +
+                      std::string(kNestsClosers),
+             .run = "nest(15000)"},
+  };
+}
+
+// Requirements: US-22
+TEST_F(PolicyTest, NothingAHookSetsUpEscapesItsInstructionLimit) {
+  for (const Escape& escape : Escapes()) {
+    const std::string rules = escape.setup + "\nfunction on_tick() " + escape.run + " end";
+
+    const auto [log, took] = WithinADeadline([&] {
+      World world = WithAlice(WithRules(rules));
+      testing::internal::CaptureStdout();
+      const auto start = std::chrono::steady_clock::now();
+      world.Tick(Walking(), kTick);
+      const auto elapsed = std::chrono::steady_clock::now() - start;
+      return std::pair{testing::internal::GetCapturedStdout(), elapsed};
+    });
+
+    EXPECT_NE(log.find("instruction limit"), std::string::npos) << escape.setup << "\n" << log;
+    EXPECT_LT(took, std::chrono::seconds(1)) << escape.setup;
+  }
+}
+
+// Requirements: US-22
+TEST_F(PolicyTest, NothingATopLevelSetsUpEscapesItsInstructionLimit) {
+  for (const Escape& escape : Escapes()) {
+    const std::string rules = escape.setup + "\n" + escape.run;
+
+    const auto [engine, took] = WithinADeadline([&] {
+      const auto start = std::chrono::steady_clock::now();
+      auto loaded = Policy::Load(rules);
+      return std::pair{std::move(loaded), std::chrono::steady_clock::now() - start};
+    });
+
+    ASSERT_FALSE(engine.has_value()) << escape.setup;
+    EXPECT_NE(engine.error().message.find("instruction limit"), std::string::npos) << engine.error().message;
+    EXPECT_LT(took, std::chrono::seconds(1)) << escape.setup;
+  }
+}
+
+// One VM instruction runs each of these to its end, however long that takes,
+// so the instruction limit cannot bound them: the sandbox leaves them out.
+constexpr std::string_view kUnboundedByTheLimit[] = {
+    "table.move({1}, 1, 1, 2)", "string.find('a', 'a')",      "string.match('a', 'a')",
+    "string.gmatch('a', 'a')",  "string.gsub('a', 'a', 'b')", "('a'):find('a')",
+};
+
+// The library functions the memory limit or the instruction limit bounds stay.
+// Requirements: US-22
+TEST_F(PolicyTest, AHookHasNoLibraryFunctionWhoseWorkEscapesTheInstructionLimit) {
+  World control = WithAlice(WithRules(R"(
+    function on_tick()
+      local list = {3, 1, 2}
+      table.sort(list)
+      local joined = string.rep('x', 2) .. string.format('%d', 1) .. table.concat(list)
+      if joined ~= 'xx1123' then error(joined) end
+    end
+  )"));
+  EXPECT_EQ(LogOfTicks(control, 1), "");
+
+  for (const std::string_view call : kUnboundedByTheLimit) {
+    World world = WithAlice(WithRules("function on_tick() " + std::string(call) + " end"));
+
+    const std::string log = LogOfTicks(world, 1);
+
+    EXPECT_NE(log.find("attempt to call a nil value"), std::string::npos) << call << "\n" << log;
+  }
+}
+
+// Requirements: US-22
+TEST_F(PolicyTest, AScriptThatCallsALibraryFunctionTheLimitCannotBoundAtItsTopLevelDoesNotLoad) {
+  const auto control = Policy::Load("local unused = string.rep('x', 2) .. table.concat({1, 2})");
+  EXPECT_TRUE(control.has_value());
+
+  for (const std::string_view call : kUnboundedByTheLimit) {
+    const auto engine = Policy::Load("local unused = " + std::string(call));
+
+    ASSERT_FALSE(engine.has_value()) << call;
+    EXPECT_NE(engine.error().message.find("attempt to call a nil value"), std::string::npos) << engine.error().message;
+  }
+}
+
+// What a failing hook logs is one line: Lua's message, with no stack traceback.
+// Requirements: US-22
+TEST_F(PolicyTest, AFailingHookLogsLuasMessageWithoutATraceback) {
+  World world = WithAlice(WithRules("function on_tick() error('boom') end"));
+
+  const std::string log = LogOfTicks(world, 1);
+
+  EXPECT_NE(log.find("boom"), std::string::npos) << log;
+  EXPECT_EQ(log.find("stack traceback"), std::string::npos) << log;
 }
 
 // Neither sees the other's globals, whichever is loaded first (ADR-0039).

@@ -45,6 +45,10 @@ agent = [
     { name = "augusta-agent" },
     { name = "pytest" },
 ]
+checks = [
+    { name = "pytest" },
+    { name = "pyyaml" },
+]
 dev = [
     { name = "augusta-agent" },
     { name = "augusta-pack" },
@@ -68,6 +72,10 @@ wireshark = [
 agent = [
     { name = "augusta-agent", editable = "agent" },
     { name = "pytest", specifier = ">=8" },
+]
+checks = [
+    { name = "pytest", specifier = ">=8" },
+    { name = "pyyaml", specifier = ">=6" },
 ]
 dev = [
     { name = "augusta-agent", editable = "agent" },

@@ -89,12 +89,17 @@ format; ADR-0019, ADR-0023, ADR-0040 and ADR-0044 are amended to match.
   rotation along the shorter arc; then composes the joints onto the root from
   the root down (ADR-0044). The root is kept apart because it is the body's
   position and facing, which interpolate as a client shows them.
-- **Culling stays conservative.** The reach that discards a candidate before its
-  triangles are tested (ADR-0044) is taken from the pose being judged: each
-  Hitbox's furthest point from its joint, measured when the character is loaded,
-  added to how far that pose holds the joint from the root, plus a margin. It
-  holds whatever a Clip does with the joints, with nothing to measure over every
-  Clip.
+- **Culling stays conservative, and comes before composing.** The reach that
+  discards a candidate before its triangles are tested (ADR-0044) is taken from
+  the pose being judged: each Hitbox's furthest point from its joint, measured
+  when the character is loaded, added to how far that pose holds the joint from
+  the root, plus a margin. Lag compensation culls first by a coarser reach, from
+  the interpolated root alone, so a candidate a round passes far from has none
+  of its joints composed: a bound over every pose the Hitbox history has kept,
+  each joint as far from its parent as any kept tick held it, stretched as far
+  as the skeleton's scales stretch anything. Both hold whatever a Clip does with
+  the joints, with nothing to measure over every Clip, and the coarse one never
+  discards a candidate the pose's own would keep.
 - **The root carries the position and the facing alone.** The skeleton's root is
   where the body's position puts it, turned about the vertical by its yaw
   (ADR-0040); the stance does not scale it. How low a body is in a stance is

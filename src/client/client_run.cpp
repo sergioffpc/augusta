@@ -13,6 +13,7 @@
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_io.hpp>
 
+#include "augusta/application.h"
 #include "augusta/crash.h"
 #include "augusta/gpu_crash_dump_files.h"
 #include "augusta/hardware.h"
@@ -64,7 +65,7 @@ Run TakeRun(const std::optional<std::filesystem::path>& directory) {
   return run;
 }
 
-Run BeginRun(Run run) {
+Run BeginRun(Run run, const std::optional<application::MimallocFacts>& mimalloc) {
   if (run.log_file) {
     run.log_file = StartLogFile(*std::move(run.log_file));
   } else {
@@ -75,7 +76,9 @@ Run BeginRun(Run run) {
         [directory = *run.directory, id = run.id](std::uint32_t n) { return GpuDumpPath(directory, id, n); });
   }
   LOG_INFO("subsystem=client event=starting version={} {}", EngineVersion(), DescribeBuild());
-  LOG_INFO("subsystem=client event=hardware {}", hardware::DescribeMachine(hardware::QueryMachine()));
+  LOG_INFO("subsystem=client event=hardware {} {}", hardware::DescribeMachine(hardware::QueryMachine()),
+           hardware::DescribeAllocator(
+               mimalloc.transform([](const application::MimallocFacts& facts) { return facts.version; })));
   const std::vector<hardware::Gpu> gpus = hardware::QueryGpus();
   if (gpus.empty()) {
     LOG_WARN("subsystem=client event=gpu_unknown");
