@@ -143,6 +143,14 @@ void Overwrite(std::vector<std::byte>& archive, std::size_t offset, Value value)
   std::memcpy(archive.data() + offset, &value, sizeof(value));
 }
 
+AssetEntry AnimationSkeletonEntry(std::span<const std::byte> archive) {
+  const auto blob = augusta::assets::EncodeAnimationSkeletonBlob(archive);
+  EXPECT_TRUE(blob.has_value());
+  return {.type = AssetType::kAnimationSkeleton,
+          .path = augusta::assets::CharacterAnimationSkeletonPath(kCharacter),
+          .data = blob.value_or(std::vector<std::byte>{})};
+}
+
 AssetEntry ClipEntry(std::string_view role, float stride_length, std::vector<std::byte> archive) {
   std::vector<augusta::assets::FootContact> contacts;
   if (stride_length > 0.0F) {
@@ -173,13 +181,10 @@ AssetEntry WeaponSocketEntry(std::string_view left_hand = "Root/LeftLeg/Foot",
 class ClipsTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    const auto skeleton = augusta::assets::EncodeAnimationSkeletonBlob(SkeletonArchiveOf(Soldier().joints));
     const auto transitions = augusta::assets::EncodeStanceTransitionsBlob(
         {.standing_crouching = 0.25F, .standing_prone = 0.8F, .crouching_prone = 0.6F});
-    ASSERT_TRUE(skeleton.has_value() && transitions.has_value());
-    entries_ = {{.type = AssetType::kAnimationSkeleton,
-                 .path = augusta::assets::CharacterAnimationSkeletonPath(kCharacter),
-                 .data = *skeleton},
+    ASSERT_TRUE(transitions.has_value());
+    entries_ = {AnimationSkeletonEntry(SkeletonArchiveOf(Soldier().joints)),
                 {.type = AssetType::kStanceTransitions,
                  .path = augusta::assets::CharacterStanceTransitionsPath(kCharacter),
                  .data = *transitions}};
@@ -196,6 +201,12 @@ class ClipsTest : public ::testing::Test {
     std::erase_if(entries_, [path](const AssetEntry& entry) { return entry.path == path; });
   }
   void RemoveClip(std::string_view role) { Remove(augusta::assets::CharacterClipPath(kCharacter, role)); }
+
+  // Replaces the Character's ozz-animation Skeleton.
+  void ReplaceAnimationSkeleton(std::span<const std::byte> archive) {
+    Remove(augusta::assets::CharacterAnimationSkeletonPath(kCharacter));
+    entries_.push_back(AnimationSkeletonEntry(archive));
+  }
 
   // Replaces the Clip of role.
   void Replace(std::string_view role, std::vector<std::byte> archive) {
@@ -339,12 +350,7 @@ TEST_F(ClipsTest, AnAnimationSkeletonWithMoreJointsThanNamesIsRefused) {
   constexpr std::size_t kJoints = 1 + sizeof("ozz-skeleton") + sizeof(std::uint32_t);
   auto archive = SkeletonArchiveOf(Soldier().joints);
   Overwrite(archive, kJoints, std::int32_t{1024});
-  Remove(augusta::assets::CharacterAnimationSkeletonPath(kCharacter));
-  const auto skeleton = augusta::assets::EncodeAnimationSkeletonBlob(archive);
-  ASSERT_TRUE(skeleton.has_value());
-  entries_.push_back({.type = AssetType::kAnimationSkeleton,
-                      .path = augusta::assets::CharacterAnimationSkeletonPath(kCharacter),
-                      .data = *skeleton});
+  ReplaceAnimationSkeleton(archive);
 
   const auto clips = Load();
 
@@ -380,14 +386,9 @@ TEST_F(ClipsTest, ACharacterWithoutAnAnimationSkeletonIsRefused) {
 
 // Requirements: US-22
 TEST_F(ClipsTest, AnAnimationSkeletonWhoseJointsAreNotTheCharactersIsRefused) {
-  Remove(augusta::assets::CharacterAnimationSkeletonPath(kCharacter));
   auto joints = Soldier().joints;
   joints[2].name = "Root/Neck";
-  const auto skeleton = augusta::assets::EncodeAnimationSkeletonBlob(SkeletonArchiveOf(joints));
-  ASSERT_TRUE(skeleton.has_value());
-  entries_.push_back({.type = AssetType::kAnimationSkeleton,
-                      .path = augusta::assets::CharacterAnimationSkeletonPath(kCharacter),
-                      .data = *skeleton});
+  ReplaceAnimationSkeleton(SkeletonArchiveOf(joints));
 
   const auto clips = Load();
 

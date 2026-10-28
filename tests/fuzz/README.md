@@ -65,19 +65,15 @@ cmake --build --preset linux --target augusta_capture_read_seeds
 The `pack_load` seeds are packs without their trailer: a trailer the fuzzer
 mutated would fail verification before `Load` parses anything, so the target
 writes a valid one itself ([pack_load_target.h](pack_load_target.h)). A pack
-that loads then has every asset the engine reads from one resolved: each path of
-the example scenario as every type of asset and the rifle, then each Character
-the pack lists (the example's when the list does not resolve) as the server's
-content loading reads it: its Hitboxes bound to its Skeleton, its eye, its
-ozz-animation Skeleton, Clips, stance transitions and weapon socket each
-resolved, and its Clips loaded (`animation::LoadClips`), so ozz-animation's
-archive parsing is fuzzed too. The seeds are the golden packs in
-`tests/fixtures/example-packs`, which hold no texture, and a pack of one texture
-that `WritePack` writes. [pack_load_seeds_test.cpp](pack_load_seeds_test.cpp)
-fails when they drift from the golden packs or from what `WritePack` writes, and
-when a golden seed no longer loads its Characters' Clips or the texture seed its
-texture. After regenerating the golden packs, or a deliberate change to the pack
-format, rewrite the seeds:
+that loads then has every asset the engine reads from one resolved, the Clips
+through ozz-animation's archives included, as `ResolveEverything` declares. The
+seeds are the golden packs in `tests/fixtures/example-packs`, which hold no
+texture, and a pack of one texture that `WritePack` writes.
+[pack_load_seeds_test.cpp](pack_load_seeds_test.cpp) fails when they drift from
+the golden packs or from what `WritePack` writes, and when a golden seed no
+longer loads its Characters' Clips or the texture seed its texture. After
+regenerating the golden packs, or a deliberate change to the pack format,
+rewrite the seeds:
 
 ```bash
 cmake --build --preset linux --target augusta_pack_load_seeds

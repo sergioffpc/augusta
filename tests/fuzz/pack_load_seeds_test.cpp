@@ -24,7 +24,7 @@
 // from them too; the texture seed is what WritePack writes.
 namespace {
 
-using augusta::pack_load_fuzz::GlobalTestKey;
+using augusta::pack_load_fuzz::GoldenPackKey;
 using augusta::pack_load_fuzz::kTexturePath;
 using augusta::pack_load_fuzz::LoadSigned;
 using augusta::pack_load_fuzz::Reached;
@@ -76,7 +76,7 @@ std::vector<char> TextureSeed() {
        .path = std::string(kTexturePath),
        .data = blob.value_or(std::vector<std::byte>{})},
   };
-  EXPECT_TRUE(augusta::assets::WritePack(path, entries, GlobalTestKey().private_key).has_value());
+  EXPECT_TRUE(augusta::assets::WritePack(path, entries, GoldenPackKey().private_key).has_value());
   std::vector<char> seed = WithoutTrailer(ReadFile(path));
   std::error_code ignored;
   std::filesystem::remove(path, ignored);

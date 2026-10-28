@@ -69,16 +69,14 @@ ClipLoadError Counting(ClipPart part, ClipLoadCause cause, std::size_t count, st
   return refusal;
 }
 
-// Whether body, what follows an Object's tag in an archive that input reads
-// from its start, is the version ozz loads and exactly the size its counts
-// give. ozz's Load trusts those counts: it allocates by them and reads them
-// unchecked, so a count the archive does not hold aborts it or sizes its
-// allocation.
+// Whether body, what follows an Object's tag in an archive, is of the version
+// ozz loads and exactly the size its counts give, read through input, which
+// reads the archive from body's start.
 template <typename Object>
-bool Fits(ozz::io::IArchive& input, std::span<const std::byte> body);
+bool CountsFitBody(ozz::io::IArchive& input, std::span<const std::byte> body);
 
 template <>
-bool Fits<ozz::animation::Animation>(ozz::io::IArchive& input, std::span<const std::byte> body) {
+bool CountsFitBody<ozz::animation::Animation>(ozz::io::IArchive& input, std::span<const std::byte> body) {
   // The version, the duration, the track count, then the name's length and
   // ten key counts, as Animation::Load reads them.
   constexpr std::uint64_t kHeader = 14 * sizeof(std::uint32_t);
@@ -116,11 +114,12 @@ bool Fits<ozz::animation::Animation>(ozz::io::IArchive& input, std::span<const s
 }
 
 template <>
-bool Fits<ozz::animation::Skeleton>(ozz::io::IArchive& input, std::span<const std::byte> body) {
-  // The version, the joint count, then the names' length, as Skeleton::Load
+bool CountsFitBody<ozz::animation::Skeleton>(ozz::io::IArchive& input, std::span<const std::byte> body) {
+  // The version and the joint count, then the names' length, as Skeleton::Load
   // reads them.
-  constexpr std::uint64_t kHeader = 3 * sizeof(std::uint32_t);
-  if (body.size() < 2 * sizeof(std::uint32_t)) {
+  constexpr std::uint64_t kEmpty = 2 * sizeof(std::uint32_t);
+  constexpr std::uint64_t kHeader = kEmpty + sizeof(std::int32_t);
+  if (body.size() < kEmpty) {
     return false;
   }
   std::uint32_t version = 0;
@@ -132,7 +131,7 @@ bool Fits<ozz::animation::Skeleton>(ozz::io::IArchive& input, std::span<const st
     return false;
   }
   if (joints == 0) {
-    return body.size() == 2 * sizeof(std::uint32_t);
+    return body.size() == kEmpty;
   }
   if (body.size() < kHeader) {
     return false;
@@ -153,26 +152,41 @@ bool Fits<ozz::animation::Skeleton>(ozz::io::IArchive& input, std::span<const st
   return size == body.size();
 }
 
+// Writes archive into stream, then rewinds it to archive's start.
+void Fill(ozz::io::MemoryStream& stream, std::span<const std::byte> archive) {
+  stream.Write(archive.data(), archive.size());
+  stream.Seek(0, ozz::io::Stream::kSet);
+}
+
+// Whether archive is an ozz-animation archive of an Object that ozz loads
+// without trusting a count the archive does not hold. ozz's Load allocates by
+// those counts and reads them unchecked, so one the archive does not hold
+// aborts it or sizes its allocation.
+template <typename Object>
+bool Loadable(std::span<const std::byte> archive) {
+  // The endianness byte, which IArchive reads unchecked on construction.
+  if (archive.empty()) {
+    return false;
+  }
+  ozz::io::MemoryStream stream;
+  Fill(stream, archive);
+  ozz::io::IArchive input(&stream);
+  if (!input.TestTag<Object>()) {
+    return false;
+  }
+  stream.Seek(ozz::io::internal::Tag<const Object>::kTagLength, ozz::io::Stream::kCurrent);
+  return CountsFitBody<Object>(input, archive.subspan(static_cast<std::size_t>(stream.Tell())));
+}
+
 // object out of archive, an ozz-animation archive of one; nullopt when it is none.
 template <typename Object>
 std::optional<Object> Unarchive(std::span<const std::byte> archive) {
-  // The endianness byte, which IArchive reads unchecked on construction.
-  if (archive.empty()) {
+  if (!Loadable<Object>(archive)) {
     return std::nullopt;
   }
   ozz::io::MemoryStream stream;
-  stream.Write(archive.data(), archive.size());
-  stream.Seek(0, ozz::io::Stream::kSet);
+  Fill(stream, archive);
   ozz::io::IArchive input(&stream);
-  if (!input.TestTag<Object>()) {
-    return std::nullopt;
-  }
-  const int tag = stream.Tell();
-  stream.Seek(ozz::io::internal::Tag<const Object>::kTagLength, ozz::io::Stream::kCurrent);
-  if (!Fits<Object>(input, archive.subspan(static_cast<std::size_t>(stream.Tell())))) {
-    return std::nullopt;
-  }
-  stream.Seek(tag, ozz::io::Stream::kSet);
   Object object;
   input >> object;
   return object;

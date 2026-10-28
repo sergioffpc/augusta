@@ -23,7 +23,7 @@ struct TestKey {
 };
 
 /// The test key, read once per process; aborts when it cannot be read.
-[[nodiscard]] const TestKey& GlobalTestKey();
+[[nodiscard]] const TestKey& GoldenPackKey();
 
 /// The path of the texture seed's one texture, which ResolveEverything resolves
 /// as a texture.
@@ -39,7 +39,6 @@ struct Reached {
   /// The Clips of every Character the pack lists loaded, as the server loads
   /// them: each one's ozz Skeleton and Clip archives parsed.
   bool clips_loaded = false;
-  /// The texture at kTexturePath resolved.
   bool texture_resolved = false;
 };
 
@@ -47,7 +46,7 @@ struct Reached {
 /// type, then reads each Character the pack lists (the example's when the list
 /// does not resolve) as the server's content loading does: its Hitboxes bound
 /// to its Skeleton, its eye, and its Clips (animation::LoadClips).
-Reached ResolveEverything(const assets::Pack& pack);
+[[nodiscard]] Reached ResolveEverything(const assets::Pack& pack);
 
 }  // namespace augusta::pack_load_fuzz
 

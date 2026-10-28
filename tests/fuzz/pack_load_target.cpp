@@ -135,7 +135,7 @@ bool LoadCharacter(const assets::Pack& pack, std::string_view character) {
 
 }  // namespace
 
-const TestKey& GlobalTestKey() {
+const TestKey& GoldenPackKey() {
   static const TestKey key{
       .public_key = ReadKey<assets::Ed25519PublicKey>(std::filesystem::path(AUGUSTA_EXAMPLE_PACKS) / "test.pub"),
       .private_key = ReadKey<assets::Ed25519PrivateKey>(std::filesystem::path(AUGUSTA_EXAMPLE_PACKS) / "test.key"),
@@ -149,7 +149,7 @@ std::expected<assets::Pack, assets::LoadError> LoadSigned(std::span<const std::u
     std::abort();
   }
 
-  const std::vector<std::byte> trailer = Sign(unsigned_pack, GlobalTestKey().private_key);
+  const std::vector<std::byte> trailer = Sign(unsigned_pack, GoldenPackKey().private_key);
   {
     std::ofstream out(scratch.path, std::ios::binary | std::ios::trunc);
     out.write(reinterpret_cast<const char*>(unsigned_pack.data()), static_cast<std::streamsize>(unsigned_pack.size()));
@@ -158,7 +158,7 @@ std::expected<assets::Pack, assets::LoadError> LoadSigned(std::span<const std::u
       std::abort();
     }
   }
-  return assets::Pack::Load(scratch.path, GlobalTestKey().public_key);
+  return assets::Pack::Load(scratch.path, GoldenPackKey().public_key);
 }
 
 Reached ResolveEverything(const assets::Pack& pack) {
