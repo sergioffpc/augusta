@@ -83,6 +83,8 @@ _NO_CPE = {
     "libxml2": "a build tool's: wayland-scanner's and libxcb's",
     "libxslt": "a build tool's: libxcb's",
     "libiconv": "a build tool's: libxml2's",
+    "bzip2": "a build tool's: libxml2's",
+    "liblzma": "a build tool's: libxml2's",
     "xcb-proto": "a build tool: libxcb's",
     "xcb-util-m4": "a build tool: libxcb's",
     "xorg-macros": "a build tool: the X11 ports'",
@@ -109,17 +111,9 @@ _NO_CPE = {
     "atl": "a build tool: llvm's, from Visual Studio",
     "vulkan-loader": "a test port: the client uses the system's loader",
     # The manifest's agent feature, which CI turns on for the Agents' Python
-    # module (tools/agent) and a release doesn't: pybind11 and the python3
-    # port it pulls in, with python3's own dependencies.
+    # module (tools/agent) and a release doesn't: pybind11, without the python3
+    # port (ports/pybind11).
     "pybind11": "the Agents' module's, linked into no executable shipped",
-    "python3": "pybind11's, linked into no executable shipped",
-    "bzip2": "python3's and libxml2's, linked into no executable shipped",
-    "expat": "python3's, linked into no executable shipped",
-    "libffi": "python3's, linked into no executable shipped",
-    "liblzma": "python3's and libxml2's, linked into no executable shipped",
-    "mpdecimal": "python3's, linked into no executable shipped",
-    "sqlite3": "python3's, linked into no executable shipped",
-    "zstd": "python3's and ktx's, linked into no executable shipped",
     # The manifest's pack feature, which CI turns on beside the agent feature
     # for the cooker's Python module (tools/pack) and a release doesn't: its
     # mesh and texture libraries, with ktx's own dependencies.
@@ -130,6 +124,7 @@ _NO_CPE = {
     "egl-registry": "ktx's, linked into no executable shipped",
     "cxxopts": "ktx's tools', linked into no executable shipped",
     "fmt": "ktx's tools', linked into no executable shipped",
+    "zstd": "ktx's, linked into no executable shipped",
     # What the client's zip ships beside it (ADR-0058): the MSVC runtime.
     "msvc-runtime": "its CPE, microsoft:visual_c++, names Visual Studio's "
     "releases, not the runtime's file versions",

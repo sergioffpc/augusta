@@ -14,3 +14,7 @@ and re-applies the diff.
   (`portfile.cmake` lists what it changes).
 - `nvrhi`: macOS arm64 among its `supports`, for its Vulkan backend on Mesa's
   KosmicKrisp (docs/ENGINEERING.md).
+- `pybind11`: without its `python3` dependency, whose port builds CPython with
+  msbuild on Windows (ADR-0079). The port is headers and CMake files alone, and
+  the tools' modules (tools/agent, tools/pack) are built against the Python
+  `cmake/AugustaToolsPython.cmake` finds, not one vcpkg installs.

@@ -317,12 +317,13 @@ add_subdirectory(src/server)
 if(AUGUSTA_TOOLS)
   if(AUGUSTA_TOOLS_PYTHON)
     set(PYTHON_EXECUTABLE "${AUGUSTA_TOOLS_PYTHON}")
-    # Classic mode, not FindPython: vcpkg's python3 port, which pybind11's
-    # depends on, wraps FindPython to give a module its own Python's headers
-    # and libraries, a 3.14 where the tools environment's is the 3.12 its USD
-    # wheels need. pybind11 warns that CMP0148 is not set, whatever this
-    # project sets it to, and goes on with the FindPythonInterp/FindPythonLibs
-    # it ships.
+    # Classic mode, not FindPython: pybind11 asks that interpreter itself for
+    # its headers, and on Windows for the pythonXY.lib beside them, in the
+    # installation a venv's interpreter comes from. vcpkg installs no Python:
+    # the pybind11 overlay (ports/pybind11) drops vcpkg's python3 port, which
+    # builds CPython with msbuild on Windows (ADR-0079). pybind11 warns that
+    # CMP0148 is not set, whatever this project sets it to, and goes on with
+    # the FindPythonInterp/FindPythonLibs it ships.
     find_package(pybind11 CONFIG REQUIRED)
   endif()
   add_subdirectory(tools/agent)
