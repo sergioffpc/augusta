@@ -72,7 +72,9 @@ std::vector<char> TextureSeed() {
                                      ("augusta_pack_load_texture_seed_" + std::to_string(std::random_device{}()) +
                                       std::string(augusta::assets::kPackExtension));
   const std::vector<augusta::assets::AssetEntry> entries = {
-      {.type = augusta::assets::AssetType::kTexture, .path = std::string(kTexturePath), .data = blob.value_or({})},
+      {.type = augusta::assets::AssetType::kTexture,
+       .path = std::string(kTexturePath),
+       .data = blob.value_or(std::vector<std::byte>{})},
   };
   EXPECT_TRUE(augusta::assets::WritePack(path, entries, GlobalTestKey().private_key).has_value());
   std::vector<char> seed = WithoutTrailer(ReadFile(path));
