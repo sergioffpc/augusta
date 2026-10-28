@@ -24,7 +24,9 @@ made it:
   Session ID, the UUID's 16 bytes as Match start carries it (ADR-0038), its
   Character, by its name in the scenario's manifest (ADR-0042), and where the
   Match start spawned it, on the position grid. A player's place in this order
-  is its number in the capture, from 1.
+  is its number in the capture, from 1. A Match holds at most
+  `limits::kMaxPlayers` players, so a capture holds no more Joins: a reader
+  refuses one with more as malformed, as it does records out of order.
 - **Commands**: each Command a player sent, at the offset of the tick the
   server's command queue handed it to SimulationWorld, its Seen time's tick
   turned into an offset the same way. Only what the client sent: the movement
