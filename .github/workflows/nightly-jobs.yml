@@ -90,9 +90,12 @@ jobs:
         # A target's corpus generation, bumped when its input's format changes
         # so the night starts over from the seeds rather than from inputs of the
         # old format: the protocol's moved to Protocol Buffers and capture v3.
+        # A payload is fuzzed up to the most bytes a server decodes,
+        # protocol::kMaxClientPayloadSize (ADR-0038, Untrusted input).
         include:
           - target: protocol_decode
             generation: -v2
+            max_len: 4096
           - target: capture_read
             generation: -v2
     env:
@@ -125,12 +128,15 @@ jobs:
             ${{ env.CORPUS_KEY }}
       - name: Fuzz
         # New inputs go to the cached corpus, never into the committed seeds;
-        # a crash lands in fuzz-crashes/ and fails the job.
+        # a crash lands in fuzz-crashes/ and fails the job. A target with no
+        # max_len takes the length libFuzzer guesses from its corpus.
+        env:
+          MAX_LEN: ${{ matrix.max_len }}
         run: |
           mkdir -p "$CORPUS" fuzz-crashes
           "build/x64-linux-fuzz/tests/fuzz/augusta_${{ matrix.target }}_fuzz" \
             -max_total_time=1800 -timeout=5 -artifact_prefix="fuzz-crashes/${{ matrix.target }}-" \
-            "$CORPUS" "tests/fuzz/corpus/${{ matrix.target }}"
+            ${MAX_LEN:+"-max_len=$MAX_LEN"} "$CORPUS" "tests/fuzz/corpus/${{ matrix.target }}"
       - name: Minimize the corpus
         # Keeps only the inputs that add coverage, so the cache stops growing
         # once coverage does. Skipped after a crash: the step above already failed.

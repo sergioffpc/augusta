@@ -118,10 +118,17 @@ enum class MessageTypeWire : std::uint8_t {
 #endif
 };
 
-/// The most bytes one payload holds: the largest message the transport sends
-/// (GameNetworkingSockets' k_cbMaxSteamNetworkingSocketsMessageSizeSend,
-/// ADR-0003). Every message the protocol bounds encodes within it.
-inline constexpr std::size_t kMaxPayloadSize = std::size_t{512} * 1024;
+/// Server to client: the most bytes one payload holds, the largest message the
+/// transport sends (GameNetworkingSockets'
+/// k_cbMaxSteamNetworkingSocketsMessageSizeSend, ADR-0003). Every message a
+/// server sends that the protocol bounds encodes within it.
+inline constexpr std::size_t kMaxServerPayloadSize = std::size_t{512} * 1024;
+
+/// Client to server: the most bytes one payload holds. Every message a client
+/// sends encodes well within it, the largest in a few hundred bytes, so a
+/// server refuses a larger payload before it parses a byte of it (ADR-0038,
+/// Untrusted input).
+inline constexpr std::size_t kMaxClientPayloadSize = std::size_t{4} * 1024;
 
 /// Longest engine version string a JoinRequestWire may carry, in bytes.
 inline constexpr std::size_t kMaxEngineVersionLength = 32;
@@ -707,6 +714,9 @@ enum class DecodeError : std::uint8_t {
   kOutOfRange,
   /// A string or list field is longer than the protocol allows.
   kFieldTooLong,
+  /// The payload is longer than any message its receiver takes in: a server
+  /// refuses one over kMaxClientPayloadSize before Decode parses it.
+  kPayloadTooLarge,
 };
 
 /// Why a message or record is not encoded: a field holds what the protocol
