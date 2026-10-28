@@ -135,6 +135,20 @@ else()
   add_compile_options($<$<CONFIG:Release>:-g>)
 endif()
 
+# No floating-point contraction, on every platform and build type (ADR-0004):
+# the shared core's arithmetic, a rifle's recoil among it, must round the same
+# on the arm64 server and the x64 client, and clang's default fuses a multiply
+# and an add into one instruction where the target has it, aarch64, and not
+# where it does not, baseline x86-64. Every target, not the shared core's
+# alone: its headers' inline arithmetic is compiled into whatever includes
+# them, the tests that pin its results among them. clang-cl defaults to
+# contraction too and takes the flag through /clang:.
+if(MSVC)
+  add_compile_options(/clang:-ffp-contract=off)
+else()
+  add_compile_options(-ffp-contract=off)
+endif()
+
 # Binary hardening: the platform's standard mitigations, on every target, so
 # that a memory-safety bug in augustad, which parses what any peer sends, or in
 # augustac is harder to turn into control of the process. tests/ checks both

@@ -49,6 +49,15 @@ start as an error. So:
   arithmetic, the same on both sides, which PhysX is not. So a rifle that
   differs at all was predicted wrong, and it is corrected with no tolerance. A
   rifle or a body that differs restores and replays both.
+- **Every target is built without floating-point contraction.** The same
+  arithmetic is the same on both sides only if it rounds the same: the client
+  runs on x86-64 and the server on x86-64 or arm64 (NFR-04), and a compiler that
+  fuses a multiply and an add into one instruction rounds once where the two
+  round twice. So every target is compiled with contraction off
+  (`-ffp-contract=off`), whatever the platform and the build type: not the
+  shared core's alone, since its headers' inline arithmetic is compiled into
+  whatever includes them. PhysX's own arithmetic is not built here and is not
+  covered; nothing compares it exactly.
 - **An acknowledgement is acted on once.** The server repeats the same
   acknowledged sequence while it waits for input, with a state that has moved
   on; that entry is already gone from the history, so nothing is restored or
