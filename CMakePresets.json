@@ -11,8 +11,7 @@
       "toolset": { "value": "host=x64", "strategy": "external" },
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_CXX_COMPILER": "clang-cl",
-        "CMAKE_LINKER_TYPE": "LLD",
+        "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "${sourceDir}/cmake/LlvmWindowsToolchain.cmake",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       },
       "condition": {
