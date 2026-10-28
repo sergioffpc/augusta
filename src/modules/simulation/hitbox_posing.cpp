@@ -18,21 +18,6 @@ namespace augusta::simulation {
 
 namespace {
 
-// What Reach::Of adds to how far a pose holds a character's hitboxes: far above
-// the rounding of posing them, or of Reaches, anywhere on the position grid, so
-// culling by it never drops a hitbox a bullet crosses.
-constexpr float kReachMargin = 0.1F;
-
-// Whether segment passes within reach of center.
-bool Reaches(const ballistics::Segment& segment, const math::Vec3& center, float reach) {
-  const math::Vec3 along = segment.to - segment.from;
-  const float length_squared = math::Dot(along, along);
-  const float fraction =
-      length_squared > 0.0F ? std::clamp(math::Dot(center - segment.from, along) / length_squared, 0.0F, 1.0F) : 0.0F;
-  const math::Vec3 apart = center - (segment.from + (along * fraction));
-  return math::Dot(apart, apart) <= reach * reach;
-}
-
 // A posed hitbox's Surface id: its place in the tick's posed hitboxes, counted
 // from one past kMapSurface, so no posed hitbox ever shares the Map's id.
 physics::SurfaceId SurfaceOf(std::size_t posed_hitbox) {
@@ -48,16 +33,20 @@ std::size_t PosedHitboxOf(physics::SurfaceId surface) {
 
 }  // namespace
 
+float ExtentOf(const hitbox::CharacterHitbox& hitbox) {
+  float extent = 0.0F;
+  for (const ballistics::Triangle& triangle : hitbox.triangles) {
+    for (const math::Vec3& point : {triangle.a, triangle.b, triangle.c}) {
+      extent = std::max(extent, math::Length(point));
+    }
+  }
+  return extent;
+}
+
 Reach::Reach(std::span<const hitbox::CharacterHitbox> hitboxes) {
   extents_.reserve(hitboxes.size());
   for (const hitbox::CharacterHitbox& hitbox : hitboxes) {
-    float radius = 0.0F;
-    for (const ballistics::Triangle& triangle : hitbox.triangles) {
-      for (const math::Vec3& point : {triangle.a, triangle.b, triangle.c}) {
-        radius = std::max(radius, math::Length(point));
-      }
-    }
-    extents_.push_back(Extent{.joint = hitbox.joint, .radius = radius});
+    extents_.push_back(Extent{.joint = hitbox.joint, .radius = ExtentOf(hitbox)});
   }
 }
 
@@ -91,9 +80,19 @@ void HitboxPosing::BeginBullet(double time, const ballistics::Segment& segment) 
   bullet_targets_.clear();
 }
 
+bool HitboxPosing::Reaches(const math::Vec3& center, float reach) const {
+  const ballistics::Segment& segment = bullet_segment_;
+  const math::Vec3 along = segment.to - segment.from;
+  const float length_squared = math::Dot(along, along);
+  const float fraction =
+      length_squared > 0.0F ? std::clamp(math::Dot(center - segment.from, along) / length_squared, 0.0F, 1.0F) : 0.0F;
+  const math::Vec3 apart = center - (segment.from + (along * fraction));
+  return math::Dot(apart, apart) <= reach * reach;
+}
+
 void HitboxPosing::Consider(EntityId target, std::span<const hitbox::CharacterHitbox> hitboxes, float reach,
                             const hitbox::Pose& pose, std::span<const math::Mat4> joints) {
-  if (!Reaches(bullet_segment_, pose.position, reach)) {
+  if (!Reaches(pose.position, reach)) {
     return;
   }
   // Posed now if no bullet of this tick has asked for them at this moment yet.

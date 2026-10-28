@@ -367,6 +367,12 @@ std::vector<ReplayListing> ListedOf(const std::vector<ReplayListing>& listings) 
 
 PeerMessage ReadFrom(PeerId from, std::span<const std::byte> payload) {
   PeerMessage message{.from = from, .bytes = payload.size(), .type = {}, .message = std::nullopt};
+  // Protobuf builds every element of a payload before Decode bounds a list, so
+  // one larger than any client message is refused unparsed (ADR-0038).
+  if (payload.size() > protocol::kMaxClientPayloadSize) {
+    message.type = std::unexpected(std::string(protocol::DescribeDecodeError(protocol::DecodeError::kPayloadTooLarge)));
+    return message;
+  }
   const std::expected<protocol::MessageWire, protocol::DecodeError> decoded = protocol::Decode(payload);
   if (!decoded.has_value()) {
     message.type = std::unexpected(std::string(protocol::DescribeDecodeError(decoded.error())));
@@ -378,12 +384,16 @@ PeerMessage ReadFrom(PeerId from, std::span<const std::byte> payload) {
 }
 
 struct Server::Impl {
+  // The transport closes the connection of a peer that sends more than a
+  // client message may hold before such a payload reaches ReadFrom, whose own
+  // bound holds whatever the transport lets through (ADR-0038).
 #if AUGUSTA_DEBUG_TOOLS
   Impl(const Endpoint& local, const TransportOptions& options)
-      : network(networking::Endpoint{.address = local.address}, options.faults, options.tap) {}
+      : network(networking::Endpoint{.address = local.address}, options.faults, options.tap,
+                protocol::kMaxClientPayloadSize) {}
 #else
   Impl(const Endpoint& local, const TransportOptions& options)
-      : network(networking::Endpoint{.address = local.address}, options.faults) {}
+      : network(networking::Endpoint{.address = local.address}, options.faults, protocol::kMaxClientPayloadSize) {}
 #endif
 
   networking::Server network;

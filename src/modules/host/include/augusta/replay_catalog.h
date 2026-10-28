@@ -60,7 +60,8 @@ class ReplayCatalog {
 
   /// Every capture of the directory it replays, ordered by name, which for
   /// one server's captures is when they started (CaptureFileName). A file
-  /// that does not read as a capture is left out.
+  /// that does not read as a capture (capture::ReadCapture) is left out, and
+  /// logged with why the first time it is read, not again until it changes.
   [[nodiscard]] std::vector<ReplayListing> List();
 
   /// The capture of the directory's listing named name, read, if it is one

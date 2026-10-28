@@ -187,7 +187,8 @@ struct World::Impl {
   void OnInterpolation(float delta_time) {
     const nvtx3::scoped_range range{"Interpolation"};
     shown = BlendTicks(input->ticks.previous, input->ticks.latest, input->ticks.fraction);
-    local_offset = correction.Update(shown.total_correction, delta_time);
+    local_offset = correction.Update(input->ticks.previous.total_correction, input->ticks.latest.total_correction,
+                                     input->ticks.fraction, delta_time);
 
     server_clock.Advance(delta_time);
     const std::span<const WorldSnapshot> updates = input->updates;

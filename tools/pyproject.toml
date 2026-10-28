@@ -16,6 +16,10 @@ agent = ["augusta-agent", "pytest>=8"]
 pack = ["augusta-pack", "pytest>=8"]
 # The Wireshark dissector's test, which needs no package (tools/wireshark).
 wireshark = ["pytest>=8"]
+# The repository's own Python checks and their tests (checks/, scripts/), and
+# the CI scripts that read YAML: run from this lock, as CI runs everything
+# Python, so no version of theirs is picked at run time.
+checks = ["pytest>=8", "pyyaml>=6"]
 docs = ["mkdocs==1.6.1", "mkdocs-material==9.7.7"]
 
 [tool.uv]

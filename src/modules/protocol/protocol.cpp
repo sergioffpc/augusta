@@ -197,6 +197,8 @@ std::string_view DescribeDecodeError(DecodeError error) {
       return "number outside its grid or wider than its field";
     case DecodeError::kFieldTooLong:
       return "string or list field longer than allowed";
+    case DecodeError::kPayloadTooLarge:
+      return "payload larger than any message its receiver takes in";
   }
   return "unknown decode error";
 }

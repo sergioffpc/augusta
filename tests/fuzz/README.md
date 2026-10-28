@@ -76,8 +76,10 @@ A pull request runs each target for about 60 seconds (CI's `fuzz` job), and a
 crash fails it with the crashing input uploaded as a run artifact. The nightly
 (`nightly.yml`'s `fuzz` job) runs each for about 30 minutes, starting from the
 corpus earlier nights grew: it lives in the Actions cache, minimized after each
-run, and never in the repository. A crash there fails the nightly, uploads the
-input, and reaches the `nightly-failure` issue. Locally, in the dev container:
+run, and never in the repository. The nightly fuzzes `protocol_decode` with
+payloads up to `protocol::kMaxClientPayloadSize` (`-max_len`), the most bytes a
+server decodes. A crash there fails the nightly, uploads the input, and reaches
+the `nightly-failure` issue. Locally, in the dev container:
 
 ```bash
 cmake --preset linux-fuzz

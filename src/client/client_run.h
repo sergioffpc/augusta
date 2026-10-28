@@ -6,6 +6,7 @@
 
 #include <boost/uuid/uuid.hpp>
 
+#include "augusta/application.h"
 #include "augusta/crash.h"
 
 /// \file
@@ -43,10 +44,11 @@ Run TakeRun(const std::optional<std::filesystem::path>& directory);
 /// crash's Aftermath dumps go to the Run's
 /// `dumps/augustac-<run-id>-<n>.nv-gpudmp` (gpu_crash_dump_files.h). Then
 /// writes the Run's first lines: the version and build (augusta/version.h),
-/// the machine, and each of its GPUs and their drivers (augusta/hardware.h).
-/// The Renderer later names the GPU it chooses. Call once, after TakeRun and
-/// the crash handler's install.
-Run BeginRun(Run run);
+/// the machine and the allocator, mimalloc as main() read it or the platform's
+/// when it read none (a sanitizer build, ADR-0078), and each of its GPUs and
+/// their drivers (augusta/hardware.h). The Renderer later names the GPU it
+/// chooses. Call once, after TakeRun and the crash handler's install.
+Run BeginRun(Run run, const std::optional<application::MimallocFacts>& mimalloc);
 
 /// What the crash handler is given of run: its lines carry the Run ID and reach
 /// the Run's log too. On Windows a crash writes the Run's minidump; on Linux,

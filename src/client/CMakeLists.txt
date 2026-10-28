@@ -206,12 +206,13 @@ target_link_libraries(augusta_client_run_files PUBLIC Boost::uuid PRIVATE august
 augusta_set_module_scope(augusta_client_run_files CLIENT_ONLY)
 
 # The start of one Run (see client_run.h): its Run ID, its log file and its
-# first lines, before augustac reads its config.
+# first lines, before augustac reads its config. Its header names what main()
+# read of mimalloc (application.h), which the first lines name.
 add_library(augusta_client_run STATIC client_run.cpp)
 target_include_directories(augusta_client_run PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augusta_client_run
-  PUBLIC augusta_crash Boost::uuid
+  PUBLIC augusta_application augusta_crash Boost::uuid
   PRIVATE
     augusta_client_run_files
     augusta_hardware
@@ -224,6 +225,9 @@ augusta_set_module_scope(augusta_client_run CLIENT_ONLY)
 # augustac's entry point: it runs the client Runtime above behind the
 # application boundary (ADR-0033, ADR-0060).
 add_executable(augustac main.cpp)
+# mimalloc serves its malloc, linked first so that on Windows its DLL loads
+# first (ADR-0078, cmake/Mimalloc.cmake).
+augusta_link_mimalloc(augustac)
 target_link_libraries(
   augustac
   PRIVATE
@@ -256,8 +260,10 @@ if(WIN32)
   # `cmake --install --component client` stages the client's whole runtime folder,
   # which a release zips (scripts/stage-client.sh): augustac.exe, the DLLs it
   # loads, and the MSVC runtime, so it starts on a Windows with no Visual C++
-  # redistributable. CMake resolves the DLLs itself, as for augustad: vcpkg's, and
-  # Aftermath's when the build has it (cmake/Aftermath.cmake). The renderer's
+  # redistributable. CMake resolves the DLLs itself, as for augustad: vcpkg's,
+  # mimalloc's (mimalloc-debug.dll in a Debug build) and the
+  # mimalloc-redirect.dll it imports among them (ADR-0078), and Aftermath's when
+  # the build has it (cmake/Aftermath.cmake). The renderer's
   # shaders are in augustac.exe, and the Vulkan loader is the system's, which
   # augustac loads at runtime rather than imports (ADR-0059).
   # EXCLUDE_FROM_ALL: a plain `cmake --install`, augustad's (Dockerfile,
@@ -306,10 +312,10 @@ else()
   # `cmake --install --component client` stages the client's runtime folder,
   # which a release tars (scripts/stage-client.sh): augustac and the shared
   # libraries it links that are not the system's. vcpkg links its ports
-  # statically, and the toolchain the C++ runtime (cmake/LlvmToolchain.cmake),
-  # so the folder bundles only a shared library a dependency ships alone:
-  # Aftermath's when the build has it. What it links from the system is held to
-  # an allowlist by the staging check.
+  # statically, mimalloc too (ADR-0078), and the toolchain the C++ runtime
+  # (cmake/LlvmToolchain.cmake), so the folder bundles only a shared library a
+  # dependency ships alone: Aftermath's when the build has it. What it links
+  # from the system is held to an allowlist by the staging check.
   # EXCLUDE_FROM_ALL: a plain `cmake --install`, augustad's (Dockerfile,
   # `make install`), leaves it out.
   install(

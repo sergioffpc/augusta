@@ -12,20 +12,26 @@ on:
     paths-ignore: ["docs/**", "**.md"]
   schedule:
     - cron: "0 6 * * 1"
+# Read-only: the job declares the writes it needs.
 permissions:
   contents: read
-  security-events: write
-  packages: read
-  # Deleting superseded cache entries (.github/actions/prune-cache).
-  actions: write
 jobs:
   analyze:
     # Pinned rather than ubuntu-latest - see the comment on ci.yml's
     # client-x64-windows job.
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      # Uploading the analysis.
+      security-events: write
+      # Downloading CodeQL's query packs, which GHCR serves.
+      packages: read
+      # Deleting superseded cache entries (.github/actions/prune-cache).
+      actions: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           submodules: true
       # The same toolchain and vcpkg binary cache as ci.yml's Linux jobs: the
       # clang the linux preset compiles with (ADR-0008), so the packages they

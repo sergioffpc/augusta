@@ -3108,7 +3108,9 @@ TEST_F(ImpossibleCommandTest, BytesThatAreNoMessageChangeNothing) {
       truncated_state,
       commands_with_trailing_bytes,
       truncated_commands,
-      BytesWire(64 * 1024, std::byte{0xAB}),
+      // As large as a client's payload may be; a larger one ends the
+      // connection (APayloadLargerThanAnyClientMessageEndsItsSendersConnection).
+      BytesWire(protocol::kMaxClientPayloadSize, std::byte{0xAB}),
       BytesWire(1000, std::byte{static_cast<unsigned char>(protocol::MessageTypeWire::kCommands)}),
   };
   const Told before = Now();
@@ -3482,6 +3484,27 @@ TEST_F(MisbehaviourTest, APeerFloodingMalformedMessagesIsDisconnectedAndItsBodyL
 #if AUGUSTA_LOG_ACTIVE_LEVEL <= AUGUSTA_LOG_LEVEL_DEBUG
   EXPECT_NE(log.find(" misbehaving=1"), std::string::npos) << log;
 #endif
+}
+
+// One payload larger than any client message ends its sender's connection at
+// once, before the server parses it, and its body leaves the Match.
+// Requirements: NFR-05
+TEST_F(MisbehaviourTest, APayloadLargerThanAnyClientMessageEndsItsSendersConnection) {
+  Session& honest = Join();
+  RawClient raw(host_.ListenEndpoint());
+  ASSERT_TRUE(raw.Join(host_));
+  ASSERT_TRUE(DriveIntoMatch(host_, All(), &raw));
+  Run(kSettleTicks);
+  ASSERT_EQ(honest.GetServerView()->authoritative->bodies.size(), 2U);
+
+  raw.SendPayload(augusta::protocol::BytesWire(augusta::protocol::kMaxClientPayloadSize + 1, std::byte{0xAB}));
+  Run(kSettleTicks, Forward());
+  raw.Serve();
+
+  EXPECT_EQ(raw.GetConnectionState(), ConnectionState::kDisconnected);
+  EXPECT_EQ(honest.GetConnectionState(), ConnectionState::kConnected);
+  EXPECT_EQ(honest.GetServerView()->GetPhase(), Phase::kMatch);
+  EXPECT_EQ(honest.GetServerView()->authoritative->bodies.size(), 1U);
 }
 
 // Requirements: US-15, NFR-05

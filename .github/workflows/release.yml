@@ -6,13 +6,9 @@ on:
   # nightly jobs as a tag does, and publishes nothing. How a change to this
   # workflow, or to the nightly jobs it calls, is tried before it merges.
   workflow_dispatch:
+# Read-only: a job that needs more declares it, and only it holds it.
 permissions:
-  contents: write
-  packages: write
-  # Signing the binaries' provenance and SBOM attestations (Sigstore, through
-  # the workflow's OIDC token) and storing them in the repository.
-  id-token: write
-  attestations: write
+  contents: read
 env:
   VCPKG_BINARY_SOURCES: "clear;nuget,GitHubPackages,readwrite"
 # Each build job restores the sccache cache its ci.yml or nightly counterpart
@@ -42,12 +38,23 @@ env:
 jobs:
   client-x64-windows:
     runs-on: windows-2025
+    permissions:
+      contents: read
+      # Pushing the vcpkg binaries it builds to the GitHub Packages NuGet feed
+      # (VCPKG_BINARY_SOURCES above, setup-windows-vcpkg).
+      packages: write
+      # Signing the binaries' provenance and SBOM attestations (Sigstore,
+      # through the workflow's OIDC token) and storing them in the repository.
+      id-token: write
+      attestations: write
     # Git Bash, as everywhere else: no PowerShell in the repository.
     defaults:
       run:
         shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Fetch the submodules
         # As ci.yml's client-x64-windows job does: vcpkg and NVTX alone.
         run: git submodule update --init --depth 1 third_party/vcpkg third_party/nvtx
@@ -115,12 +122,19 @@ jobs:
     # builds it, on the runner the server's x64 binary is built on, whose glibc
     # is the oldest the tarball runs on (README).
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      # Signing the binaries' provenance and SBOM attestations (Sigstore,
+      # through the workflow's OIDC token) and storing them in the repository.
+      id-token: write
+      attestations: write
     # See ci.yml's server-x64-linux job for why this isn't the NuGet feed.
     env:
       VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           submodules: true
       - uses: ./.github/actions/setup-linux-build
         with:
@@ -203,6 +217,12 @@ jobs:
           - arch: arm64
             runner: ubuntu-26.04-arm
     runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      # Signing the binaries' provenance and SBOM attestations (Sigstore,
+      # through the workflow's OIDC token) and storing them in the repository.
+      id-token: write
+      attestations: write
     # See ci.yml's server-x64-linux job for why this isn't the workflow-level
     # NuGet default: nuget.exe runs under Mono here, and Mono's
     # untrusted-by-default cert store fails every restore/push with
@@ -213,6 +233,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           submodules: true
       # The clang the linux preset compiles with (ADR-0008), and the rest of
       # the Linux toolchain.
@@ -295,8 +316,13 @@ jobs:
     if: github.event_name == 'push'
     needs: [client-x64-windows, client-x64-linux, server, nightly]
     runs-on: ubuntu-26.04
+    permissions:
+      # Creating the GitHub Release and attaching the binaries to it.
+      contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # The tag's CHANGELOG.md section, cut on its release/* or hotfix/* branch
       # (docs/ENGINEERING.md, Git Workflow); a tag without one publishes nothing.
       # The Linux client's baseline follows them, as the README states it.

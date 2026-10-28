@@ -738,6 +738,47 @@ TEST_F(NetworkingTest, TheDefaultTimeoutIsBackOnceTheConditionsAreReset) {
   EXPECT_EQ(client.GetState(), ConnectionState::kConnected);
 }
 
+// A server takes in a message as large as its receive bound; a peer that sends
+// one byte more has its connection closed by the transport, and the message
+// never arrives.
+// Requirements: NFR-05
+TEST_F(NetworkingTest, APeerThatSendsMoreThanTheServersReceiveBoundIsDisconnected) {
+  constexpr std::size_t kBound = 1024;
+  Server server(Endpoint{.address = kLoopbackAnyPort}, nullptr, kBound);
+  Client client;
+  client.Connect(server.LocalEndpoint());
+  std::optional<PeerId> peer;
+  const auto poll_both = [&] {
+    client.PumpEvents();
+    AcceptFirstPeer(server, peer);
+  };
+  ASSERT_TRUE(PollUntil(poll_both, [&] { return client.GetState() == ConnectionState::kConnected; }));
+
+  ASSERT_EQ(client.Send(MakePayload(std::string(kBound, 'a')), Reliability::kReliable), SendOutcome::kAccepted);
+  std::vector<PeerMessage> at_bound;
+  ASSERT_TRUE(ReceiveAtLeastOne(poll_both, [&] { return server.ReceiveMessages().value(); }, at_bound));
+  EXPECT_EQ(at_bound.front().payload.size(), kBound);
+
+  ASSERT_EQ(client.Send(MakePayload(std::string(kBound + 1, 'b')), Reliability::kReliable), SendOutcome::kAccepted);
+  std::vector<PeerMessage> over_bound;
+  bool lost = false;
+  PollUntil(
+      [&] {
+        client.PumpEvents();
+        const std::vector<PeerMessage> messages = server.ReceiveMessages().value();
+        over_bound.insert(over_bound.end(), messages.begin(), messages.end());
+      },
+      [&] {
+        for (const auto& event : server.PumpEvents()) {
+          lost = lost || event.type == PeerEventType::kDisconnected;
+        }
+        return lost;
+      });
+
+  EXPECT_TRUE(lost);
+  EXPECT_TRUE(over_bound.empty());
+}
+
 // ---- Local transport failures (ADR-0033) ----
 
 // A transport the process cannot start ends it before any runtime exists.
