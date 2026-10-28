@@ -2,8 +2,9 @@
 # upstream portfile with PX_BUILDPVDRUNTIME on, so the port also builds
 # OmniPVD's runtime (PVDRuntime_64) and installs the headers that write a
 # recording, for debug.physics_recording, and with macOS arm64, for the client's
-# development build there (ports/README.md). Changes from upstream are marked
-# "augusta:". Dropped once upstream builds the runtime and macOS.
+# development build there (ports/README.md), and with Windows built by Ninja,
+# not msbuild (ADR-0079). Changes from upstream are marked "augusta:". Dropped
+# once upstream builds the runtime, macOS and Windows without msbuild.
 ###############################################################################################################
 # Port for Omniverse PhysX 5 - NVIDIA Corporation
 # Written by Marco Alesiani <malesiani@nvidia.com>
@@ -201,9 +202,13 @@ list(APPEND platformCMakeParams -DPHYSX_PHYSXGPU_PATH=$ENV{PM_PhysXGpu_PATH}/bin
 set(cmakeParams ${platformCMakeParams} ${common_params} ${cmakeParams})
 
 # Finally invoke physx's CMake to configure the PhysX project
+# augusta: no WINDOWS_USE_MSBUILD. msbuild ships only with Visual Studio and
+# ignores the chainloaded toolchain; Ninja, as on Linux and macOS, takes it.
+# PhysX's Windows platform files set per-configuration output directories,
+# which a single-configuration generator honours for its one configuration, so
+# the artifacts land in the same bin/<platform>/{debug,release} as before.
 vcpkg_cmake_configure(
     SOURCE_PATH "${SOURCE_PATH}/physx/compiler/public"
-    WINDOWS_USE_MSBUILD
     OPTIONS
         -DCMAKE_TOOLCHAIN_FILE=${VCPKG_CHAINLOAD_TOOLCHAIN_FILE}
         ${PLATFORM_OPTIONS}
