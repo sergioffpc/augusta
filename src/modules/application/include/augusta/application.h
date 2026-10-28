@@ -1,6 +1,8 @@
 #ifndef AUGUSTA_APPLICATION_H_
 #define AUGUSTA_APPLICATION_H_
 
+#include <compare>
+#include <cstdint>
 #include <expected>
 #include <filesystem>
 #include <functional>
@@ -26,7 +28,11 @@
 /// Reading the command line and config file comes first, outside the
 /// Program, since the log level is set from it; its failure is concluded the
 /// same way. On Windows it raises the system timer resolution for as long as
-/// the phases run (TimerResolution, ADR-0005), for both executables.
+/// the phases run (TimerResolution, ADR-0005), for both executables. Before
+/// even that, it decides from the facts main() read whether the process may
+/// start at all: whether mimalloc serves it (CheckMimalloc, ADR-0078), and, for
+/// augustac on Windows, whether the MSVC runtime it loaded is recent enough
+/// (CheckMsvcRuntime, ADR-0079).
 namespace augusta::application {
 
 /// How an executable ended: nullopt when it stopped as asked (the window was
@@ -157,6 +163,49 @@ enum class MimallocError {
 /// with no log and no Run: executable (e.g. "augustad") and why mimalloc does
 /// not serve it.
 [[nodiscard]] std::string DescribeMimallocError(std::string_view executable, MimallocError error);
+
+/// A Windows DLL's file version, as its version resource gives it
+/// (VS_FIXEDFILEINFO), e.g. 14.44.35211.0; ordered part by part.
+struct FileVersion {
+  std::uint16_t major = 0;
+  std::uint16_t minor = 0;
+  std::uint16_t build = 0;
+  std::uint16_t revision = 0;
+
+  friend auto operator<=>(const FileVersion&, const FileVersion&) = default;
+};
+
+/// What augustac's main() read of the MSVC runtime first thing on Windows,
+/// before its command line (ADR-0079): the facts its check decides from.
+struct MsvcRuntimeFacts {
+  /// The file version of the msvcp140.dll the process loaded, or nullopt when
+  /// it could not be read.
+  std::optional<FileVersion> loaded;
+  /// The oldest it runs on: the msvcp140.dll the redistributable of the pinned
+  /// sysroot's toolset ships, which versions.env pins (MSVC_REDIST_VERSION).
+  FileVersion minimum;
+};
+
+/// Why the MSVC runtime cannot serve the process, as CheckMsvcRuntime finds it.
+enum class MsvcRuntimeError {
+  /// msvcp140.dll's version could not be read.
+  kUnreadable,
+  /// msvcp140.dll is older than the minimum: the STL augustac was built with
+  /// may call what it does not have, or lay out what it shares differently
+  /// (the 17.10 STL's std::mutex crashes against an older one).
+  kTooOld,
+};
+
+/// Whether the loaded MSVC runtime is recent enough, from facts: nothing when
+/// it is, else why not.
+[[nodiscard]] std::expected<void, MsvcRuntimeError> CheckMsvcRuntime(const MsvcRuntimeFacts& facts);
+
+/// The one line main() writes to stderr for error before it exits nonzero,
+/// with no log and no Run: executable (e.g. "augustac"), why the runtime it
+/// loaded cannot serve it, and the Visual C++ Redistributable to install, at
+/// least facts' minimum.
+[[nodiscard]] std::string DescribeMsvcRuntimeError(std::string_view executable, const MsvcRuntimeFacts& facts,
+                                                   MsvcRuntimeError error);
 
 /// The event Conclude writes for a failure, `event=<name>`. What reads a log
 /// back for how its Run ended (the client's run_files.h) matches it.

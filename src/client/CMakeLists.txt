@@ -261,6 +261,22 @@ augusta_stage_pvd_runtime(augustac)
 # What each platform's augustac needs beyond its code: its debug info, and its
 # runtime folder, which a release archives (ADR-0055, ADR-0058).
 if(WIN32)
+  # The oldest msvcp140.dll augustac starts on (ADR-0079), as versions.env pins
+  # it, so one bump moves the startup check with the sysroot: main.cpp reads the
+  # loaded one's file version (version.lib) and refuses an older one.
+  set(versions_env "${CMAKE_SOURCE_DIR}/scripts/bootstrap/versions.env")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${versions_env}")
+  file(STRINGS "${versions_env}" msvc_redist REGEX "^MSVC_REDIST_VERSION=")
+  if(NOT msvc_redist MATCHES "^MSVC_REDIST_VERSION=([0-9]+)\\.([0-9]+)\\.([0-9]+)\\.([0-9]+)$")
+    message(FATAL_ERROR "${versions_env} pins no MSVC_REDIST_VERSION=<major>.<minor>.<build>.<revision>")
+  endif()
+  target_compile_definitions(
+    augustac
+    PRIVATE
+      "AUGUSTA_MSVC_REDIST_VERSION={.major=${CMAKE_MATCH_1},.minor=${CMAKE_MATCH_2},.build=${CMAKE_MATCH_3},.revision=${CMAKE_MATCH_4}}"
+  )
+  target_link_libraries(augustac PRIVATE version)
+
   # Release writes augustac.pdb beside augustac.exe, what a released client's
   # crash or GPU crash dump is read with (ADR-0055). /DEBUG turns /OPT:REF and
   # /OPT:ICF off unless they are named, so they are: the code is Release's own.

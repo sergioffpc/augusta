@@ -21,11 +21,16 @@
 namespace {
 
 using augusta::application::CheckMimalloc;
+using augusta::application::CheckMsvcRuntime;
 using augusta::application::Conclude;
 using augusta::application::DescribeMimallocError;
+using augusta::application::DescribeMsvcRuntimeError;
 using augusta::application::Execute;
+using augusta::application::FileVersion;
 using augusta::application::MimallocError;
 using augusta::application::MimallocFacts;
+using augusta::application::MsvcRuntimeError;
+using augusta::application::MsvcRuntimeFacts;
 using augusta::application::Outcome;
 using augusta::application::Program;
 using augusta::failure::ClassifiedFailure;
@@ -328,6 +333,61 @@ TEST(ApplicationTest, AProcessWhoseBlockIsOutsideMimallocsHeapIsRefusedWithOneLi
   EXPECT_EQ(checked.error(), MimallocError::kBlockOutsideHeap);
   EXPECT_EQ(DescribeMimallocError("augustac", checked.error()),
             "augustac: mimalloc does not serve this process: a block malloc handed out is outside mimalloc's heap");
+}
+
+// The msvcp140.dll the redistributable of the pinned sysroot's toolset ships
+// (ADR-0079), as versions.env pins it.
+constexpr FileVersion kMinimumMsvcRuntime{.major = 14, .minor = 44, .build = 35211, .revision = 0};
+
+// A runtime as new as the pinned sysroot's STL is what augustac is built for.
+// Requirements: NFR-18
+TEST(ApplicationTest, AnMsvcRuntimeOfTheMinimumVersionServesTheProcess) {
+  const MsvcRuntimeFacts facts{.loaded = kMinimumMsvcRuntime, .minimum = kMinimumMsvcRuntime};
+
+  EXPECT_TRUE(CheckMsvcRuntime(facts).has_value());
+}
+
+// A newer runtime serves it too, judged part by part: a later minor version
+// is newer whatever its build number.
+// Requirements: NFR-18
+TEST(ApplicationTest, AnMsvcRuntimeNewerThanTheMinimumServesTheProcess) {
+  const MsvcRuntimeFacts facts{.loaded = FileVersion{.major = 14, .minor = 50, .build = 35000, .revision = 0},
+                               .minimum = kMinimumMsvcRuntime};
+
+  EXPECT_TRUE(CheckMsvcRuntime(facts).has_value());
+}
+
+// The 17.10 STL's std::mutex crashes against an older msvcp140.dll, so one
+// older than the minimum by a single part is refused, naming both versions and
+// where to get the one to install.
+// Requirements: NFR-18
+TEST(ApplicationTest, AnMsvcRuntimeOlderThanTheMinimumIsRefusedWithOneLineNamingTheVersionToInstall) {
+  const MsvcRuntimeFacts facts{.loaded = FileVersion{.major = 14, .minor = 44, .build = 35210, .revision = 9},
+                               .minimum = kMinimumMsvcRuntime};
+
+  const auto checked = CheckMsvcRuntime(facts);
+
+  ASSERT_FALSE(checked.has_value());
+  EXPECT_EQ(checked.error(), MsvcRuntimeError::kTooOld);
+  EXPECT_EQ(DescribeMsvcRuntimeError("augustac", facts, checked.error()),
+            "augustac: the Visual C++ runtime it loaded (msvcp140.dll 14.44.35210.9) is older than the "
+            "14.44.35211.0 it needs: install the Visual C++ Redistributable (x64) 14.44.35211.0 or newer, from "
+            "https://aka.ms/vc14/vc_redist.x64.exe");
+}
+
+// A runtime whose version cannot be read may be any, so it is refused too,
+// naming the version to install.
+// Requirements: NFR-18
+TEST(ApplicationTest, AnMsvcRuntimeWhoseVersionCannotBeReadIsRefusedWithOneLineNamingTheVersionToInstall) {
+  const MsvcRuntimeFacts facts{.loaded = std::nullopt, .minimum = kMinimumMsvcRuntime};
+
+  const auto checked = CheckMsvcRuntime(facts);
+
+  ASSERT_FALSE(checked.has_value());
+  EXPECT_EQ(checked.error(), MsvcRuntimeError::kUnreadable);
+  EXPECT_EQ(DescribeMsvcRuntimeError("augustac", facts, checked.error()),
+            "augustac: the version of the Visual C++ runtime it loaded (msvcp140.dll) cannot be read: install the "
+            "Visual C++ Redistributable (x64) 14.44.35211.0 or newer, from https://aka.ms/vc14/vc_redist.x64.exe");
 }
 
 }  // namespace
