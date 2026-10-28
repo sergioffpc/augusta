@@ -14,7 +14,8 @@ and re-applies the diff.
   (`portfile.cmake` lists what it changes). On Windows it builds with Ninja
   through the chainloaded toolchain, not msbuild, and its platform files, which
   set the compile flags whole for `cl`, drop `/MP` and take the triplet's flags
-  after their own, so `clang-cl` builds it (ADR-0079).
+  after their own, so `clang-cl` builds it (ADR-0079); `windows-clang-cl.patch`
+  and a UTF-8 `PhysXFoundation.rc` fix what only `cl` accepted.
 - `nvrhi`: macOS arm64 among its `supports`, for its Vulkan backend on Mesa's
   KosmicKrisp (docs/ENGINEERING.md).
 - `libsodium`: Windows built by CMake and Ninja, statically, from the

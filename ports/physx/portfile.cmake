@@ -18,9 +18,18 @@
 # GPU-support code paths that its CPU-only build no longer compiles without
 # (no PhysXGpu loads there: its loader is empty), a binary platform tag, and
 # OmniPVD's runtime, loaded through dlopen as on Linux, by its .dylib name.
+# windows-clang-cl.patch makes them build under clang-cl, which defines
+# _MSC_VER, so PhysX takes it for cl: three vector functions read __m128's
+# lanes through cl's own m128_u16/m128_u32 members, written with SSE2
+# intrinsics instead; and PhysX_64.dll no longer delay-loads PhysXFoundation
+# and PhysXCommon, which lld-link refuses where clang-cl imports a PX_ASSERT's
+# function-local static from them. The DLLs sit beside augusta's executables,
+# so a plain load finds them.
 set(physx_patches "")
 if(VCPKG_TARGET_IS_OSX)
   set(physx_patches macos-arm64.patch)
+elseif(VCPKG_TARGET_IS_WINDOWS)
+  set(physx_patches windows-clang-cl.patch)
 endif()
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
@@ -43,6 +52,14 @@ if(VCPKG_TARGET_IS_WINDOWS)
     [[SET(PHYSX_COMMON_FLAGS "/d2Zi+ /MP /WX /W4 /GF /GS- /Gd ${PHYSX_FP_MODE} /Oy ${PHYSX_WARNING_DISABLES}")]]
     [[SET(PHYSX_COMMON_FLAGS "/WX /W4 /GF /GS- /Gd ${PHYSX_FP_MODE} /Oy ${PHYSX_WARNING_DISABLES} ${VCPKG_CXX_FLAGS}")]]
   )
+
+  # augusta: PhysXFoundation.rc alone of PhysX's resource scripts is UTF-16,
+  # which clang, preprocessing it for llvm-rc, does not read: rewritten as
+  # UTF-8 (a patch cannot, git apply takes UTF-16 for binary).
+  set(physx_foundation_rc "${SOURCE_PATH}/physx/source/compiler/windows/resource/PhysXFoundation.rc")
+  file(STRINGS "${physx_foundation_rc}" physx_foundation_rc_lines ENCODING UTF-16LE)
+  list(JOIN physx_foundation_rc_lines "\n" physx_foundation_rc_text)
+  file(WRITE "${physx_foundation_rc}" "${physx_foundation_rc_text}\n")
 endif()
 
 if(VCPKG_LIBRARY_LINKAGE STREQUAL "static")

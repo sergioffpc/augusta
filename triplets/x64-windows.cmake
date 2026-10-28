@@ -28,9 +28,17 @@ if(PORT MATCHES "^(llvm|mesa)$")
 endif()
 
 # PhysX builds with /W4 /WX, clang's -Wall -Wextra -Werror under clang-cl, and
-# puts these flags after its own (ports/physx): each warning clang 21 adds that
-# its code trips is turned off by name, as in triplets/x64-linux.cmake.
+# puts these flags after its own (ports/physx): each warning its code trips is
+# turned off by name, as in triplets/x64-linux.cmake. In this order: those clang
+# 21 adds; those PhysX's own Linux platform files turn off for clang too; and
+# those its Windows code trips, which only cl had built.
 if(PORT STREQUAL "physx")
-  set(VCPKG_C_FLAGS "-Wno-missing-include-dirs -Wno-unique-object-duplication -Wno-nrvo -Wno-error=format")
+  set(
+    VCPKG_C_FLAGS
+    "-Wno-missing-include-dirs -Wno-unique-object-duplication -Wno-nrvo -Wno-error=format \
+-Wno-deprecated -Wno-inconsistent-missing-override -Wno-invalid-offsetof -Wno-unused-but-set-variable -Wno-unused-function -Wno-unused-private-field \
+-Wno-bitwise-instead-of-logical -Wno-missing-field-initializers -Wno-nan-infinity-disabled -Wno-reorder-ctor \
+-Wno-return-type-c-linkage -Wno-sign-compare -Wno-undefined-bool-conversion -Wno-unknown-pragmas -Wno-unused-variable"
+  )
   set(VCPKG_CXX_FLAGS "${VCPKG_C_FLAGS}")
 endif()
