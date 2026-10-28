@@ -318,13 +318,16 @@ target_link_libraries(augusta_replication_tests PRIVATE augusta_simulation GTest
 # Links PhysX, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_replication_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS simulation)
 
-add_executable(augusta_simulation_tests simulation_test.cpp)
+add_executable(augusta_simulation_tests simulation_test.cpp hitbox_history_test.cpp)
 # Links augusta_animation and ozz-animation's offline libraries for the Clips it
 # authors (clips_fixture.h).
 target_link_libraries(
   augusta_simulation_tests
   PRIVATE augusta_simulation augusta_animation ozz::animation_offline GTest::gtest GTest::gtest_main
 )
+# The Hitbox history is private to the simulation module: its test reaches its
+# header there.
+target_include_directories(augusta_simulation_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/simulation)
 # Links PhysX, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_simulation_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS simulation)
 
