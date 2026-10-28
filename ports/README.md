@@ -14,3 +14,6 @@ and re-applies the diff.
   (`portfile.cmake` lists what it changes).
 - `nvrhi`: macOS arm64 among its `supports`, for its Vulkan backend on Mesa's
   KosmicKrisp (docs/ENGINEERING.md).
+- `gamenetworkingsockets`: Windows' own BCrypt for its crypto on Windows
+  (`USE_CRYPTO=BCrypt`), so OpenSSL, whose port builds with nmake, leaves the
+  Windows graph (ADR-0079); Linux and macOS keep OpenSSL.

@@ -818,7 +818,8 @@ to NFR-07).
   client prediction + multithreading + a new networking library is a lot of new
   surface area to learn and integrate simultaneously.
 - **GameNetworkingSockets build complexity:** pulls in transitive dependencies
-  (protobuf, OpenSSL) that add cross-platform build maintenance overhead.
+  (protobuf, and OpenSSL outside Windows, which uses BCrypt) that add
+  cross-platform build maintenance overhead.
 - **No authentication of peers:** connections are encrypted, but neither side
   proves who it is, so a man-in-the-middle goes undetected. Acceptable only
   under the stated trusted-LAN assumption; certificates signed by a project
