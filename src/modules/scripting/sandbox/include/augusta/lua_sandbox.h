@@ -31,7 +31,12 @@ inline constexpr std::size_t kMemoryLimit = std::size_t{32} << 20U;
 /// limit's stop and a refused allocation are errors, and a script that could
 /// catch them would run on for ever. setmetatable refuses, with an error, a
 /// metatable that holds __gc: Lua runs a finalizer with debug hooks off and at
-/// a GC step of its own choosing, so neither limit would bound it.
+/// a GC step of its own choosing, so neither limit would bound it. No value a
+/// script sees is derived from an allocation's address: tostring of a table,
+/// function or userdata without a __tostring of its own is its type name alone,
+/// as is string.format's %s of one, and string.format refuses %p with an
+/// error. pairs over keys that are objects (tables, functions, userdata) still
+/// visits them in an order their addresses decide (ADR-0022).
 sol::state MakeSandbox();
 
 /// Lets lua run instructions more Lua instructions from now, then stops what it

@@ -1,7 +1,9 @@
 #include "augusta/lua_sandbox.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdlib>
+#include <string_view>
 
 #include <sol/sol.hpp>
 
@@ -41,6 +43,70 @@ int SetMetatableWithoutFinalizers(lua_State* state) {
     lua_pop(state, 1);
     if (finalizes) {
       return luaL_argerror(state, 2, "a metatable with __gc: the sandbox runs no finalizers");
+    }
+  }
+  lua_pushvalue(state, lua_upvalueindex(1));
+  lua_insert(state, 1);
+  lua_call(state, lua_gettop(state) - 1, 1);
+  return 1;
+}
+
+// Whether Lua's own luaL_tolstring would make the value at index into a string
+// holding its address: a table, function or userdata whose metatable holds no
+// __tostring of the script's own. A __name beside it changes only the prefix.
+bool StringOfHoldsAnAddress(lua_State* state, int index) {
+  switch (lua_type(state, index)) {
+    case LUA_TNIL:
+    case LUA_TBOOLEAN:
+    case LUA_TNUMBER:
+    case LUA_TSTRING:
+      return false;
+    default:
+      if (luaL_getmetafield(state, index, "__tostring") == LUA_TNIL) {
+        return true;
+      }
+      lua_pop(state, 1);
+      return false;
+  }
+}
+
+// tostring as the sandbox has it: Lua's own, except that what would hold an
+// address is the value's type name alone, the same in every state.
+int ToStringWithoutAddresses(lua_State* state) {
+  luaL_checkany(state, 1);
+  if (StringOfHoldsAnAddress(state, 1)) {
+    lua_pushstring(state, luaL_typename(state, 1));
+    return 1;
+  }
+  luaL_tolstring(state, 1, nullptr);
+  return 1;
+}
+
+// string.format as the sandbox has it: Lua's own, its upvalue, refusing %p,
+// which formats an address, and handing each %s that would format one the
+// value's type name instead, as tostring does. Only the conversion each spec
+// ends in is read here: Lua's own checks the rest.
+int FormatWithoutAddresses(lua_State* state) {
+  std::size_t length = 0;
+  const char* format = luaL_checklstring(state, 1, &length);
+  const std::string_view spec(format, length);
+  int argument = 1;
+  for (std::size_t at = spec.find('%'); at != std::string_view::npos; at = spec.find('%', at + 1)) {
+    ++at;
+    if (at < spec.size() && spec[at] == '%') {
+      continue;
+    }
+    at = std::min(spec.find_first_not_of("-+ #0123456789.", at), spec.size());
+    ++argument;
+    if (at == spec.size()) {
+      break;
+    }
+    if (spec[at] == 'p') {
+      return luaL_error(state, "invalid conversion '%%p' to 'format': the sandbox formats no addresses");
+    }
+    if (spec[at] == 's' && argument <= lua_gettop(state) && StringOfHoldsAnAddress(state, argument)) {
+      lua_pushstring(state, luaL_typename(state, argument));
+      lua_replace(state, argument);
     }
   }
   lua_pushvalue(state, lua_upvalueindex(1));
@@ -97,6 +163,13 @@ sol::state MakeSandbox() {
   lua_getglobal(state, "setmetatable");
   lua_pushcclosure(state, SetMetatableWithoutFinalizers, 1);
   lua_setglobal(state, "setmetatable");
+  lua_pushcfunction(state, ToStringWithoutAddresses);
+  lua_setglobal(state, "tostring");
+  lua_getglobal(state, "string");
+  lua_getfield(state, -1, "format");
+  lua_pushcclosure(state, FormatWithoutAddresses, 1);
+  lua_setfield(state, -2, "format");
+  lua_pop(state, 1);
   return lua;
 }
 

@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <filesystem>
 #include <fstream>
 #include <ios>
@@ -41,6 +42,7 @@
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/policy.h"
+#include "augusta/policy_loader.h"
 #include "augusta/prediction.h"
 #include "augusta/protocol.h"
 #include "augusta/replay_catalog.h"
@@ -66,6 +68,8 @@ using augusta::link::Endpoint;
 using augusta::math::Vec3;
 using augusta::parameters::Parameters;
 using augusta::physics::CollisionMesh;
+using augusta::policy::PolicyLoadError;
+using augusta::policy::PolicyLoadErrorCode;
 using augusta::scenario::Scenario;
 namespace protocol = augusta::protocol;
 
@@ -367,7 +371,7 @@ class ReplayServerTest : public ::testing::Test {
   void SetUp() override { augusta::logging::Init(); }
 
   // A replay server of directory_, on the scenario a capture of CaptureAKill was made on.
-  std::unique_ptr<ReplayServer> Serve(std::size_t max_viewers = 4) {
+  std::unique_ptr<ReplayServer> Serve(std::size_t max_viewers = 4, augusta::policy::PolicyMaker policy = Policy) {
     return std::make_unique<ReplayServer>(ReplayServerConfig{.tick_rate_hz = kTickRate,
                                                              .parameters = Rules(),
                                                              .listen = Endpoint{.address = kLoopbackAnyPort},
@@ -375,7 +379,7 @@ class ReplayServerTest : public ::testing::Test {
                                                              .captures = directory_.Path(),
                                                              .max_viewers = max_viewers,
                                                              .transport = {}},
-                                          TwoInALine(), Policy);
+                                          TwoInALine(), std::move(policy));
   }
 
   // Runs server and clients, ticking server each round if tick, until until
@@ -501,6 +505,47 @@ TEST_F(ReplayServerTest, AReplayRequestNamingAnythingNotInTheListingIsRefused) {
     EXPECT_EQ(viewer.Refusal(), protocol::JoinRefusalWire::kUnknownCapture) << unknown;
     EXPECT_TRUE(viewer.ReceivedOf<protocol::MatchStartWire>().empty()) << unknown;
   }
+  EXPECT_EQ(server->Viewers(), 0U);
+}
+
+// Rules that cannot load there, so no Replay could run them, stop the replay
+// server as it starts, as a pack whose rules never load does.
+// Requirements: US-21
+TEST_F(ReplayServerTest, AReplayServerWhosePolicyDoesNotLoadDoesNotStart) {
+  const augusta::policy::PolicyMaker failing = []() -> std::expected<augusta::policy::Policy, PolicyLoadError> {
+    return std::unexpected(PolicyLoadError{.code = PolicyLoadErrorCode::kScriptError, .subject = "not enough memory"});
+  };
+
+  EXPECT_THROW(static_cast<void>(Serve(4, failing)), augusta::failure::ClassifiedFailure);
+}
+
+// Each Replay loads its rules again (ADR-0051): one whose load fails is that
+// Replay's failure alone. Its viewer is closed before admission, with no Match
+// start, and the server goes on.
+// Requirements: US-21
+TEST_F(ReplayServerTest, AReplayWhosePolicyDoesNotLoadIsNotStartedAndItsViewerIsClosed) {
+  const std::string name = CaptureAKill(directory_.Path());
+  if (name.empty()) {
+    return;  // CaptureAKill reported the missing capture.
+  }
+  int loads = 0;
+  const std::unique_ptr<ReplayServer> server =
+      Serve(4, [&loads]() -> std::expected<augusta::policy::Policy, PolicyLoadError> {
+        // The first load is the server's own, as it starts.
+        if (loads++ == 0) {
+          return Policy();
+        }
+        return std::unexpected(
+            PolicyLoadError{.code = PolicyLoadErrorCode::kScriptError, .subject = "not enough memory"});
+      });
+  RawClient viewer(server->ListenEndpoint());
+  viewer.Send(RequestFor(name));
+
+  ASSERT_TRUE(RunUntil(*server, {&viewer}, [&] { return viewer.State() == ConnectionState::kDisconnected; }));
+
+  EXPECT_EQ(loads, 2);
+  EXPECT_FALSE(viewer.Refused());
+  EXPECT_TRUE(viewer.ReceivedOf<protocol::MatchStartWire>().empty());
   EXPECT_EQ(server->Viewers(), 0U);
 }
 

@@ -158,14 +158,25 @@ struct ReplayServer::Impl {
              max_viewers);
   }
 
-  [[nodiscard]] simulation::World NewWorld() const {
-    return BuildSimulation(parameters, tick_rate_hz, scenario, policy());
+  // A World of its own for one Replay, with its Game policy loaded afresh, or
+  // why that policy did not load this time.
+  [[nodiscard]] std::expected<simulation::World, policy::PolicyLoadError> NewWorld() const {
+    auto made = policy();
+    if (!made.has_value()) {
+      return std::unexpected(std::move(made.error()));
+    }
+    return BuildSimulation(parameters, tick_rate_hz, scenario, *std::move(made));
   }
 
   // listen, once a World of the scenario has been built: a Map that is
-  // rejected throws before the socket exists, so it leaves no bound port behind.
+  // rejected, or a policy that does not load, throws before the socket exists,
+  // so it leaves no bound port behind.
   [[nodiscard]] const link::Endpoint& ListenOnceTheMapBuilds(const link::Endpoint& listen) const {
-    static_cast<void>(NewWorld());
+    if (const auto world = NewWorld(); !world.has_value()) {
+      throw failure::ClassifiedFailure(failure::Failure{.code = failure::Code::kInvalidContent,
+                                                        .context = {},
+                                                        .detail = policy::DescribePolicyLoadError(world.error())});
+    }
     return listen;
   }
 
@@ -276,7 +287,8 @@ struct ReplayServer::Impl {
   // max_viewers already run. The capture is read and the World built here, on
   // the Network I/O thread and with lock, which holds mutex, let go, so no
   // tick waits on either. Only this thread adds viewers, so none joins in the
-  // meantime.
+  // meantime. A World whose Game policy does not load this time ends the
+  // request instead: the viewer is closed, unadmitted.
   void HandleReplayRequest(link::PeerId peer, const ReplayRequest& request, std::chrono::steady_clock::time_point now,
                            std::unique_lock<std::mutex>& lock) {
     if (const std::optional<JoinRefusal> refusal =
@@ -296,8 +308,19 @@ struct ReplayServer::Impl {
       return;
     }
     lock.unlock();
-    auto viewer = std::make_shared<Viewer>(Viewer{
-        .capture = request.capture, .replay = std::make_unique<Replay>(*std::move(capture), NewWorld(), characters)});
+    auto world = NewWorld();
+    if (!world.has_value()) {
+      lock.lock();
+      // This Replay's failure alone: the viewer is closed unadmitted, and the
+      // server and every other Replay go on.
+      LOG_ERROR("subsystem=replay event=replay_failed peer={} capture={} reason=\"{}\"", PeerNumber(peer),
+                request.capture, policy::DescribePolicyLoadError(world.error()));
+      Close(peer);
+      return;
+    }
+    auto viewer = std::make_shared<Viewer>(
+        Viewer{.capture = request.capture,
+               .replay = std::make_unique<Replay>(*std::move(capture), *std::move(world), characters)});
     lock.lock();
     gate.Admitted(peer);
     Send(peer, link::Encode(ToLink(Admission{.session = kViewerSession, .character = {}}, tick_rate_hz, parameters)));

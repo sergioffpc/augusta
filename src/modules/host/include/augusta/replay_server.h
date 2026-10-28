@@ -87,11 +87,13 @@ struct ReplayServerConfig {
 /// A replay server's listening socket and its Replays, without threads or a clock.
 class ReplayServer {
  public:
-  /// Builds one World of scenario first, so a Map that is rejected throws
-  /// before a socket exists, as Host's constructor does. Throws
-  /// failure::ClassifiedFailure: kInvalidContent for that Map,
-  /// kInvalidConfiguration if config.captures is not a directory, or what
-  /// link::Server's constructor throws.
+  /// Builds one World of scenario first, so a Map that is rejected, or a
+  /// policy that does not load, throws before a socket exists, as Host's
+  /// constructor does. Throws failure::ClassifiedFailure: kInvalidContent for
+  /// that Map or policy, kInvalidConfiguration if config.captures is not a
+  /// directory, or what link::Server's constructor throws. Every Replay makes
+  /// its policy afresh, and one whose policy does not load then is not started:
+  /// its viewer is closed, unadmitted.
   ReplayServer(const ReplayServerConfig& config, scenario::Scenario scenario, policy::PolicyMaker policy);
   ~ReplayServer();
 

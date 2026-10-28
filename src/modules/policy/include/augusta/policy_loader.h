@@ -40,12 +40,19 @@ std::expected<Policy, PolicyLoadError> LoadPolicy(const assets::Pack& pack);
 
 /// Makes a scenario's Game policy afresh each time it is called: every
 /// World that runs the policy needs one of its own (a replay server's
-/// every Replay, ADR-0051).
-using PolicyMaker = std::function<Policy()>;
+/// every Replay, ADR-0051). Each call loads the rules again, so each can fail
+/// as LoadPolicy does: rules that loaded once can still not load later, when
+/// their state cannot get the memory it needs.
+using PolicyMaker = std::function<std::expected<Policy, PolicyLoadError>()>;
+
+/// A PolicyMaker that loads rules, a rules script's text, on each call, unchecked
+/// beforehand: a call whose load fails gives that load's error.
+PolicyMaker PolicyMakerOf(std::string rules);
 
 /// What makes the policy LoadPolicy loads, afresh for each World that runs it
 /// (a replay server's every Replay, ADR-0051), or the error LoadPolicy gives:
-/// the rules are checked once, here, so making them again cannot fail.
+/// the rules are checked once, here, so that rules that never load stop the
+/// server at startup.
 std::expected<PolicyMaker, PolicyLoadError> LoadPolicyMaker(const assets::Pack& pack);
 
 }  // namespace augusta::policy

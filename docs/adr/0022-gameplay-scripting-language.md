@@ -34,6 +34,15 @@ keeps game policy separate from mechanism code.
   below would bound it and a finalizer that loops would hang the Simulation
   thread. Lua marks an object for finalization only as its metatable is set, so
   a `__gc` added afterwards finalizes nothing.
+- **No address reaches a script.** Where an object is allocated differs from one
+  Lua state to the next, so a script that read it could decide one way in a
+  Match and another in its Replay (ADR-0051). `tostring` of a table, function or
+  userdata without a `__tostring` of its own is its type name alone (`"table"`),
+  with no address, and so is `string.format`'s `%s` of one; `string.format`
+  refuses `%p` with an error. One address-dependent behaviour is left: `pairs`
+  (and `next`) visits keys that are objects (tables, functions, userdata) in an
+  order their addresses decide, and rules must not depend on that order.
+  Removing it would mean replacing `next`.
 - **Hooks** are global functions a script defines, called by name from
   SimulationWorld. A hook a script does not define is a no-op, and the mechanism
   decides that concern alone. The catalogue is fixed in C++ and grows only with
