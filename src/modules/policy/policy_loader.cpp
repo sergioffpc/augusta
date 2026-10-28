@@ -2,6 +2,7 @@
 
 #include <expected>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "augusta/assets.h"
@@ -20,6 +21,20 @@ std::string DescribePolicyLoadError(const PolicyLoadError& error) {
   return "the policy script " + script + " is invalid";
 }
 
+namespace {
+
+// rules loaded as the Game policy, or why they did not load.
+std::expected<Policy, PolicyLoadError> LoadRules(std::string_view rules) {
+  auto loaded = Policy::Load(rules);
+  if (!loaded) {
+    return std::unexpected(
+        PolicyLoadError{.code = PolicyLoadErrorCode::kScriptError, .subject = std::move(loaded.error().message)});
+  }
+  return *std::move(loaded);
+}
+
+}  // namespace
+
 std::expected<Policy, PolicyLoadError> LoadPolicy(const assets::Pack& pack) {
   const auto rules = pack.ResolveScript(kRulesScriptPath);
   if (!rules) {
@@ -29,12 +44,11 @@ std::expected<Policy, PolicyLoadError> LoadPolicy(const assets::Pack& pack) {
     return std::unexpected(PolicyLoadError{.code = PolicyLoadErrorCode::kUnreadable,
                                            .subject = assets::DescribeResolveError(rules.error(), "script")});
   }
-  auto loaded = Policy::Load(*rules);
-  if (!loaded) {
-    return std::unexpected(
-        PolicyLoadError{.code = PolicyLoadErrorCode::kScriptError, .subject = std::move(loaded.error().message)});
-  }
-  return *std::move(loaded);
+  return LoadRules(*rules);
+}
+
+PolicyMaker PolicyMakerOf(std::string rules) {
+  return [text = std::move(rules)] { return LoadRules(text); };
 }
 
 std::expected<PolicyMaker, PolicyLoadError> LoadPolicyMaker(const assets::Pack& pack) {
@@ -45,8 +59,7 @@ std::expected<PolicyMaker, PolicyLoadError> LoadPolicyMaker(const assets::Pack& 
   if (auto checked = LoadPolicy(pack); !checked) {
     return std::unexpected(std::move(checked.error()));
   }
-  // Loaded once already, from the same text: Load cannot fail now.
-  return PolicyMaker([text = *rules] { return *Policy::Load(text); });
+  return PolicyMakerOf(*rules);
 }
 
 }  // namespace augusta::policy

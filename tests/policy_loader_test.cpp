@@ -22,6 +22,7 @@ using augusta::assets::Pack;
 using augusta::policy::LoadPolicy;
 using augusta::policy::LoadPolicyMaker;
 using augusta::policy::PolicyLoadErrorCode;
+using augusta::policy::PolicyMakerOf;
 
 AssetEntry ScriptEntry(std::string path, std::string_view text) {
   return AssetEntry{
@@ -81,21 +82,46 @@ TEST_F(PolicyLoaderTest, EachPolicyTheMakerMakesStartsAfresh) {
   const auto make = LoadPolicyMaker(pack);
 
   ASSERT_TRUE(make.has_value()) << augusta::policy::DescribePolicyLoadError(make.error());
-  augusta::policy::Policy first = (*make)();
-  augusta::policy::Policy second = (*make)();
-  EXPECT_FALSE(EndsTheMatch(first));
-  EXPECT_TRUE(EndsTheMatch(first));
-  EXPECT_FALSE(EndsTheMatch(second));
+  auto first = (*make)();
+  auto second = (*make)();
+  ASSERT_TRUE(first.has_value() && second.has_value());
+  EXPECT_FALSE(EndsTheMatch(*first));
+  EXPECT_TRUE(EndsTheMatch(*first));
+  EXPECT_FALSE(EndsTheMatch(*second));
 }
 
 // Requirements: US-22
-TEST_F(PolicyLoaderTest, TheMakerOfRulesThatDoNotLoadIsTheirError) {
+TEST_F(PolicyLoaderTest, ThePolicyMakerOfThatDoNotLoadIsTheirError) {
   const Pack pack = MakePack("maker_broken", {ScriptEntry("rules.lua", "function on_tick(")});
 
   const auto make = LoadPolicyMaker(pack);
 
   ASSERT_FALSE(make.has_value());
   EXPECT_EQ(make.error().code, PolicyLoadErrorCode::kScriptError);
+}
+
+// Each policy a maker makes loads its rules again, so each load can fail: a
+// load that fails is that call's error, never a policy taken for loaded.
+// Requirements: US-21
+TEST_F(PolicyLoaderTest, ALoadThatFailsIsTheErrorOfTheCallThatMadeIt) {
+  const augusta::policy::PolicyMaker make = PolicyMakerOf("function on_tick(");
+
+  const auto made = make();
+
+  ASSERT_FALSE(made.has_value());
+  EXPECT_EQ(made.error().code, PolicyLoadErrorCode::kScriptError);
+  EXPECT_FALSE(made.error().subject.empty());
+}
+
+// Control for the case above: the same maker of rules that load makes their policy.
+// Requirements: US-21
+TEST_F(PolicyLoaderTest, ThePolicyMakerOfThatLoadMakesTheirPolicy) {
+  const augusta::policy::PolicyMaker make = PolicyMakerOf("function on_tick() return {draw = true} end");
+
+  auto made = make();
+
+  ASSERT_TRUE(made.has_value()) << augusta::policy::DescribePolicyLoadError(made.error());
+  EXPECT_TRUE(EndsTheMatch(*made));
 }
 
 // Requirements: US-22
@@ -106,8 +132,9 @@ TEST_F(PolicyLoaderTest, ThePolicyMadeForAPackWithoutRulesIsNone) {
   const auto make = LoadPolicyMaker(pack);
 
   ASSERT_TRUE(make.has_value());
-  augusta::policy::Policy none = (*make)();
-  EXPECT_FALSE(EndsTheMatch(none));
+  auto none = (*make)();
+  ASSERT_TRUE(none.has_value());
+  EXPECT_FALSE(EndsTheMatch(*none));
 }
 
 // Requirements: US-22

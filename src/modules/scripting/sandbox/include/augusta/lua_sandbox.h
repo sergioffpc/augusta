@@ -37,7 +37,12 @@ inline constexpr std::size_t kMemoryLimit = std::size_t{32} << 20U;
 /// cannot bound. sol2's default message handler is taken out of the globals, so
 /// a protected call made before the script runs has none, and one made after
 /// it names none explicitly: Lua runs a message handler with debug hooks off,
-/// so one the script put there would never be stopped.
+/// so one the script put there would never be stopped. No value a script sees
+/// is derived from an allocation's address: tostring of a table, function or
+/// userdata without a __tostring of its own is its type name alone, as is
+/// string.format's %s of one, and string.format refuses %p with an error. pairs
+/// over keys that are objects (tables, functions, userdata) still visits them
+/// in an order their addresses decide (ADR-0022).
 sol::state MakeSandbox();
 
 /// Lets lua run instructions more Lua instructions from now, then stops what it

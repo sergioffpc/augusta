@@ -400,6 +400,12 @@ target_link_libraries(
 )
 gtest_discover_tests(augusta_policy_actions_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS policy)
 
+# What a script in the Lua sandbox can see of the state it runs in, through the
+# scripting module's Script: no value derived from an allocation's address.
+add_executable(augusta_lua_sandbox_tests lua_sandbox_test.cpp)
+target_link_libraries(augusta_lua_sandbox_tests PRIVATE augusta_scripting GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_lua_sandbox_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS scripting)
+
 # The example scenario's shipped rules, loaded out of a pack built with
 # augusta_assets' pack encoder and run through SimulationWorld (ADR-0013).
 # Links augusta_animation and ozz-animation's offline libraries for the Clips it
