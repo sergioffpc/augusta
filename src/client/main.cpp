@@ -6,6 +6,14 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
+
+#ifdef _WIN32
+#include <cstddef>
+#include <vector>
+
+#include <windows.h>
+#endif
 
 #if AUGUSTA_MIMALLOC
 #include <cstdlib>
@@ -34,6 +42,60 @@ namespace {
 // The subsystem augustac's terminal event and crash lines name (ADR-0029).
 constexpr std::string_view kSubsystem = "client";
 
+#ifdef _WIN32
+// The MSVC runtime this build loads: the debug one in a Debug build (/MDd).
+#ifdef _DEBUG
+constexpr const wchar_t* kMsvcRuntimeDll = L"msvcp140d.dll";
+#else
+constexpr const wchar_t* kMsvcRuntimeDll = L"msvcp140.dll";
+#endif
+
+// The longest path GetModuleFileNameW writes, in characters with its null.
+constexpr DWORD kMaxModulePath = 32768;
+
+// The file version of the DLL the process loaded as dll, from its version
+// resource; nullopt when it is not loaded or has no readable version.
+std::optional<augusta::application::FileVersion> ReadLoadedFileVersion(const wchar_t* dll) {
+  const HMODULE module = GetModuleHandleW(dll);
+  if (module == nullptr) {
+    return std::nullopt;
+  }
+  std::wstring path(kMaxModulePath, L'\0');
+  const DWORD length = GetModuleFileNameW(module, path.data(), kMaxModulePath);
+  if (length == 0 || length == kMaxModulePath) {
+    return std::nullopt;
+  }
+  path.resize(length);
+  const DWORD size = GetFileVersionInfoSizeW(path.c_str(), nullptr);
+  if (size == 0) {
+    return std::nullopt;
+  }
+  std::vector<std::byte> info(size);
+  if (GetFileVersionInfoW(path.c_str(), 0, size, info.data()) == FALSE) {
+    return std::nullopt;
+  }
+  VS_FIXEDFILEINFO* fixed = nullptr;
+  UINT fixed_size = 0;
+  if (VerQueryValueW(info.data(), L"\\", reinterpret_cast<void**>(&fixed), &fixed_size) == FALSE ||
+      fixed_size < sizeof(VS_FIXEDFILEINFO)) {
+    return std::nullopt;
+  }
+  return augusta::application::FileVersion{
+      .major = HIWORD(fixed->dwFileVersionMS),
+      .minor = LOWORD(fixed->dwFileVersionMS),
+      .build = HIWORD(fixed->dwFileVersionLS),
+      .revision = LOWORD(fixed->dwFileVersionLS),
+  };
+}
+
+// What augustac knows of the MSVC runtime it loaded (ADR-0079): its
+// msvcp140.dll's version, and the oldest it runs on, as versions.env pins it
+// (src/client/CMakeLists.txt).
+augusta::application::MsvcRuntimeFacts ReadMsvcRuntimeFacts() {
+  return {.loaded = ReadLoadedFileVersion(kMsvcRuntimeDll), .minimum = AUGUSTA_MSVC_REDIST_VERSION};
+}
+#endif
+
 #if AUGUSTA_MIMALLOC
 // What mimalloc says of this process (ADR-0078): whether it redirected the
 // CRT's malloc (Windows; the link replaced it elsewhere), whether a block malloc
@@ -56,9 +118,8 @@ augusta::application::MimallocFacts ReadMimallocFacts() {
 
 // Whether augustac may run on what serves its malloc (ADR-0078): mimalloc's
 // facts once application's check says mimalloc serves the process, else why
-// not, which main words on stderr as there is no log yet; nullopt in a
-// sanitizer build, which runs its sanitizer's allocator and checks nothing.
-// main asks first, before its command line, so --version fails too.
+// not; nullopt in a sanitizer build, which runs its sanitizer's allocator and
+// checks nothing.
 std::expected<std::optional<augusta::application::MimallocFacts>, augusta::application::MimallocError>
 CheckAllocator() {
 #if AUGUSTA_MIMALLOC
@@ -69,12 +130,44 @@ CheckAllocator() {
 #endif
 }
 
+// Why the MSVC runtime refused augustac, with the facts its line names.
+struct MsvcRuntimeRefusal {
+  augusta::application::MsvcRuntimeFacts facts;
+  augusta::application::MsvcRuntimeError error;
+};
+
+// Why augustac may not start: its MSVC runtime (Windows), or mimalloc.
+using StartupError = std::variant<MsvcRuntimeRefusal, augusta::application::MimallocError>;
+
+// Whether augustac may start: on Windows, first, whether the player's Visual
+// C++ runtime is as new as the STL it was built with (ADR-0079), as with an
+// older one it would crash later, with no word of why; then CheckAllocator's
+// answer. main asks first, before its command line, so --version fails too.
+std::expected<std::optional<augusta::application::MimallocFacts>, StartupError> CheckStartup() {
+#ifdef _WIN32
+  const augusta::application::MsvcRuntimeFacts runtime = ReadMsvcRuntimeFacts();
+  if (const auto checked = augusta::application::CheckMsvcRuntime(runtime); !checked) {
+    return std::unexpected(MsvcRuntimeRefusal{.facts = runtime, .error = checked.error()});
+  }
+#endif
+  return CheckAllocator().transform_error(
+      [](augusta::application::MimallocError error) { return StartupError(error); });
+}
+
+// The one line main writes on stderr for error, as there is no log yet.
+std::string DescribeStartupError(const StartupError& error) {
+  if (const auto* refusal = std::get_if<MsvcRuntimeRefusal>(&error)) {
+    return augusta::application::DescribeMsvcRuntimeError("augustac", refusal->facts, refusal->error);
+  }
+  return augusta::application::DescribeMimallocError("augustac", std::get<augusta::application::MimallocError>(error));
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
-  const auto mimalloc = CheckAllocator();
+  const auto mimalloc = CheckStartup();
   if (!mimalloc) {
-    std::println(stderr, "{}", augusta::application::DescribeMimallocError("augustac", mimalloc.error()));
+    std::println(stderr, "{}", DescribeStartupError(mimalloc.error()));
     return augusta::application::kFailedExitStatus;
   }
   augusta::logging::Init();
