@@ -69,8 +69,10 @@ client, an operator the server. To build them, see
 Each [release](https://github.com/sergioffpc/augusta/releases/latest) publishes
 the client for Windows x64 (`augustac-windows-x64.zip`) and Linux x64
 (`augustac-linux-x64.tar.gz`): extract either anywhere and run `augustac` from
-its folder. It needs a Vulkan 1.3 driver; the Linux client also needs the glibc
-of Ubuntu 26.04 or newer and an X11 or Wayland session.
+its folder. It needs a Vulkan 1.3 driver. The Windows client also needs the
+[Microsoft Visual C++ Redistributable (x64)](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist)
+14.44.35211.0 or newer, and refuses to start on an older one; the Linux client
+also needs the glibc of Ubuntu 26.04 or newer and an X11 or Wayland session.
 
 Before the first run, create `augustac.yaml` beside `augustac` from
 [config/augustac.example.yaml](config/augustac.example.yaml), and point it at:

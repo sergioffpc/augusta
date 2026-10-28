@@ -210,14 +210,17 @@ decisions already made in ARCHITECTURE.md:
   (`gh workflow run release.yml --ref <branch>`). The client ships as
   `augustac-windows-x64.zip`, its whole runtime folder, never as a lone `.exe`:
   some of its dependencies ship only as DLLs, so the client cannot be linked
-  statically, and it carries the MSVC runtime so it needs no redistributable. A
-  release is published only once its unzipped client runs `augustac --version`
-  and prints the tag's version exactly (`scripts/stage-client.sh`, ADR-0058), so
-  a Development build, whose version ends in `+dev`, fails it. That catches a
-  DLL it imports that is missing, not one loaded only once it runs. The Linux
-  client ships as `augustac-linux-x64.tar.gz`, one `augustac/` folder checked
-  the same way, and for linking nothing from the system beyond an allowlist; it
-  runs on the glibc of Ubuntu 26.04 or newer (ADR-0058).
+  statically. It carries no MSVC runtime: the player installs the VC++
+  redistributable, at least the version `scripts/bootstrap/versions.env` pins
+  (`MSVC_REDIST_VERSION`), which the README and each release's notes name and
+  `augustac` checks at startup (ADR-0079). A release is published only once its
+  unzipped client runs `augustac --version` and prints the tag's version exactly
+  (`scripts/stage-client.sh`, ADR-0058), so a Development build, whose version
+  ends in `+dev`, fails it. That catches a DLL it imports that is missing, not
+  one loaded only once it runs. The Linux client ships as
+  `augustac-linux-x64.tar.gz`, one `augustac/` folder checked the same way, and
+  for linking nothing from the system beyond an allowlist; it runs on the glibc
+  of Ubuntu 26.04 or newer (ADR-0058).
 - **Documentation site:** the `docs` workflow builds the site (MkDocs Material
   for `docs/`, `README.md` and `GLOSSARY.md`, Doxygen for the C++ API) on every
   pull request, and publishes `main`'s on GitHub Pages (ADR-0046). `make docs`

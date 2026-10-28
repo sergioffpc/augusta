@@ -283,14 +283,15 @@ if(WIN32)
   target_link_options(augustac PRIVATE "$<$<CONFIG:Release>:/DEBUG:FULL;/OPT:REF;/OPT:ICF>")
 
   # `cmake --install --component client` stages the client's whole runtime folder,
-  # which a release zips (scripts/stage-client.sh): augustac.exe, the DLLs it
-  # loads, and the MSVC runtime, so it starts on a Windows with no Visual C++
-  # redistributable. CMake resolves the DLLs itself, as for augustad: vcpkg's,
+  # which a release zips (scripts/stage-client.sh): augustac.exe and the DLLs it
+  # loads. CMake resolves the DLLs itself, as for augustad: vcpkg's,
   # mimalloc's (mimalloc-debug.dll in a Debug build) and the
   # mimalloc-redirect.dll it imports among them (ADR-0078), and Aftermath's when
   # the build has it (cmake/Aftermath.cmake). The renderer's
   # shaders are in augustac.exe, and the Vulkan loader is the system's, which
-  # augustac loads at runtime rather than imports (ADR-0059).
+  # augustac loads at runtime rather than imports (ADR-0059). The MSVC runtime
+  # is the player's, from the VC++ redistributable (ADR-0079): wherever CMake
+  # would find it, the folder never bundles it.
   # EXCLUDE_FROM_ALL: a plain `cmake --install`, augustad's (Dockerfile,
   # `make install`), leaves it out.
   install(
@@ -304,18 +305,10 @@ if(WIN32)
   endif()
   install(
     RUNTIME_DEPENDENCY_SET augustac_dlls
-    PRE_EXCLUDE_REGEXES "^api-ms-" "^ext-ms-"
+    PRE_EXCLUDE_REGEXES "^api-ms-" "^ext-ms-" "^(msvcp|vcruntime|concrt|vccorlib)140"
     POST_EXCLUDE_REGEXES "[/\\][Ss]ystem32[/\\]"
     DIRECTORIES ${dll_directories}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client EXCLUDE_FROM_ALL
-  )
-  set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
-  include(InstallRequiredSystemLibraries)
-  install(
-    PROGRAMS ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS}
-    DESTINATION ${CMAKE_INSTALL_BINDIR}
-    COMPONENT client
-    EXCLUDE_FROM_ALL
   )
 else()
   # Release's debug info split off into augustac.debug, as augustad's is
