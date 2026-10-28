@@ -148,6 +148,77 @@ TEST(ClientPhasesTest, ACharacterThatCannotBeLoadedIsAContentFailure) {
   EXPECT_EQ(ContextOf(failure, "character"), "ghost");
 }
 
+// --- A folder the ANSI code page lacks ---
+
+// "中文" in UTF-8, as a path under the folder is logged and described.
+constexpr std::string_view kNonAnsiUtf8 = "\xE4\xB8\xAD\xE6\x96\x87";
+
+// A directory named u8"中文", which no Windows ANSI code page but the CJK ones
+// has, so path::string() throws for anything under it there.
+class NonAnsiFolderTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    // Named after the running test: ctest runs every test in a process of its
+    // own, possibly in parallel, so no other test removes it while in use.
+    root_ = std::filesystem::temp_directory_path() / (std::string("augusta_client_phases_test_") +
+                                                      ::testing::UnitTest::GetInstance()->current_test_info()->name());
+    std::filesystem::remove_all(root_);
+    directory_ = root_ / std::filesystem::path(u8"中文");
+    std::filesystem::create_directories(directory_);
+  }
+
+  void TearDown() override { std::filesystem::remove_all(root_); }
+
+  [[nodiscard]] CommandLine ConfigCommandLine() const {
+    return CommandLine{
+        .config_file = directory_ / "augustac.yaml", .message = {}, .options = {}, .action = CommandLineAction::kRun};
+  }
+
+  std::filesystem::path root_;
+  std::filesystem::path directory_;
+};
+
+// Requirements: US-28, NFR-08
+TEST_F(NonAnsiFolderTest, AConfigAndAPackInItLoad) {
+  const std::filesystem::path pack = std::filesystem::path("client").replace_extension(augusta::assets::kPackExtension);
+  std::filesystem::copy_file(kPacks / pack, directory_ / pack);
+  std::filesystem::copy_file(kPacks / "test.pub", directory_ / "test.pub");
+  std::ofstream(directory_ / "augustac.yaml", std::ios::binary)
+      << "base_dir: .\nplayer:\n  character: soldier\ncontent:\n  pack: client" << augusta::assets::kPackExtension
+      << "\n  public_key: test.pub\n";
+
+  const auto config = ReadClientConfig(ConfigCommandLine());
+  ASSERT_TRUE(config.has_value()) << config.error().detail;
+  // Verifying the pack logs pack_verified with its path.
+  const auto loaded = LoadClient(*config);
+
+  ASSERT_TRUE(loaded.has_value()) << loaded.error().detail;
+}
+
+// Requirements: NFR-08, NFR-18
+TEST_F(NonAnsiFolderTest, APackMissingFromItIsAContentFailureNamingIt) {
+  ClientConfig config;
+  config.pack_path = (directory_ / "missing").replace_extension(augusta::assets::kPackExtension);
+  config.public_key_path = kPacks / "test.pub";
+  config.character = "soldier";
+
+  const auto loaded = LoadClient(config);
+
+  ASSERT_FALSE(loaded.has_value());
+  EXPECT_EQ(loaded.error().code, Code::kInvalidContent);
+  EXPECT_NE(ContextOf(loaded.error(), "path").find(kNonAnsiUtf8), std::string::npos);
+  EXPECT_NE(loaded.error().detail.find(kNonAnsiUtf8), std::string::npos) << loaded.error().detail;
+}
+
+// Requirements: US-28, NFR-18
+TEST_F(NonAnsiFolderTest, AConfigMissingFromItIsAConfigurationFailureNamingIt) {
+  const auto config = ReadClientConfig(ConfigCommandLine());
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, Code::kInvalidConfiguration);
+  EXPECT_NE(config.error().detail.find(kNonAnsiUtf8), std::string::npos) << config.error().detail;
+}
+
 // --- A Captured player (ADR-0050) ---
 
 // The command line `augustac --reenact capture --player player`.

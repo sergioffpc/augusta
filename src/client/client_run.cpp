@@ -25,13 +25,6 @@ namespace augusta::client {
 
 namespace {
 
-// path in UTF-8 for a line: path::string() converts to the ANSI code page on
-// Windows, and throws for a character it lacks.
-std::string Utf8(const std::filesystem::path& path) {
-  const std::u8string text = path.u8string();
-  return {text.begin(), text.end()};
-}
-
 // The generator every Run ID is taken from: one for the process, so a Run ID
 // taken after another compares greater. TakeRun alone takes from it, on main's
 // thread.
@@ -43,7 +36,7 @@ boost::uuids::time_generator_v7& GlobalRunIds() {
 // Adds file as the log's second sink and returns it, or warns why it could not.
 std::optional<std::filesystem::path> StartLogFile(std::filesystem::path file) {
   if (auto added = logging::AddFileSink(file); !added) {
-    LOG_WARN("subsystem=client event=log_file_unavailable path=\"{}\" reason=\"{}\"", Utf8(file),
+    LOG_WARN("subsystem=client event=log_file_unavailable path=\"{}\" reason=\"{}\"", logging::Utf8(file),
              logging::DescribeFileSinkError(added.error()));
     return std::nullopt;
   }
@@ -121,12 +114,12 @@ void ReportPreviousRun(const std::filesystem::path& directory, const boost::uuid
     files += (files.empty() ? "" : " ") + name;
   }
   LOG_WARN("subsystem=client event=previous_run_crashed crashed_run={} directory=\"{}\" files=\"{}\"",
-           boost::uuids::to_string(previous->id), Utf8(directory), files);
+           boost::uuids::to_string(previous->id), logging::Utf8(directory), files);
 }
 
 void PruneOldRuns(const std::filesystem::path& directory) {
   for (const UndeletedFile& file : PruneRuns(directory, kKeptRuns)) {
-    LOG_WARN("subsystem=client event=run_file_undeleted path=\"{}\" reason=\"{}\"", Utf8(file.path),
+    LOG_WARN("subsystem=client event=run_file_undeleted path=\"{}\" reason=\"{}\"", logging::Utf8(file.path),
              file.reason.message());
   }
 }

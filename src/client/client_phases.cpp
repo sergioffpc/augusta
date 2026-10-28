@@ -25,7 +25,7 @@ namespace {
 
 failure::Failure ContentFailure(const std::filesystem::path& pack_path, std::string detail) {
   return {.code = failure::Code::kInvalidContent,
-          .context = {{.key = "path", .value = pack_path.string()}},
+          .context = {{.key = "path", .value = logging::Utf8(pack_path)}},
           .detail = std::move(detail)};
 }
 
@@ -46,12 +46,19 @@ failure::Code SessionCode(harness::FailureKind kind) {
 
 std::expected<config::ClientConfig, failure::Failure> ReadClientConfig(
     const std::expected<config::CommandLine, config::ConfigError>& command_line) {
-  return command_line
-      .and_then([](const config::CommandLine& read) { return config::LoadClientConfig(read.config_file); })
-      .transform_error([](const config::ConfigError& error) {
-        return failure::Failure{
-            .code = failure::Code::kInvalidConfiguration, .context = {}, .detail = config::DescribeConfigError(error)};
-      });
+  // Guarded, as main reads it before the application boundary runs anything.
+  return failure::Guard(
+             failure::Code::kInvalidConfiguration,
+             [&command_line] {
+               return command_line
+                   .and_then([](const config::CommandLine& read) { return config::LoadClientConfig(read.config_file); })
+                   .transform_error([](const config::ConfigError& error) {
+                     return failure::Failure{.code = failure::Code::kInvalidConfiguration,
+                                             .context = {},
+                                             .detail = config::DescribeConfigError(error)};
+                   });
+             })
+      .and_then([](std::expected<config::ClientConfig, failure::Failure> read) { return read; });
 }
 
 std::expected<std::optional<harness::Script>, failure::Failure> ReadReenactment(
@@ -70,16 +77,16 @@ std::expected<std::optional<harness::Script>, failure::Failure> ReadReenactment(
   auto script = harness::ReadScript(in, reenact.player);
   if (!script.has_value()) {
     return std::unexpected(failure::Failure{.code = failure::Code::kInvalidConfiguration,
-                                            .context = {{.key = "capture", .value = reenact.capture.string()},
+                                            .context = {{.key = "capture", .value = logging::Utf8(reenact.capture)},
                                                         {.key = "player", .value = std::to_string(reenact.player)}},
                                             .detail = harness::DescribeScriptError(script.error())});
   }
   if (script->torn) {
     LOG_WARN("subsystem=client event=capture_torn capture={} reason=\"its last record was cut short and is dropped\"",
-             reenact.capture.string());
+             logging::Utf8(reenact.capture));
   }
-  LOG_INFO("subsystem=client event=reenacting capture={} player={} character={} commands={}", reenact.capture.string(),
-           reenact.player, script->character, script->commands.size());
+  LOG_INFO("subsystem=client event=reenacting capture={} player={} character={} commands={}",
+           logging::Utf8(reenact.capture), reenact.player, script->character, script->commands.size());
   return *std::move(script);
 }
 
@@ -102,7 +109,7 @@ std::expected<LoadedClient, failure::Failure> LoadClient(const config::ClientCon
         pack_path, assets::DescribeVerifiedPackError(verified.error(), pack_path, file_config.public_key_path)));
   }
   auto pack = std::make_unique<const assets::Pack>(*std::move(verified));
-  LOG_INFO("subsystem=client event=pack_verified path={}", pack->Path().string());
+  LOG_INFO("subsystem=client event=pack_verified path={}", logging::Utf8(pack->Path()));
 
   auto content = LoadClientContent(*pack, file_config.character);
   if (!content) {

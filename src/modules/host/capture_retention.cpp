@@ -27,13 +27,6 @@ namespace augusta::host {
 
 namespace {
 
-// path in UTF-8: path::string() converts to the ANSI code page on Windows, and
-// throws for a character it lacks.
-std::string Utf8(const std::filesystem::path& path) {
-  const std::u8string text = path.u8string();
-  return {text.begin(), text.end()};
-}
-
 bool IsDigit(char character) { return character >= '0' && character <= '9'; }
 
 // Whether text is a Match ID in the canonical form boost::uuids::to_string
@@ -140,7 +133,7 @@ std::vector<CompletedCapture> CaptureDirectory::Scan(std::string_view file_name)
   std::error_code error;
   for (std::filesystem::directory_iterator entry(directory_, error), end; !error && entry != end;
        entry.increment(error)) {
-    const std::string name = Utf8(entry->path().filename());
+    const std::string name = logging::Utf8(entry->path().filename());
     std::error_code status;
     // A symbolic link is not the directory's own file, even to a capture.
     if (name == file_name || !IsCaptureFileName(name) || !entry->is_regular_file(status) || entry->is_symlink(status)) {
@@ -174,7 +167,7 @@ void CaptureDirectory::DeleteOldest() {
   }
   if (!failure.has_value()) {
     LOG_INFO("subsystem=capture event=capture_deleted match={} path={}", boost::uuids::to_string(match_),
-             Utf8(oldest.path));
+             logging::Utf8(oldest.path));
     if (observer_.on_deleted) {
       observer_.on_deleted();
     }
@@ -186,7 +179,7 @@ void CaptureDirectory::DeleteOldest() {
   if (!failure_logged_) {
     failure_logged_ = true;
     LOG_WARN("subsystem=capture event=capture_retention_failed match={} path={} detail=\"{}\"",
-             boost::uuids::to_string(match_), Utf8(oldest.path), *failure);
+             boost::uuids::to_string(match_), logging::Utf8(oldest.path), *failure);
   }
 }
 

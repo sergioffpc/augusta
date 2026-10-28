@@ -272,6 +272,14 @@ TEST(LoggingFileSink, ALineAfterTheSinkIsRemovedReachesTheFileNoMore) {
   EXPECT_TRUE(std::filesystem::remove(file, error)) << error.message();
 }
 
+// A path is logged in UTF-8 whatever the system's code page, so a name it
+// lacks is written as it is rather than refused.
+// Requirements: NFR-19
+TEST(LoggingUtf8, APathIsItsUtf8Text) {
+  EXPECT_EQ(augusta::logging::Utf8(std::filesystem::path(u8"中文.yaml")), "\xE4\xB8\xAD\xE6\x96\x87.yaml");
+  EXPECT_EQ(augusta::logging::Utf8(std::filesystem::path("plain.yaml")), "plain.yaml");
+}
+
 // Requirements: NFR-19
 TEST(LoggingFileSink, AFileThatCannotBeOpenedIsAnError) {
   // A directory where the file would be.

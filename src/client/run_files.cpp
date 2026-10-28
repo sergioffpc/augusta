@@ -22,17 +22,11 @@
 
 #include "augusta/application.h"
 #include "augusta/crash.h"
+#include "augusta/logging.h"
 
 namespace augusta::client {
 
 namespace {
-
-// path in UTF-8: path::string() converts to the ANSI code page on Windows, and
-// throws for a character it lacks.
-std::string Utf8(const std::filesystem::path& path) {
-  const std::u8string text = path.u8string();
-  return {text.begin(), text.end()};
-}
 
 constexpr std::string_view kLogsFolder = "logs";
 constexpr std::string_view kDumpsFolder = "dumps";
@@ -110,7 +104,7 @@ std::map<boost::uuids::uuid, std::vector<std::filesystem::path>> ScanRuns(const 
       if (!it->is_regular_file(status_error)) {
         continue;
       }
-      if (const auto run = run_of(Utf8(it->path().filename()))) {
+      if (const auto run = run_of(logging::Utf8(it->path().filename()))) {
         runs[*run].push_back(it->path());
       }
     }

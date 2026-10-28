@@ -124,7 +124,8 @@ PackTrailer SignPack(const PackSections& sections, const Ed25519PrivateKey& sign
 // operation.
 std::expected<void, WriteError> WritePackFile(const std::filesystem::path& output_path, const PackSections& sections,
                                               const PackTrailer& trailer) {
-  const std::filesystem::path tmp_path = output_path.string() + ".tmp";
+  std::filesystem::path tmp_path = output_path;
+  tmp_path += ".tmp";
   {
     std::ofstream out(tmp_path, std::ios::binary | std::ios::trunc);
     if (!out) {

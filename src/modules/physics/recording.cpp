@@ -2,6 +2,7 @@
 
 #if AUGUSTA_DEBUG_TOOLS
 #include <chrono>
+#include <cstddef>
 #include <expected>
 #include <filesystem>
 #include <format>
@@ -21,6 +22,10 @@
 
 #include "augusta/logging.h"
 #include "physx_state.h"
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 #endif
 
 namespace augusta::physics {
@@ -36,8 +41,42 @@ constexpr std::string_view kNoOmniPvd = "OmniPVD's runtime (PVDRuntime_64) did n
 constexpr std::string_view kNoOmniPvd = "this build's PhysX has no OmniPVD: only a Debug build records";
 #endif
 
+// file's name as OmniPVD's file stream opens it, with the C runtime's narrow
+// fopen: in the ANSI code page on Windows, where nullopt says the code page
+// lacks one of its characters, and as it is elsewhere.
+std::optional<std::string> NarrowFileName(const std::filesystem::path& file) {
+#ifdef _WIN32
+  const std::wstring& wide = file.native();
+  if (wide.empty()) {
+    return std::string();
+  }
+  const int wide_size = static_cast<int>(wide.size());
+  // A UTF-8 code page lacks no character, and WideCharToMultiByte refuses both
+  // the best-fit flag and the lacked-character out-parameter for it.
+  const bool utf8 = GetACP() == CP_UTF8;
+  const DWORD flags = utf8 ? 0 : WC_NO_BEST_FIT_CHARS;
+  BOOL lacked = FALSE;
+  BOOL* const lacked_out = utf8 ? nullptr : &lacked;
+  const int size = WideCharToMultiByte(CP_ACP, flags, wide.data(), wide_size, nullptr, 0, nullptr, lacked_out);
+  if (size == 0 || lacked != FALSE) {
+    return std::nullopt;
+  }
+  std::string narrow(static_cast<std::size_t>(size), '\0');
+  if (WideCharToMultiByte(CP_ACP, flags, wide.data(), wide_size, narrow.data(), size, nullptr, nullptr) != size) {
+    return std::nullopt;
+  }
+  return narrow;
+#else
+  return file.native();
+#endif
+}
+
 // Points the state's new omni_pvd at a file stream writing file, or says why it cannot.
 std::expected<void, RecordingError> OpenRecording(PhysxProcessState& state, const std::filesystem::path& file) {
+  const std::optional<std::string> file_name = NarrowFileName(file);
+  if (!file_name) {
+    return std::unexpected(RecordingError::kUnnamable);
+  }
   state.omni_pvd = PxCreateOmniPvd(*state.foundation);
   if (state.omni_pvd == nullptr) {
     return std::unexpected(RecordingError::kUnavailable);
@@ -47,7 +86,7 @@ std::expected<void, RecordingError> OpenRecording(PhysxProcessState& state, cons
   if (writer == nullptr || stream == nullptr) {
     return std::unexpected(RecordingError::kRefused);
   }
-  stream->setFileName(file.string().c_str());
+  stream->setFileName(file_name->c_str());
   writer->setWriteStream(*stream);
   return {};
 }
@@ -84,6 +123,8 @@ std::string_view DescribeRecordingError(RecordingError error) {
       return kNoOmniPvd;
     case RecordingError::kRefused:
       return "OmniPVD gave no writer or file stream, or would not start sampling";
+    case RecordingError::kUnnamable:
+      return "the recording's path has a character the system's code page lacks, which OmniPVD cannot open";
   }
   return "unknown recording error";
 }
@@ -110,7 +151,7 @@ std::expected<Recording, RecordingError> StartRecording(std::string_view executa
   if (!handles) {
     return std::unexpected(handles.error());
   }
-  LOG_INFO("subsystem=physics event=recording_started path=\"{}\"", file.string());
+  LOG_INFO("subsystem=physics event=recording_started path=\"{}\"", logging::Utf8(file));
   return Recording(std::make_unique<Recording::Impl>(*handles, std::move(file)));
 }
 

@@ -13,6 +13,11 @@ add_library(
 )
 target_include_directories(augusta_physics PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(augusta_physics PUBLIC augusta_assets augusta_math PRIVATE augusta_logging)
+# recording.cpp includes <windows.h> for the recording's narrow file name;
+# keep its min/max macros out of the way of PhysX and the standard library.
+if(WIN32)
+  target_compile_definitions(augusta_physics PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+endif()
 
 # lld's Mach-O port, like lld-link, resolves across the archives in any order,
 # and has no --start-group either.

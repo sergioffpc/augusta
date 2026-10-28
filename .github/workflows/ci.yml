@@ -139,6 +139,12 @@ jobs:
       - name: Check C++ formatting
         if: needs.changes.outputs.run_build == 'true'
         run: make format-check/clang-format
+      - name: Check that src names no path through its ANSI string
+        # No path::string() or generic_string() in src/, which on Windows
+        # throw for a character outside the ANSI code page
+        # (checks/path_text.cmake).
+        if: needs.changes.outputs.run_build == 'true'
+        run: make format-check/path-text
       - name: Check the tests' and jobs' requirement markers
         # Every requirement a test or a CI job names is one
         # docs/REQUIREMENTS.md has, and every marker is directly above a test

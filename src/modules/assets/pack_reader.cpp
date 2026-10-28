@@ -20,6 +20,7 @@
 #include <sodium.h>
 
 #include "augusta/assets.h"
+#include "augusta/logging.h"
 #include "augusta/math.h"
 #include "augusta/pack_decoder.h"
 #include "ed25519.h"
@@ -232,7 +233,7 @@ std::expected<Mapping, LoadErrorCode> OpenValidatedMapping(const std::filesystem
   }
 
   try {
-    // path.c_str() (const wchar_t* on Windows), not path.string(): the
+    // path.c_str() (const wchar_t* on Windows), not its narrow string: the
     // narrow overload takes the system ANSI codepage there, so a pack path
     // with non-ASCII characters would silently fail to open. The wide
     // overload goes straight to CreateFileW. The file_mapping can go
@@ -541,9 +542,9 @@ std::string DescribeVerifiedPackError(const VerifiedPackError& error, const std:
                                       const std::filesystem::path& public_key_path) {
   switch (error.failure) {
     case VerifiedPackFailure::kPublicKeyUnreadable:
-      return std::format("could not read Ed25519 public key from {}", public_key_path.string());
+      return std::format("could not read Ed25519 public key from {}", logging::Utf8(public_key_path));
     case VerifiedPackFailure::kPackRejected:
-      return std::format("pack {} {}", pack_path.string(), DescribeLoadError(error.load_error));
+      return std::format("pack {} {}", logging::Utf8(pack_path), DescribeLoadError(error.load_error));
   }
   return "unknown pack error";
 }

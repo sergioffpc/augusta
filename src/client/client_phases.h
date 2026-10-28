@@ -28,8 +28,9 @@ namespace augusta::client {
 
 /// The config file command_line names, read, or the
 /// failure::Code::kInvalidConfiguration failure saying why command_line or the
-/// file is unusable. A command line asking for help or the version is main's
-/// to answer before this.
+/// file is unusable, or that an exception escaping the read became
+/// (failure::Guard), so none reaches std::terminate. A command line asking for
+/// help or the version is main's to answer before this.
 [[nodiscard]] std::expected<config::ClientConfig, failure::Failure> ReadClientConfig(
     const std::expected<config::CommandLine, config::ConfigError>& command_line);
 

@@ -3,6 +3,12 @@
 C++ code follows the Google C++ Style Guide, enforced via `clang-format` and
 `clang-tidy` in CI.
 
+One rule of the codebase's own is checked beside them by a source scan
+(`checks/path_text.cmake`, run by `make format-check/path-text`, the pre-push
+hook and CI): no `path::string()` or `generic_string()` under `src/`, which on
+Windows throw for a character outside the ANSI code page. A path's text is
+`logging::Utf8` (`docs/agents/coding-standards.md`).
+
 Markdown follows the
 [Google Markdown style guide](https://google.github.io/styleguide/docguide/style.html).
 Prettier enforces its layout (paragraphs wrapped at 80 columns, ATX headings,

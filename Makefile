@@ -335,7 +335,7 @@ format:
 
 # One target per formatter and linter, in this order, so CI's format job runs
 # each of them alone with the command written here.
-FORMAT_CHECKS := $(addprefix format-check/,clang-format yamlfmt yamllint stylua luacheck taplo ruff shfmt shellcheck actionlint gersemi prettier pymarkdown buf)
+FORMAT_CHECKS := $(addprefix format-check/,clang-format yamlfmt yamllint stylua luacheck taplo ruff shfmt shellcheck actionlint gersemi prettier pymarkdown buf path-text)
 .PHONY: $(FORMAT_CHECKS)
 format-check: $(FORMAT_CHECKS)
 format-check/clang-format:
@@ -372,6 +372,12 @@ format-check/pymarkdown:
 format-check/buf:
 	$(if $(call linted,$(PROTO_SOURCES),buf.yaml),$(BUF) format -d --exit-code,@:)
 	$(if $(call linted,$(PROTO_SOURCES),buf.yaml),$(BUF) lint,@:)
+# No path::string() or generic_string() in src (checks/path_text.cmake): FILES'
+# sources, or every one, which the script lists itself so no command line holds
+# them all, without FILES or when it holds the script.
+PATH_TEXT_SOURCES := "src/*.cpp" "src/*.h"
+format-check/path-text:
+	$(if $(call linted,$(PATH_TEXT_SOURCES),checks/path_text.cmake),cmake -DSOURCE_DIR=. -P checks/path_text.cmake $(if $(filter checks/path_text.cmake,$(FILES)),,$(if $(FILES),$(call covered,$(PATH_TEXT_SOURCES)))),@:)
 
 # tidy's per-file checks: every one, or FILES' alone.
 TIDY_RUN := $(if $(FILES),$(strip $(filter $(addprefix tidy/,$(FILES)),$(TIDY_CHECKS)) $(filter $(addprefix include-cleaner/,$(FILES)),$(INCLUDE_CHECKS))),$(TIDY_CHECKS) $(INCLUDE_CHECKS))

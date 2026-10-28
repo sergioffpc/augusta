@@ -22,5 +22,10 @@ add_library(
 )
 target_include_directories(augusta_assets PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(augusta_assets PUBLIC augusta_math)
-target_link_libraries(augusta_assets PRIVATE BLAKE3::blake3 unofficial-sodium::sodium Boost::interprocess)
+# augusta_logging for logging::Utf8 alone, a pack's path in UTF-8 in its error
+# messages: inline, so nothing of the logger is linked.
+target_link_libraries(
+  augusta_assets
+  PRIVATE BLAKE3::blake3 unofficial-sodium::sodium Boost::interprocess augusta_logging
+)
 augusta_set_module_scope(augusta_assets SHARED)

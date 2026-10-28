@@ -409,6 +409,9 @@ enum class RecordingError : std::uint8_t {
   kUnavailable,
   /// OmniPVD gave no writer or file stream, or would not start sampling.
   kRefused,
+  /// The file's path has a character the system's code page lacks (on
+  /// Windows), and OmniPVD opens a file by its narrow name.
+  kUnnamable,
 };
 
 /// A phrase for error, for the warning that the process runs on unrecorded.

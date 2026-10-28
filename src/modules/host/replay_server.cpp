@@ -48,13 +48,6 @@ namespace augusta::host {
 
 namespace {
 
-// path in UTF-8: path::string() converts to the ANSI code page on Windows, and
-// throws for a character it lacks.
-std::string Utf8(const std::filesystem::path& path) {
-  const std::u8string text = path.u8string();
-  return {text.begin(), text.end()};
-}
-
 // A Replay viewer plays no one, so it is no player's session: the nil UUID,
 // which no Session ID is (ADR-0038).
 constexpr SessionId kViewerSession{};
@@ -73,9 +66,10 @@ std::vector<std::string> PathsOf(const std::vector<scenario::Character>& charact
 std::filesystem::path RequireDirectory(const std::filesystem::path& directory) {
   std::error_code error;
   if (!std::filesystem::is_directory(directory, error)) {
-    throw failure::ClassifiedFailure(failure::Failure{.code = failure::Code::kInvalidConfiguration,
-                                                      .context = {{.key = "directory", .value = Utf8(directory)}},
-                                                      .detail = "the replay captures directory is not a directory"});
+    throw failure::ClassifiedFailure(
+        failure::Failure{.code = failure::Code::kInvalidConfiguration,
+                         .context = {{.key = "directory", .value = logging::Utf8(directory)}},
+                         .detail = "the replay captures directory is not a directory"});
   }
   return directory;
 }
@@ -154,7 +148,7 @@ struct ReplayServer::Impl {
                                                                .tick_rate_hz = config.tick_rate_hz,
                                                                .characters = PathsOf(scenario.characters)}),
         network(ListenOnceTheMapBuilds(config.listen), config.transport) {
-    LOG_INFO("subsystem=replay event=replay_server_started directory={} max_viewers={}", Utf8(config.captures),
+    LOG_INFO("subsystem=replay event=replay_server_started directory={} max_viewers={}", logging::Utf8(config.captures),
              max_viewers);
   }
 

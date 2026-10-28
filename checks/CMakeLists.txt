@@ -1,9 +1,9 @@
 # Checks of the repository's structure rather than of a feature: the
 # architecture's boundaries, the Glue rule, the test areas, the platforms
-# augustad configures for and the Linux client's staging. Each is a `cmake -P`
-# script that builds nothing, so they configure with the rest of the build, not
-# behind augusta_tests. The scripts' own pytest tests sit beside them; CI runs
-# those.
+# augustad configures for, the Linux client's staging and the paths src names
+# by their text. Each is a `cmake -P` script that builds nothing, so they
+# configure with the rest of the build, not behind augusta_tests. The
+# scripts' own pytest tests sit beside them; CI runs those.
 
 # No header past the protocol's edge names a protocol type (ADR-0038): only
 # the Link converts (augusta/link_messages.h). Nor does a presentation header
@@ -77,6 +77,16 @@ add_test(
     ${CMAKE_CURRENT_SOURCE_DIR}/test_areas.cmake
 )
 
+# No source under src/ calls path::string() or generic_string(), which on
+# Windows throw for a character outside the ANSI code page
+# (docs/agents/coding-standards.md), first proved on planted calls. The lint
+# runs it too (make format-check/path-text). A source scan, so it builds
+# nothing.
+add_test(
+  NAME augusta_path_text
+  COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/path_text.cmake
+)
+
 # What the Linux client's tarball is checked for before a release publishes it
 # (scripts/stage-client.sh, ADR-0058): the check itself, against a stand-in for
 # augustac's build, so it runs on every pull request although augustac's Linux
@@ -98,6 +108,7 @@ set_tests_properties(
   augusta_server_boundary
   augusta_glue_boundary
   augusta_test_areas
+  augusta_path_text
   PROPERTIES LABELS check
 )
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
