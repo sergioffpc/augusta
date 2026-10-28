@@ -40,7 +40,9 @@ struct ServerConfig {
   /// the server simulates and every client predicts. Must be 1..255; fixed for
   /// the life of the process, and told to each client when it joins (ADR-0039).
   std::uint8_t tick_rate_hz = 0;
-  /// Key `network.listen_address`: the local address to listen on.
+  /// Key `network.listen_address`: the local address to listen on, as
+  /// `<host>:<port>` or `[<IPv6 host>]:<port>`; the port, 1..65535, is never
+  /// left to the OS.
   std::string listen_address{kDefaultListenAddress};
   /// Key `logging.level`: one of "trace", "debug", "info", "warn", "error",
   /// "critical" - the console sink's runtime floor (augusta::logging::SetLogLevel).
@@ -53,17 +55,17 @@ struct ServerConfig {
   /// Key `simulation.capture_mode`: "optional", the default, for a capture
   /// that only degrades if it cannot be written while the server goes on; or
   /// "strict", true here, for a playtest whose point is the capture, whose
-  /// server then stops with a failure (ADR-0050).
+  /// server then stops with a failure (ADR-0050). Only with `simulation.capture`.
   bool strict_capture = false;
   /// Key `simulation.capture_retention.max_files`: how many captures the
   /// capture directory keeps, the Match's in progress included, the oldest
-  /// deleted at each Match start (ADR-0050). At least 1; nullopt, the
-  /// default, keeps every one.
+  /// deleted at each Match start (ADR-0050). At least 1, and only with
+  /// `simulation.capture`; nullopt, the default, keeps every one.
   std::optional<std::uint32_t> capture_max_files;
   /// Key `simulation.capture_retention.max_mib`: the most the capture
   /// directory's captures may hold together, in MiB, the Match's in progress
-  /// included, the oldest deleted to stay within it (ADR-0050). At least 1;
-  /// nullopt, the default, sets no limit.
+  /// included, the oldest deleted to stay within it (ADR-0050). At least 1,
+  /// and only with `simulation.capture`; nullopt, the default, sets no limit.
   std::optional<std::uint32_t> capture_max_mib;
 #if AUGUSTA_DEBUG_TOOLS
   /// Key `debug.reenactments`: "true" to admit a Captured player's Reenact

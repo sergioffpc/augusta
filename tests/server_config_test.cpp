@@ -81,6 +81,36 @@ TEST(ParseServerConfigTest, DefaultsTheListenAddress) {
   EXPECT_EQ(config->listen_address, augusta::config::kDefaultListenAddress);
 }
 
+// Requirements: US-28
+TEST(ParseServerConfigTest, ReadsAListenAddressWithAPort) {
+  for (const std::string_view address : {"0.0.0.0:27016", "127.0.0.1:1", "[::]:65535", "[::1]:27015"}) {
+    const auto config =
+        ParseServerConfig(ServerConfigWith("network:\n  listen_address: '" + std::string(address) + "'\n"), kFileDir);
+
+    ASSERT_TRUE(config.has_value()) << address << ": " << DescribeServerConfigError(config.error());
+    EXPECT_EQ(config->listen_address, address);
+  }
+}
+
+// A port left out or 0 would have the server listen wherever the OS puts it,
+// where no client looks.
+// Requirements: US-28
+TEST(ParseServerConfigTest, RejectsAListenAddressWithoutAPortFromOneTo65535) {
+  for (const std::string_view address :
+       {"0.0.0.0", "0.0.0.0:", "0.0.0.0:0", "0.0.0.0:65536", "0.0.0.0:+1", "0.0.0.0:27015x", ":27015", "::1", "[::1]",
+        "[::1]:0", "::1:27015", "[]:27015", "[127.0.0.1]:27015"}) {
+    const auto config =
+        ParseServerConfig(ServerConfigWith("network:\n  listen_address: '" + std::string(address) + "'\n"), kFileDir);
+
+    ASSERT_FALSE(config.has_value()) << address;
+    EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry) << address;
+    EXPECT_EQ(config.error().subject, "network.listen_address") << address;
+    EXPECT_EQ(DescribeServerConfigError(config.error()),
+              "'network.listen_address' must be <host>:<port> or [<IPv6 host>]:<port>, the port from 1 to 65535")
+        << address;
+  }
+}
+
 // Requirements: US-21
 TEST(ParseServerConfigTest, CapturesNoMatchByDefault) {
   const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
@@ -187,7 +217,8 @@ TEST(ParseServerConfigTest, RejectsACaptureRetentionOnAReplayServer) {
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry);
-  EXPECT_EQ(config.error().subject, "simulation.capture_retention.max_files");
+  EXPECT_EQ(DescribeServerConfigError(config.error()),
+            "'simulation.capture_retention.max_files' cannot be set on a replay server: it runs no Match");
 }
 
 // Requirements: US-21
@@ -200,17 +231,38 @@ TEST(ParseServerConfigTest, CapturesOptionallyByDefault) {
 
 // Requirements: US-21
 TEST(ParseServerConfigTest, ReadsEitherCaptureMode) {
-  const auto strict = ParseServerConfig(
-      std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  capture_mode: strict\n",
-      kFileDir);
-  const auto optional = ParseServerConfig(
-      std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  capture_mode: optional\n",
-      kFileDir);
+  const auto strict = ParseServerConfig(ServerConfigWith("  capture: captures\n  capture_mode: strict\n"), kFileDir);
+  const auto optional =
+      ParseServerConfig(ServerConfigWith("  capture: captures\n  capture_mode: optional\n"), kFileDir);
 
   ASSERT_TRUE(strict.has_value());
   EXPECT_TRUE(strict->strict_capture);
   ASSERT_TRUE(optional.has_value());
   EXPECT_FALSE(optional->strict_capture);
+}
+
+// A capture setting with no capture directory would shape nothing (ADR-0050).
+// Requirements: US-21, US-28
+TEST(ParseServerConfigTest, RejectsACaptureSettingWithoutACaptureDirectory) {
+  for (const std::string_view setting : {"capture_mode: strict\n", "capture_retention:\n    max_files: 200\n",
+                                         "capture_retention:\n    max_mib: 2048\n"}) {
+    const auto config = ParseServerConfig(ServerConfigWith("  " + std::string(setting)), kFileDir);
+
+    ASSERT_FALSE(config.has_value()) << setting;
+    EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry) << setting;
+    EXPECT_EQ(DescribeServerConfigError(config.error()), "'" + config.error().subject + "' needs simulation.capture")
+        << setting;
+  }
+}
+
+// Requirements: US-21
+TEST(ParseServerConfigTest, ReadsAStrictCaptureWithItsDirectory) {
+  const auto config =
+      ParseServerConfig(ServerConfigWith("  capture: captures/firebase\n  capture_mode: strict\n"), kFileDir);
+
+  ASSERT_TRUE(config.has_value()) << DescribeServerConfigError(config.error());
+  EXPECT_EQ(config->capture_directory, kRoot / "captures" / "firebase");
+  EXPECT_TRUE(config->strict_capture);
 }
 
 // Requirements: US-21
@@ -236,8 +288,8 @@ TEST(ParseServerConfigTest, KeepsEveryCaptureByDefault) {
 
 // Requirements: US-21
 TEST(ParseServerConfigTest, ReadsTheCaptureRetention) {
-  const auto config =
-      ParseServerConfig(ServerConfigWith("  capture_retention:\n    max_files: 200\n    max_mib: 2048\n"), kFileDir);
+  const auto config = ParseServerConfig(
+      ServerConfigWith("  capture: captures\n  capture_retention:\n    max_files: 200\n    max_mib: 2048\n"), kFileDir);
 
   ASSERT_TRUE(config.has_value()) << DescribeServerConfigError(config.error());
   EXPECT_EQ(config->capture_max_files, 200U);
@@ -246,8 +298,10 @@ TEST(ParseServerConfigTest, ReadsTheCaptureRetention) {
 
 // Requirements: US-21
 TEST(ParseServerConfigTest, ReadsEitherCaptureRetentionLimitAlone) {
-  const auto files = ParseServerConfig(ServerConfigWith("  capture_retention:\n    max_files: 1\n"), kFileDir);
-  const auto mib = ParseServerConfig(ServerConfigWith("  capture_retention:\n    max_mib: 1\n"), kFileDir);
+  const auto files =
+      ParseServerConfig(ServerConfigWith("  capture: captures\n  capture_retention:\n    max_files: 1\n"), kFileDir);
+  const auto mib =
+      ParseServerConfig(ServerConfigWith("  capture: captures\n  capture_retention:\n    max_mib: 1\n"), kFileDir);
 
   ASSERT_TRUE(files.has_value());
   EXPECT_EQ(files->capture_max_files, 1U);
@@ -261,8 +315,9 @@ TEST(ParseServerConfigTest, ReadsEitherCaptureRetentionLimitAlone) {
 TEST(ParseServerConfigTest, RejectsACaptureRetentionLimitThatIsNotAWholeNumberAboveZero) {
   for (const std::string key : {"max_files", "max_mib"}) {
     for (const char* limit : {"0", "-1", "-200", "1.5", "abc", "", "4294967296"}) {
-      const auto config = ParseServerConfig(
-          ServerConfigWith("  capture_retention:\n    " + key + ": '" + std::string(limit) + "'\n"), kFileDir);
+      const auto config = ParseServerConfig(ServerConfigWith("  capture: captures\n  capture_retention:\n    " + key +
+                                                             ": '" + std::string(limit) + "'\n"),
+                                            kFileDir);
 
       ASSERT_FALSE(config.has_value()) << key << " " << limit;
       EXPECT_EQ(config.error().subject, "simulation.capture_retention." + key) << limit;

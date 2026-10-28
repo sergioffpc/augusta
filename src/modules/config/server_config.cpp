@@ -1,6 +1,8 @@
 #include "augusta/server_config.h"
 
 #include <array>
+#include <charconv>
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -9,6 +11,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 
 #include "augusta/config.h"
@@ -19,8 +22,9 @@ namespace {
 
 constexpr std::string_view kTickRateKey = "simulation.tick_rate_hz";
 constexpr std::uint32_t kMaxTickRate = std::numeric_limits<std::uint8_t>::max();
+constexpr std::string_view kListenAddressKey = "network.listen_address";
 constexpr std::string_view kMetricsPortKey = "metrics.port";
-constexpr std::uint32_t kMaxMetricsPort = std::numeric_limits<std::uint16_t>::max();
+constexpr std::uint32_t kMaxPort = std::numeric_limits<std::uint16_t>::max();
 constexpr std::string_view kCaptureKey = "simulation.capture";
 constexpr std::string_view kCaptureModeKey = "simulation.capture_mode";
 constexpr std::string_view kCaptureMaxFilesKey = "simulation.capture_retention.max_files";
@@ -47,9 +51,47 @@ std::expected<std::uint16_t, ConfigError> OptionalMetricsPort(const ConfigValues
   if (!values.contains(kMetricsPortKey)) {
     return kDefaultMetricsPort;
   }
-  return RequireWholeNumber(values, kMetricsPortKey, 1, kMaxMetricsPort).transform([](std::uint32_t port) {
+  return RequireWholeNumber(values, kMetricsPortKey, 1, kMaxPort).transform([](std::uint32_t port) {
     return static_cast<std::uint16_t>(port);
   });
+}
+
+// Whether port is a TCP port from 1 to 65535 in plain decimal.
+bool IsPort(std::string_view port) {
+  std::uint32_t number = 0;
+  const auto [end, error] = std::from_chars(port.data(), port.data() + port.size(), number);
+  return !port.empty() && error == std::errc{} && end == port.data() + port.size() && number >= 1 && number <= kMaxPort;
+}
+
+// Whether address is <host>:<port>, an IPv6 host bracketed, with a port from
+// 1 to 65535: a port left out or 0 has the server listen wherever the OS puts
+// it, where no client looks. The host itself is the networking module's to
+// parse.
+bool IsListenAddress(std::string_view address) {
+  const std::size_t colon = address.rfind(':');
+  if (colon == std::string_view::npos || !IsPort(address.substr(colon + 1))) {
+    return false;
+  }
+  const std::string_view host = address.substr(0, colon);
+  if (host.starts_with('[') || host.contains(':')) {
+    return host.size() > 2 && host.front() == '[' && host.back() == ']' &&
+           host.substr(1, host.size() - 2).contains(':');
+  }
+  return !host.empty();
+}
+
+// The fallback when absent; when present, an address IsListenAddress accepts.
+std::expected<std::string, ConfigError> OptionalListenAddress(const ConfigValues& values) {
+  std::string address = OptionalString(values, kListenAddressKey, kDefaultListenAddress);
+  if (!IsListenAddress(address)) {
+    return std::unexpected(ConfigError{
+        .code = ConfigErrorCode::kInvalidEntry,
+        .subject = std::string(kListenAddressKey),
+        .reason = std::format("must be <host>:<port> or [<IPv6 host>]:<port>, the port from 1 to {}", kMaxPort),
+        .file = {},
+    });
+  }
+  return address;
 }
 
 // The path under key, relative to root; empty when absent.
@@ -82,15 +124,30 @@ std::expected<bool, ConfigError> OptionalStrict(const ConfigValues& values, std:
   return mode == "strict";
 }
 
-// A key that may not be set with replay.captures, or that needs it.
-ConfigError ReplayEntryError(std::string_view key, std::string_view reason) {
+// A key that may not be set with another, or that needs one.
+ConfigError CrossCheckError(std::string_view key, std::string_view reason) {
   return ConfigError{
       .code = ConfigErrorCode::kInvalidEntry, .subject = std::string(key), .reason = std::string(reason), .file = {}};
 }
 
+// Refuses a capture setting without the capture directory it shapes
+// (ADR-0050): with no simulation.capture, nothing is captured.
+std::expected<void, ConfigError> RequireCaptureForCaptureSettings(const ConfigValues& values) {
+  if (values.contains(kCaptureKey)) {
+    return {};
+  }
+  for (const std::string_view key : {kCaptureModeKey, kCaptureMaxFilesKey, kCaptureMaxMibKey}) {
+    if (values.contains(key)) {
+      return std::unexpected(CrossCheckError(key, "needs simulation.capture"));
+    }
+  }
+  return {};
+}
+
 // Reads a replay server's settings into config: its captures' directory,
 // empty for a live server, and how many Replays it runs at once. A replay
-// server runs no Match, so none of it is captured or reenacted.
+// server runs no Match, so none of it is captured or reenacted; a live
+// server's capture settings need the directory they shape.
 std::expected<void, ConfigError> ReadReplay(const ConfigValues& values, const std::filesystem::path& root,
                                             ServerConfig& config) {
   auto captures = OptionalPath(values, kReplayCapturesKey, root);
@@ -99,9 +156,9 @@ std::expected<void, ConfigError> ReadReplay(const ConfigValues& values, const st
   }
   if (captures->empty()) {
     if (values.contains(kReplayMaxViewersKey)) {
-      return std::unexpected(ReplayEntryError(kReplayMaxViewersKey, "needs replay.captures"));
+      return std::unexpected(CrossCheckError(kReplayMaxViewersKey, "needs replay.captures"));
     }
-    return {};
+    return RequireCaptureForCaptureSettings(values);
   }
   for (const std::string_view key : {
            kCaptureKey,
@@ -114,7 +171,7 @@ std::expected<void, ConfigError> ReadReplay(const ConfigValues& values, const st
 #endif
        }) {
     if (values.contains(key)) {
-      return std::unexpected(ReplayEntryError(key, "cannot be set on a replay server: it runs no Match"));
+      return std::unexpected(CrossCheckError(key, "cannot be set on a replay server: it runs no Match"));
     }
   }
   std::uint8_t max_viewers = kDefaultReplayMaxViewers;
@@ -127,6 +184,33 @@ std::expected<void, ConfigError> ReadReplay(const ConfigValues& values, const st
   }
   config.replay_captures = *std::move(captures);
   config.replay_max_viewers = max_viewers;
+  return {};
+}
+
+// Reads a live server's capture settings into config (ADR-0050): the
+// directory, relative to root, its mode and its retention limits.
+std::expected<void, ConfigError> ReadCapture(const ConfigValues& values, const std::filesystem::path& root,
+                                             ServerConfig& config) {
+  auto directory = OptionalPath(values, kCaptureKey, root);
+  if (!directory) {
+    return std::unexpected(directory.error());
+  }
+  const auto strict = OptionalStrict(values, kCaptureModeKey);
+  if (!strict) {
+    return std::unexpected(strict.error());
+  }
+  const auto max_files = OptionalCaptureLimit(values, kCaptureMaxFilesKey);
+  if (!max_files) {
+    return std::unexpected(max_files.error());
+  }
+  const auto max_mib = OptionalCaptureLimit(values, kCaptureMaxMibKey);
+  if (!max_mib) {
+    return std::unexpected(max_mib.error());
+  }
+  config.capture_directory = *std::move(directory);
+  config.strict_capture = *strict;
+  config.capture_max_files = *max_files;
+  config.capture_max_mib = *max_mib;
   return {};
 }
 
@@ -149,36 +233,25 @@ std::expected<ServerConfig, ConfigError> ServerConfigFrom(const ConfigValues& va
   if (!log_level) {
     return std::unexpected(log_level.error());
   }
-  auto capture_directory = OptionalPath(values, kCaptureKey, root);
-  if (!capture_directory) {
-    return std::unexpected(capture_directory.error());
-  }
-  const auto strict_capture = OptionalStrict(values, kCaptureModeKey);
-  if (!strict_capture) {
-    return std::unexpected(strict_capture.error());
-  }
-  const auto capture_max_files = OptionalCaptureLimit(values, kCaptureMaxFilesKey);
-  if (!capture_max_files) {
-    return std::unexpected(capture_max_files.error());
-  }
-  const auto capture_max_mib = OptionalCaptureLimit(values, kCaptureMaxMibKey);
-  if (!capture_max_mib) {
-    return std::unexpected(capture_max_mib.error());
+  auto listen_address = OptionalListenAddress(values);
+  if (!listen_address) {
+    return std::unexpected(listen_address.error());
   }
   const auto metrics_port = OptionalMetricsPort(values);
   if (!metrics_port) {
     return std::unexpected(metrics_port.error());
   }
-  return ServerConfig{
+  ServerConfig config{
       .pack_path = *std::move(pack_path),
       .public_key_path = *std::move(public_key_path),
       .tick_rate_hz = *tick_rate_hz,
-      .listen_address = OptionalString(values, "network.listen_address", kDefaultListenAddress),
+      .listen_address = *std::move(listen_address),
       .log_level = *std::move(log_level),
-      .capture_directory = *std::move(capture_directory),
-      .strict_capture = *strict_capture,
-      .capture_max_files = *capture_max_files,
-      .capture_max_mib = *capture_max_mib,
+      // Read next, by ReadCapture.
+      .capture_directory = {},
+      .strict_capture = false,
+      .capture_max_files = std::nullopt,
+      .capture_max_mib = std::nullopt,
 #if AUGUSTA_DEBUG_TOOLS
       // Read last, by ReadDebug.
       .reenactments = false,
@@ -189,6 +262,7 @@ std::expected<ServerConfig, ConfigError> ServerConfigFrom(const ConfigValues& va
       .metrics_port = *metrics_port,
       .replay_captures = {},
   };
+  return ReadCapture(values, root, config).transform([&config] { return std::move(config); });
 }
 
 #if AUGUSTA_DEBUG_TOOLS
@@ -238,7 +312,7 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
       kCaptureModeKey,
       kCaptureMaxFilesKey,
       kCaptureMaxMibKey,
-      "network.listen_address",
+      kListenAddressKey,
       "logging.level",
       kMetricsPortKey,
       kReplayCapturesKey,
@@ -286,8 +360,7 @@ std::string DescribeServerConfigError(const ConfigError& error) {
                                std::format("'{}' must be an integer from 1 to {}", error.subject, kMaxReplayViewers));
   }
   if (error.subject == kMetricsPortKey) {
-    return DescribeConfigError(error,
-                               std::format("'{}' must be an integer from 1 to {}", error.subject, kMaxMetricsPort));
+    return DescribeConfigError(error, std::format("'{}' must be an integer from 1 to {}", error.subject, kMaxPort));
   }
   if (error.subject == kCaptureMaxFilesKey || error.subject == kCaptureMaxMibKey) {
     return DescribeConfigError(error,
