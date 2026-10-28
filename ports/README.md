@@ -12,7 +12,9 @@ and re-applies the diff.
   ones, without the PhysXGpu library NVIDIA ships for Linux and Windows alone,
   and `macos-arm64.patch` fixes the sources where they take `PX_OSX` for x86
   (`portfile.cmake` lists what it changes). On Windows it builds with Ninja
-  through the chainloaded toolchain, not msbuild (ADR-0079).
+  through the chainloaded toolchain, not msbuild, and its platform files, which
+  set the compile flags whole for `cl`, drop `/MP` and take the triplet's flags
+  after their own, so `clang-cl` builds it (ADR-0079).
 - `nvrhi`: macOS arm64 among its `supports`, for its Vulkan backend on Mesa's
   KosmicKrisp (docs/ENGINEERING.md).
 - `libsodium`: Windows built by CMake and Ninja, statically, from the

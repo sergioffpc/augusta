@@ -1,8 +1,8 @@
 @echo off
 rem Runs the given command inside the Visual Studio Build Tools x64 developer
 rem environment (INCLUDE/LIB/PATH: the MSVC STL, CRT and Windows SDK that
-rem clang-cl and lld-link build against, and the cl.exe vcpkg's ports build
-rem with), so the Ninja generator works from a plain terminal. Usage:
+rem clang-cl and lld-link build our code and vcpkg's ports against), so the
+rem Ninja generator works from a plain terminal. Usage:
 rem scripts\vcenv.cmd cmake --build --preset windows
 rem The Makefile, the pre-push hook and the pack bootstrap use this on Windows;
 rem it's also handy on its own.
