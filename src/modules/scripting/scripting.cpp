@@ -256,7 +256,9 @@ std::expected<Value, HookError> Script::Call(std::string_view hook, const Value:
   // call cannot stop this one early.
   LimitInstructions(slot->lua, kHookInstructionLimit);
   const sol::object argument = ToLua(*slot, view);
-  const auto run = function.as<sol::protected_function>();
+  // With no message handler: sol2 would take the one in its global, which the
+  // script may have replaced with one that runs with hooks off.
+  const sol::protected_function run(slot->lua.lua_state(), function, sol::reference());
   const sol::protected_function_result result = [&] {
     const MemoryLimitScope limited(slot->lua, true);
     return run(argument);
