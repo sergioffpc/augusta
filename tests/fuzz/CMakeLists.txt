@@ -94,16 +94,27 @@ add_custom_target(
   VERBATIM
 )
 
-# assets::Pack::Load, a pack file from outside. The target signs its input with
-# the golden packs' test key itself (pack_load_fuzz.cpp), so it hashes and signs
-# directly, as only augusta_assets does elsewhere.
+# assets::Pack::Load, a pack file from outside, and every asset the engine
+# reads from a loaded one, the Clips through ozz-animation's archives included.
+# What the target does with its input is its own library (pack_load_target.h),
+# which the seeds test runs too. It signs its input with the golden packs' test
+# key itself, so it hashes and signs directly, as only augusta_assets does
+# elsewhere.
 find_package(blake3 CONFIG REQUIRED)
 find_package(unofficial-sodium CONFIG REQUIRED)
 set(augusta_pack_load_example_packs AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs")
 
+add_library(augusta_pack_load_target STATIC pack_load_target.cpp)
+target_include_directories(augusta_pack_load_target PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(
+  augusta_pack_load_target
+  PUBLIC augusta_assets
+  PRIVATE augusta_animation BLAKE3::blake3 unofficial-sodium::sodium
+)
+target_compile_definitions(augusta_pack_load_target PRIVATE ${augusta_pack_load_example_packs})
+
 add_executable(augusta_pack_load_replay pack_load_fuzz.cpp replay_main.cpp)
-target_link_libraries(augusta_pack_load_replay PRIVATE augusta_assets BLAKE3::blake3 unofficial-sodium::sodium)
-target_compile_definitions(augusta_pack_load_replay PRIVATE ${augusta_pack_load_example_packs})
+target_link_libraries(augusta_pack_load_replay PRIVATE augusta_pack_load_target)
 file(
   GLOB augusta_pack_load_inputs
   CONFIGURE_DEPENDS
@@ -113,13 +124,14 @@ file(
 add_test(NAME augusta_pack_load_replay COMMAND augusta_pack_load_replay ${augusta_pack_load_inputs})
 
 add_executable(augusta_pack_load_seeds_tests pack_load_seeds_test.cpp)
-target_link_libraries(augusta_pack_load_seeds_tests PRIVATE augusta_assets GTest::gtest GTest::gtest_main)
+target_link_libraries(augusta_pack_load_seeds_tests PRIVATE augusta_pack_load_target GTest::gtest GTest::gtest_main)
 target_compile_definitions(
   augusta_pack_load_seeds_tests
   PRIVATE ${augusta_pack_load_example_packs} AUGUSTA_PACK_LOAD_CORPUS="${CMAKE_CURRENT_SOURCE_DIR}/corpus/pack_load"
 )
 gtest_discover_tests(augusta_pack_load_seeds_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS assets)
-# After the golden packs are regenerated, one step rewrites the seeds from them:
+# After the golden packs are regenerated, or the pack format changes on purpose,
+# one step rewrites the seeds:
 #   cmake --build --preset <preset> --target augusta_pack_load_seeds
 add_custom_target(
   augusta_pack_load_seeds
@@ -142,7 +154,6 @@ if(AUGUSTA_FUZZ)
   target_link_options(augusta_capture_read_fuzz PRIVATE -fsanitize=fuzzer)
 
   add_executable(augusta_pack_load_fuzz pack_load_fuzz.cpp)
-  target_link_libraries(augusta_pack_load_fuzz PRIVATE augusta_assets BLAKE3::blake3 unofficial-sodium::sodium)
-  target_compile_definitions(augusta_pack_load_fuzz PRIVATE ${augusta_pack_load_example_packs})
+  target_link_libraries(augusta_pack_load_fuzz PRIVATE augusta_pack_load_target)
   target_link_options(augusta_pack_load_fuzz PRIVATE -fsanitize=fuzzer)
 endif()

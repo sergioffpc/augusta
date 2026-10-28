@@ -1,16 +1,18 @@
 # Fuzz targets
 
 libFuzzer targets for what arrives from outside (ADR-0013). Each target is one
-`<target>_fuzz.cpp` defining `LLVMFuzzerTestOneInput`, built twice by
-[CMakeLists.txt](CMakeLists.txt): with libFuzzer under the `linux-fuzz` preset
-(clang, ASan), and on every preset with [replay_main.cpp](replay_main.cpp), so
-`ctest` runs the target's inputs without the fuzzer.
+`<target>_fuzz.cpp` defining `LLVMFuzzerTestOneInput` (`pack_load`'s does what
+[pack_load_target.h](pack_load_target.h) declares, which its seeds test runs
+too), built twice by [CMakeLists.txt](CMakeLists.txt): with libFuzzer under the
+`linux-fuzz` preset (clang, ASan), and on every preset with
+[replay_main.cpp](replay_main.cpp), so `ctest` runs the target's inputs without
+the fuzzer.
 
-| Target            | Input                                                                                                                     | Seeds                              |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| `protocol_decode` | one payload for `protocol::Decode`, and the same bytes as one capture record for `protocol::DecodeCaptureRecord`          | one message of each kind           |
-| `capture_read`    | a Match capture file for `capture::ReadCapture`                                                                           | one capture holding every record   |
-| `pack_load`       | a pack without its trailer, which the target signs with the golden packs' test key and loads through `assets::Pack::Load` | the golden client and server packs |
+| Target            | Input                                                                                                                     | Seeds                                                         |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `protocol_decode` | one payload for `protocol::Decode`, and the same bytes as one capture record for `protocol::DecodeCaptureRecord`          | one message of each kind                                      |
+| `capture_read`    | a Match capture file for `capture::ReadCapture`                                                                           | one capture holding every record                              |
+| `pack_load`       | a pack without its trailer, which the target signs with the golden packs' test key and loads through `assets::Pack::Load` | the golden client and server packs, and a pack of one texture |
 
 ## Layout
 
@@ -60,11 +62,22 @@ drifts from it. After a deliberate change to the capture format, rewrite it:
 cmake --build --preset linux --target augusta_capture_read_seeds
 ```
 
-The `pack_load` seeds are the golden packs in `tests/fixtures/example-packs`
-without their trailer: a trailer the fuzzer mutated would fail verification
-before `Load` parses anything, so the target writes a valid one itself.
-[pack_load_seeds_test.cpp](pack_load_seeds_test.cpp) fails when they drift from
-the golden packs; after regenerating those, rewrite the seeds:
+The `pack_load` seeds are packs without their trailer: a trailer the fuzzer
+mutated would fail verification before `Load` parses anything, so the target
+writes a valid one itself ([pack_load_target.h](pack_load_target.h)). A pack
+that loads then has every asset the engine reads from one resolved: each path of
+the example scenario as every type of asset and the rifle, then each Character
+the pack lists (the example's when the list does not resolve) as the server's
+content loading reads it: its Hitboxes bound to its Skeleton, its eye, its
+ozz-animation Skeleton, Clips, stance transitions and weapon socket each
+resolved, and its Clips loaded (`animation::LoadClips`), so ozz-animation's
+archive parsing is fuzzed too. The seeds are the golden packs in
+`tests/fixtures/example-packs`, which hold no texture, and a pack of one texture
+that `WritePack` writes. [pack_load_seeds_test.cpp](pack_load_seeds_test.cpp)
+fails when they drift from the golden packs or from what `WritePack` writes, and
+when a golden seed no longer loads its Characters' Clips or the texture seed its
+texture. After regenerating the golden packs, or a deliberate change to the pack
+format, rewrite the seeds:
 
 ```bash
 cmake --build --preset linux --target augusta_pack_load_seeds
