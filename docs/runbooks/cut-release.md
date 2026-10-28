@@ -264,10 +264,12 @@ flux get helmreleases -n flux-system     # augustad-staging at X.Y.Z+<12>
 - The GitHub Release `vX.Y.Z` exists with `augustac-windows-x64.zip` and its
   `.pdb`, `augustac-linux-x64.tar.gz` and its `.debug`, `augustad-linux-x64`,
   `augustad-linux-arm64` and their `.debug` files, and the `.spdx.json` SBOM of
-  each executable. Its notes are the changelog section, then the Linux client's
-  glibc baseline (Ubuntu 26.04 or newer). The zip's `augustac.exe --version` and
-  the tarball's `augustac/augustac --version` print `augustac X.Y.Z` from an
-  empty folder: the release workflow checks both before it publishes.
+  each executable. Its notes are the changelog section, then the Windows
+  client's minimum VC++ redistributable (`MSVC_REDIST_VERSION` in
+  `scripts/bootstrap/versions.env`) and the Linux client's glibc baseline
+  (Ubuntu 26.04 or newer). The zip's `augustac.exe --version` and the tarball's
+  `augustac/augustac --version` print `augustac X.Y.Z` from an empty folder: the
+  release workflow checks both before it publishes.
 - `sha-<12>` is an index with a `linux/amd64` and a `linux/arm64` manifest:
   `main`'s `container-index` job ran.
 - The attestations verify. `<12>` is the first 12 characters of the tagged merge

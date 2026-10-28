@@ -125,9 +125,6 @@ _NO_CPE = {
     "cxxopts": "ktx's tools', linked into no executable shipped",
     "fmt": "ktx's tools', linked into no executable shipped",
     "zstd": "ktx's, linked into no executable shipped",
-    # What the client's zip ships beside it (ADR-0058): the MSVC runtime.
-    "msvc-runtime": "its CPE, microsoft:visual_c++, names Visual Studio's "
-    "releases, not the runtime's file versions",
 }
 
 
