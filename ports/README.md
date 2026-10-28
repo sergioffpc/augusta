@@ -11,6 +11,7 @@ and re-applies the diff.
   there. PhysX 5 has no macOS platform files: the port builds it with its Linux
   ones, without the PhysXGpu library NVIDIA ships for Linux and Windows alone,
   and `macos-arm64.patch` fixes the sources where they take `PX_OSX` for x86
-  (`portfile.cmake` lists what it changes).
+  (`portfile.cmake` lists what it changes). On Windows it builds with Ninja
+  through the chainloaded toolchain, not msbuild (ADR-0079).
 - `nvrhi`: macOS arm64 among its `supports`, for its Vulkan backend on Mesa's
   KosmicKrisp (docs/ENGINEERING.md).
