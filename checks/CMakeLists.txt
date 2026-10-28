@@ -1,8 +1,9 @@
 # Checks of the repository's structure rather than of a feature: the
 # architecture's boundaries, the Glue rule, the test areas, the platforms
-# augustad configures for, the Linux client's staging and the paths src names
-# by their text. Each is a `cmake -P` script that builds nothing, so they
-# configure with the rest of the build, not behind augusta_tests. The
+# augustad configures for, the Linux client's staging, the paths src names by
+# their text and where a build's headers come from. Each is a `cmake -P` script
+# that builds nothing of the project's, at most a small fixture of its own, so
+# they configure with the rest of the build, not behind augusta_tests. The
 # scripts' own pytest tests sit beside them; CI runs those.
 
 # No header past the protocol's edge names a protocol type (ADR-0038): only
@@ -98,6 +99,21 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
       ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
       -DGENERATOR=${CMAKE_GENERATOR} -P ${CMAKE_CURRENT_SOURCE_DIR}/stage_client_linux.cmake
   )
+endif()
+
+# Where a build's headers come from (ADR-0079): the check itself
+# (header_origin.cmake), against a stand-in build with the build's own compiler,
+# so it runs on every platform. It reads Ninja's deps log, so a build with
+# another generator has no stand-in to check.
+if(CMAKE_GENERATOR MATCHES "Ninja")
+  add_test(
+    NAME augusta_header_origin
+    COMMAND
+      ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
+      -DGENERATOR=${CMAKE_GENERATOR} -DMAKE_PROGRAM=${CMAKE_MAKE_PROGRAM} -DCOMPILER=${CMAKE_CXX_COMPILER} -P
+      ${CMAKE_CURRENT_SOURCE_DIR}/header_origin_fixture.cmake
+  )
+  set_tests_properties(augusta_header_origin PROPERTIES LABELS check)
 endif()
 
 # `make check` runs these alone: ctest's check label.
