@@ -1,0 +1,65 @@
+diff --git a/physx/include/foundation/PxVecMathSSE.h b/physx/include/foundation/PxVecMathSSE.h
+--- a/physx/include/foundation/PxVecMathSSE.h
++++ b/physx/include/foundation/PxVecMathSSE.h
+@@ -2676,34 +2676,24 @@ PX_FORCE_INLINE VecU16V V4I16CompareGt(VecU16V a, VecU16V b)
+ // unsigned compares are not supported on x86
+ PX_FORCE_INLINE VecU16V V4U16CompareGt(VecU16V a, VecU16V b)
+ {
+-	// _mm_cmpgt_epi16 doesn't work for unsigned values unfortunately
+-	// return m128_I2F(_mm_cmpgt_epi16(internalSimd::m128_F2I(a), internalSimd::m128_F2I(b)));
+-	VecU16V result;
+-	result.m128_u16[0] = PxU16((a).m128_u16[0] > (b).m128_u16[0]);
+-	result.m128_u16[1] = PxU16((a).m128_u16[1] > (b).m128_u16[1]);
+-	result.m128_u16[2] = PxU16((a).m128_u16[2] > (b).m128_u16[2]);
+-	result.m128_u16[3] = PxU16((a).m128_u16[3] > (b).m128_u16[3]);
+-	result.m128_u16[4] = PxU16((a).m128_u16[4] > (b).m128_u16[4]);
+-	result.m128_u16[5] = PxU16((a).m128_u16[5] > (b).m128_u16[5]);
+-	result.m128_u16[6] = PxU16((a).m128_u16[6] > (b).m128_u16[6]);
+-	result.m128_u16[7] = PxU16((a).m128_u16[7] > (b).m128_u16[7]);
+-	return result;
++	// _mm_cmpgt_epi16 doesn't work for unsigned values unfortunately, so both
++	// sides are biased into its signed range; each lane is 1 or 0, not a mask
++	const __m128i bias = _mm_set1_epi16(PxI16(0x8000));
++	const __m128i gt = _mm_cmpgt_epi16(_mm_xor_si128(_mm_castps_si128(a), bias), _mm_xor_si128(_mm_castps_si128(b), bias));
++	return _mm_castsi128_ps(_mm_and_si128(gt, _mm_set1_epi16(1)));
+ }
+ 
+ PX_FORCE_INLINE Vec4V Vec4V_From_VecU32V(VecU32V a)
+ {
+-	Vec4V result = V4LoadXYZW(PxF32(a.m128_u32[0]), PxF32(a.m128_u32[1]), PxF32(a.m128_u32[2]), PxF32(a.m128_u32[3]));
++	PX_ALIGN(16, PxU32 u[4]);
++	_mm_store_si128(reinterpret_cast<__m128i*>(u), _mm_castps_si128(a));
++	Vec4V result = V4LoadXYZW(PxF32(u[0]), PxF32(u[1]), PxF32(u[2]), PxF32(u[3]));
+ 	return result;
+ }
+ 
+ PX_FORCE_INLINE VecU32V U4LoadXYZW(PxU32 x, PxU32 y, PxU32 z, PxU32 w)
+ {
+-	VecU32V result;
+-	result.m128_u32[0] = x;
+-	result.m128_u32[1] = y;
+-	result.m128_u32[2] = z;
+-	result.m128_u32[3] = w;
+-	return result;
++	return _mm_castsi128_ps(_mm_set_epi32(PxI32(w), PxI32(z), PxI32(y), PxI32(x)));
+ }
+ 
+ } // namespace aos
+diff --git a/physx/source/compiler/cmake/windows/PhysX.cmake b/physx/source/compiler/cmake/windows/PhysX.cmake
+--- a/physx/source/compiler/cmake/windows/PhysX.cmake
++++ b/physx/source/compiler/cmake/windows/PhysX.cmake
+@@ -160,10 +160,10 @@ IF(PHYSX_LIBTYPE STREQUAL "SHARED")
+ 	INSTALL(FILES $<TARGET_PDB_FILE:PhysX> 
+ 		DESTINATION $<$<CONFIG:debug>:${PX_ROOT_LIB_DIR}/debug>$<$<CONFIG:release>:${PX_ROOT_LIB_DIR}/release>$<$<CONFIG:checked>:${PX_ROOT_LIB_DIR}/checked>$<$<CONFIG:profile>:${PX_ROOT_LIB_DIR}/profile> OPTIONAL)
+ 		
+-	SET(PHYSX_PLATFORM_LINK_FLAGS_DEBUG "/DELAYLOAD:PhysXFoundation${CMAKE_DEBUG_POSTFIX}.dll /DELAYLOAD:PhysXCommon${CMAKE_DEBUG_POSTFIX}.dll")
+-	SET(PHYSX_PLATFORM_LINK_FLAGS_CHECKED "/DELAYLOAD:PhysXFoundation${CMAKE_CHECKED_POSTFIX}.dll /DELAYLOAD:PhysXCommon${CMAKE_CHECKED_POSTFIX}.dll")
+-	SET(PHYSX_PLATFORM_LINK_FLAGS_PROFILE "/DELAYLOAD:PhysXFoundation${CMAKE_PROFILE_POSTFIX}.dll /DELAYLOAD:PhysXCommon${CMAKE_PROFILE_POSTFIX}.dll")
+-	SET(PHYSX_PLATFORM_LINK_FLAGS_RELEASE "/DELAYLOAD:PhysXFoundation${CMAKE_RELEASE_POSTFIX}.dll /DELAYLOAD:PhysXCommon${CMAKE_RELEASE_POSTFIX}.dll")		
++	SET(PHYSX_PLATFORM_LINK_FLAGS_DEBUG "")
++	SET(PHYSX_PLATFORM_LINK_FLAGS_CHECKED "")
++	SET(PHYSX_PLATFORM_LINK_FLAGS_PROFILE "")
++	SET(PHYSX_PLATFORM_LINK_FLAGS_RELEASE "")		
+ ELSE()	
+ 	INSTALL(FILES ${PHYSX_ROOT_DIR}/$<$<CONFIG:debug>:${PX_ROOT_LIB_DIR}/debug>$<$<CONFIG:release>:${PX_ROOT_LIB_DIR}/release>$<$<CONFIG:checked>:${PX_ROOT_LIB_DIR}/checked>$<$<CONFIG:profile>:${PX_ROOT_LIB_DIR}/profile>/$<$<CONFIG:debug>:${PHYSX_COMPILE_PDB_NAME_DEBUG}>$<$<CONFIG:checked>:${PHYSX_COMPILE_PDB_NAME_CHECKED}>$<$<CONFIG:profile>:${PHYSX_COMPILE_PDB_NAME_PROFILE}>$<$<CONFIG:release>:${PHYSX_COMPILE_PDB_NAME_RELEASE}>.pdb
+ 		DESTINATION $<$<CONFIG:debug>:${PX_ROOT_LIB_DIR}/debug>$<$<CONFIG:release>:${PX_ROOT_LIB_DIR}/release>$<$<CONFIG:checked>:${PX_ROOT_LIB_DIR}/checked>$<$<CONFIG:profile>:${PX_ROOT_LIB_DIR}/profile> OPTIONAL)
