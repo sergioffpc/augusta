@@ -68,22 +68,29 @@ if(CMAKE_HOST_WIN32)
   endif()
 endif()
 
+# Whether the preset's sanitizer brings its own allocator (linux-san,
+# linux-tsan, linux-fuzz; see the operator new override in
+# tests/protocol_test.cpp). Then it alone serves malloc: augustac and augustad
+# link no mimalloc (ADR-0078) and the allocator benchmarks are not built. Not an
+# option: no configure turns mimalloc off by hand.
+if(CMAKE_CXX_FLAGS_INIT MATCHES "-fsanitize=")
+  set(AUGUSTA_SANITIZER_ALLOCATOR ON)
+else()
+  set(AUGUSTA_SANITIZER_ALLOCATOR OFF)
+endif()
+
 # The allocator benchmarks (tests/CMakeLists.txt): off unless a configure asks
 # for them, as `make test TAGS="allocator"` does, and then for that configure
 # alone. The request leaves the cache as soon as it is read, so the next
-# configure, a plain `make test`'s or CMake's own re-run, installs no mimalloc
-# for them (the manifest's allocators feature) and builds none of their
-# executables. Never under a sanitizer, which brings its own allocator (see the
-# operator new override in tests/protocol_test.cpp). Before project(), as
-# AUGUSTA_TOOLS is.
+# configure, a plain `make test`'s or CMake's own re-run, builds none of their
+# executables. mimalloc, the one allocator they measure against the platform's,
+# is a base dependency (ADR-0078), so they install nothing of their own. Never
+# under a sanitizer's own allocator.
 set(AUGUSTA_ALLOCATOR_BENCHMARKS "${AUGUSTA_ALLOCATOR_BENCHMARKS}")
 unset(AUGUSTA_ALLOCATOR_BENCHMARKS CACHE)
-if(AUGUSTA_ALLOCATOR_BENCHMARKS AND CMAKE_CXX_FLAGS_INIT MATCHES "-fsanitize=")
+if(AUGUSTA_ALLOCATOR_BENCHMARKS AND AUGUSTA_SANITIZER_ALLOCATOR)
   message(STATUS "Allocator benchmarks: not built under a sanitizer, which brings its own allocator")
   set(AUGUSTA_ALLOCATOR_BENCHMARKS OFF)
-endif()
-if(AUGUSTA_ALLOCATOR_BENCHMARKS)
-  list(APPEND VCPKG_MANIFEST_FEATURES allocators)
 endif()
 
 project(augusta LANGUAGES CXX)
@@ -126,6 +133,46 @@ else()
   # own: a core's frames are mostly in the module libraries it links, and
   # without theirs lldb has no file, line or local for them.
   add_compile_options($<$<CONFIG:Release>:-g>)
+endif()
+
+# Binary hardening: the platform's standard mitigations, on every target, so
+# that a memory-safety bug in augustad, which parses what any peer sends, or in
+# augustac is harder to turn into control of the process. tests/ checks both
+# executables for them (binary_hardening.cmake). The dependencies vcpkg builds
+# are left as they are: none of these changes an ABI.
+if(MSVC)
+  # Control Flow Guard checks every indirect call's target; /CETCOMPAT marks the
+  # image fit for CET's shadow stack, which checks every return wherever the
+  # CPU, Windows and the process's mitigation policy turn it on.
+  add_compile_options(/guard:cf)
+  add_link_options(/guard:cf /CETCOMPAT)
+else()
+  # libc++'s fast hardening mode: the bounds and null checks that cost a
+  # compare each (operator[], front(), an optional's value), which trap rather
+  # than read past the end. Every build, Linux's and macOS's.
+  add_compile_definitions(_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST)
+endif()
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  # A canary in every function with an array or an address-taken local, and a
+  # probe on every stack page a large frame or alloca would skip, so the stack
+  # cannot grow past its guard page into another mapping.
+  add_compile_options(-fstack-protector-strong -fstack-clash-protection)
+  # glibc's checked string and memory functions wherever the compiler knows the
+  # destination's size, at the level that covers sizes known only at run time.
+  # It needs optimisation, so not in a Debug build - every sanitizer preset's,
+  # whose interceptors it would bypass. Undefined first, in case the compiler
+  # predefines another level.
+  add_compile_options("$<$<NOT:$<CONFIG:Debug>>:-U_FORTIFY_SOURCE;-D_FORTIFY_SOURCE=3>")
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
+    # Intel CET's indirect-branch landing pads and shadow-stack marking. lld
+    # marks the executable only when every object it links is marked, which
+    # vcpkg's unhardened static libraries are not: until they are, nothing
+    # enforces it.
+    add_compile_options(-fcf-protection=full)
+  endif()
+  # Full RELRO: every symbol bound at load time, then the whole GOT made
+  # read-only, so no write can redirect a call through it.
+  add_link_options(LINKER:-z,relro,-z,now)
 endif()
 
 # The tools' Python modules (tools/agent, tools/pack) are shared libraries that
@@ -173,6 +220,8 @@ find_package(GameNetworkingSockets CONFIG REQUIRED)
 find_package(unofficial-omniverse-physx-sdk CONFIG REQUIRED)
 # OmniPVD's runtime, staged beside the executables whose PhysX can record.
 include(cmake/PvdRuntime.cmake)
+# mimalloc, which replaces the platform's malloc in the executables (ADR-0078).
+include(cmake/Mimalloc.cmake)
 # Protocol Buffers: the Networking Protocol's wire (ADR-0007). The full runtime
 # GameNetworkingSockets already links, and protoc with protobuf_generate, which
 # vcpkg builds for the host, so every preset generates the protocol's C++.

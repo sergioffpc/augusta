@@ -11,11 +11,15 @@ on:
   pull_request:
     types: [closed]
   delete:
+# Read-only: the job declares the write it needs.
 permissions:
-  actions: write
+  contents: read
 jobs:
   delete-caches:
     runs-on: ubuntu-26.04
+    permissions:
+      # Deleting the ref's cache entries.
+      actions: write
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}

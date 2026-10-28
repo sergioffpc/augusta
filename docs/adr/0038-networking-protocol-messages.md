@@ -220,6 +220,8 @@ when it cannot be a valid message of this build. The error is:
 - `kOutOfRange`: a count outside its grid's range, or a number wider than its
   `*Wire` field, which no sender produces since senders clamp;
 - `kFieldTooLong`: a string or list longer than the protocol's limits.
+- `kPayloadTooLarge`: a payload longer than any message its receiver takes in,
+  which a server refuses before `Decode` parses it (below).
 
 A message has one meaning, not one encoding (ADR-0007): fields this build does
 not know are ignored and an absent one reads as its default, so a later build's
@@ -228,6 +230,17 @@ receiver drops what fails to decode and logs it; a malformed message never
 changes state. Whatever the error, the Link counts it the same, as a payload
 that does not decode (**Failure paths**); the error only names the reason in
 logs and tests.
+
+Every limit above is checked after protobuf has parsed the whole payload, which
+builds each repeated element first. So a server bounds what a client may send
+before it parses anything: `protocol::kMaxClientPayloadSize`, 4 KiB, a client
+message's bound, well above the largest one a client sends (a full Commands
+message, a Join or Reenact request, a few hundred bytes). The server's listen
+socket sets it as the transport's receive limit, which closes a connection that
+sends more, and the Link refuses a larger payload before `Decode`, as one that
+does not decode (`kPayloadTooLarge`), wherever a transport lets one through. A
+server's own messages are bounded only by what the transport sends,
+`protocol::kMaxServerPayloadSize`.
 
 **Outbound invariants.** `Encode` and `EncodeCaptureRecord` check their own side
 as strictly, in every build, as they map each `*Wire` to its generated message:

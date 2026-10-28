@@ -957,6 +957,54 @@ TEST(ProtocolTest, MoreCommandsThanAMessageAllowsIsTooLong) {
             DecodeError::kFieldTooLong);
 }
 
+// Every message a client sends, each of its lists full, its strings at their
+// longest and its numbers at their widest, fits what a server takes in.
+// Requirements: NFR-05
+TEST(ProtocolTest, EveryClientMessageAtItsLargestFitsTheClientPayloadBound) {
+  const float far = augusta::math::FromSteps(augusta::math::kPositionGrid.min, augusta::math::kPositionGrid);
+  const float far_direction =
+      augusta::math::FromSteps(augusta::math::kDirectionGrid.min, augusta::math::kDirectionGrid);
+  const float far_angle = augusta::math::FromSteps(augusta::math::kAngleGrid.min, augusta::math::kAngleGrid);
+  const float last_fraction = augusta::math::FromSteps(augusta::math::kFractionGrid.max, augusta::math::kFractionGrid);
+  const SequencedCommandWire widest_command{
+      .sequence = std::numeric_limits<augusta::tick::Sequence>::max(),
+      .command = {.direction = Vec3(far_direction, far_direction, far_direction),
+                  .yaw = far_angle,
+                  .pitch = far_angle,
+                  .seen_fraction = last_fraction,
+                  .flags = CommandWire::kSprint | CommandWire::kAds | CommandWire::kFire | CommandWire::kReload,
+                  .desired_stance = StanceWire::kProne,
+                  .seen_age = std::numeric_limits<std::uint8_t>::max()}};
+  PackHashWire pack{};
+  pack.fill(std::byte{0xFF});
+  const std::string version(kMaxEngineVersionLength, 'v');
+  const std::string character(augusta::protocol::kMaxCharacterNameLength, 'c');
+  const boost::uuids::uuid run = Session(0xFF);
+
+  const std::vector<MessageWire> largest{
+      JoinRequestWire{.engine_version = version, .client_pack = pack, .character = character, .run = run},
+      CommandsWire{.commands = std::vector<SequencedCommandWire>(kMaxCommandsPerMessage, widest_command),
+                   .seen_tick = std::numeric_limits<augusta::tick::Tick>::max()},
+      ReadyWire{.version = std::numeric_limits<std::uint32_t>::max()},
+      ReplayListRequestWire{},
+      ReplayRequestWire{.engine_version = version,
+                        .client_pack = pack,
+                        .capture = std::string(augusta::protocol::kMaxCaptureNameLength, 'n'),
+                        .run = run},
+      ReenactRequestWire{.engine_version = version,
+                         .client_pack = pack,
+                         .character = character,
+                         .spawn = Vec3(far, far, far),
+                         .run = run},
+  };
+
+  for (const MessageWire& message : largest) {
+    const auto encoded = Encode(message);
+    ASSERT_TRUE(encoded.has_value()) << message.index();
+    EXPECT_LE(encoded->size(), augusta::protocol::kMaxClientPayloadSize) << message.index();
+  }
+}
+
 // Requirements: NFR-20
 TEST(ProtocolTest, ANonFiniteNumberIsSentAsZeroOrItsNearestBound) {
   SequencedCommandWire sequenced = BusyCommand(1);

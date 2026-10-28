@@ -22,6 +22,7 @@
 #include "augusta/capture_retention.h"
 #include "augusta/capturer.h"
 #include "augusta/command.h"
+#include "augusta/limits.h"
 #include "augusta/match.h"
 
 // Which captures a replay server replays (ADR-0051), from a directory of
@@ -179,6 +180,40 @@ TEST_F(ReplayCatalogTest, LeavesOutWhatIsNoCapture) {
 
   ASSERT_EQ(listed.size(), 1U);
   EXPECT_EQ(listed[0].name, replayable);
+}
+
+// A Match holds at most limits::kMaxPlayers players, and a Replay list and a
+// Replay carry no more: a capture of more is no capture of a Match, left out
+// and unknown, while one of exactly that many is listed and found.
+// Requirements: US-21
+TEST_F(ReplayCatalogTest, LeavesOutACaptureOfMorePlayersThanAMatchHolds) {
+  const auto write = [this](std::string_view stem, std::size_t players) {
+    capture::Capture written{.header = capture::Header{.engine_version = "1.0.0",
+                                                       .server_pack = PackOf(1),
+                                                       .client_pack = PackOf(2),
+                                                       .tick_rate_hz = kTickRate,
+                                                       .started = {}},
+                             .joins = {},
+                             .events = {{.offset = 30, .event = capture::MatchEnd{}}},
+                             .torn = false};
+    for (std::size_t i = 0; i < players; ++i) {
+      written.joins.push_back(
+          {.session = Session(static_cast<std::uint8_t>(i + 1)), .character = "soldier", .spawn = {}});
+    }
+    std::ofstream out(directory_ / CaptureNamed(stem), std::ios::binary);
+    ASSERT_TRUE(capture::WriteCapture(out, written).has_value());
+  };
+  write("full", augusta::limits::kMaxPlayers);
+  write("over", augusta::limits::kMaxPlayers + 1);
+
+  ReplayCatalog catalog(directory_, Terms());
+  const std::vector<ReplayListing> listed = catalog.List();
+
+  ASSERT_EQ(listed.size(), 1U);
+  EXPECT_EQ(listed[0].name, CaptureNamed("full"));
+  EXPECT_EQ(listed[0].characters.size(), augusta::limits::kMaxPlayers);
+  EXPECT_TRUE(catalog.Find(CaptureNamed("full")).has_value());
+  EXPECT_FALSE(catalog.Find(CaptureNamed("over")).has_value());
 }
 
 // Requirements: US-21

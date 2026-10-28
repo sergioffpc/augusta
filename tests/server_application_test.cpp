@@ -6,6 +6,7 @@
 #include <fstream>
 #include <ios>
 #include <iterator>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -71,7 +72,7 @@ ServerConfig ExampleConfig() {
 // How augustad ends with config, faults armed as the test has them, and the
 // transport the environment initialized.
 Outcome Served(const ServerConfig& config, Faults& faults) {
-  auto program = ServerProgram(config, &faults);
+  auto program = ServerProgram(config, std::nullopt, &faults);
   program.initialize = []() -> std::expected<void, Failure> { return {}; };
   return Execute(program);
 }
@@ -121,7 +122,7 @@ TEST(ServerApplicationTest, ATransportThatCannotBeInitializedIsATransportFailure
   Faults faults;
   faults.Arm(Site::kDependencyInit, "GameNetworkingSockets_Init failed");
 
-  const Outcome outcome = Execute(ServerProgram(ExampleConfig(), &faults));
+  const Outcome outcome = Execute(ServerProgram(ExampleConfig(), std::nullopt, &faults));
 
   ASSERT_TRUE(outcome.has_value());
   EXPECT_EQ(outcome->code, Code::kTransportInitFailed);

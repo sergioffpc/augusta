@@ -238,7 +238,7 @@ labels: configure
 # the scripts they cover, as CI runs it.
 check: configure
 	$(RUN) ctest --preset $(PRESET) --parallel $(JOBS) --label-regex check --no-tests=error
-	$(RUN) uv run --no-project --with pyyaml==6.0.3 --with pytest==9.1.1 pytest checks
+	$(RUN) uv run --locked --project tools --no-default-groups --group checks pytest checks
 
 # The tests' coverage (ADR-0013), whatever PRESET says: the linux-coverage
 # preset's tests, then their llvm-cov report. The last run's profiles go first,

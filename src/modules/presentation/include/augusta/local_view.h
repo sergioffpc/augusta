@@ -57,8 +57,8 @@ struct Camera {
 /// velocity, total_correction and the rifle's Recoil offset linearly
 /// interpolated, the stance (discrete) of whichever of the two is nearer, and
 /// the rest as of latest. Blending
-/// total_correction with the position keeps a reconciliation jump inside the
-/// tick hidden by Correction as it is being blended in.
+/// total_correction with the position keeps it the share of a reconciliation
+/// jump inside the tick that the blended position shows.
 [[nodiscard]] prediction::State BlendTicks(const prediction::State& previous, const prediction::State& latest,
                                            float fraction);
 

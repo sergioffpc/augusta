@@ -389,7 +389,9 @@ struct World::Impl {
   // The hitboxes of every player but bullet's shooter, which a bullet never
   // hits, each posed as it was bullet's Shooter's delay before this tick, of
   // those segment passes near enough to cross. A player with no tick behind it
-  // yet is judged as Posing posed it this tick. Valid until the next call.
+  // yet is judged as Posing posed it this tick. A player the segment
+  // passes farther from than its reach in any pose kept is culled by its root
+  // alone, before any of its Joints is composed. Valid until the next call.
   std::span<const ballistics::Hitbox> HitboxesFor(const Bullet& bullet, const ballistics::Segment& segment) {
     const double time = static_cast<double>(tick) - static_cast<double>(bullet.shooters_delay);
     posing.BeginBullet(time, segment);
@@ -398,13 +400,18 @@ struct World::Impl {
       if (player.entity == bullet.shooter) {
         return;
       }
-      const std::optional<hitbox::Pose> seen = history.poses.At(time, judged_joints);
-      if (!seen) {
+      const std::optional<hitbox::Pose> root = history.poses.RootAt(time);
+      if (!root) {
         posing.Consider(player.entity, hitboxes.bound, hitboxes.reach.Of(posed.posed.root.position, posed.posed.world),
                         posed.posed.root, posed.posed.world);
         return;
       }
-      posing.Consider(player.entity, hitboxes.bound, hitboxes.reach.Of(seen->position, judged_joints), *seen,
+      if (!posing.Reaches(root->position, history.poses.ReachInAnyPose())) {
+        return;
+      }
+      // At gives the root RootAt did, now that a tick is kept.
+      static_cast<void>(history.poses.At(time, judged_joints));
+      posing.Consider(player.entity, hitboxes.bound, hitboxes.reach.Of(root->position, judged_joints), *root,
                       judged_joints);
     });
     return posing.BulletHitboxes();

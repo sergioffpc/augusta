@@ -121,6 +121,43 @@ template <typename Runtime>
   return ran ? *std::move(ran) : Outcome(std::move(ran.error()));
 }
 
+/// What augustac's or augustad's main() read of mimalloc first thing, before
+/// its command line (ADR-0078): the facts its check decides from. Only the
+/// executable calls mimalloc, so this module, and every test linking it, keep
+/// the platform's allocator.
+struct MimallocFacts {
+  /// Whether mimalloc-redirect.dll redirected the CRT's malloc to mimalloc as
+  /// the process started (mi_is_redirected(), Windows); always true elsewhere,
+  /// where the link replaced the C library's malloc.
+  bool redirected = false;
+  /// Whether a block malloc had just handed out is in mimalloc's heap
+  /// (mi_is_in_heap_region()).
+  bool block_in_heap = false;
+  /// mi_version(): major * 10000 + minor * 100 + patch, e.g. 30503 for 3.5.3.
+  int version = 0;
+};
+
+/// Why mimalloc does not serve the process, as CheckMimalloc finds it.
+enum class MimallocError {
+  /// mimalloc-redirect.dll did not redirect the CRT's malloc to mimalloc
+  /// (Windows): mimalloc.dll was not the first DLL the executable loaded, or
+  /// mimalloc-redirect.dll was not beside it.
+  kNotRedirected,
+  /// A block malloc handed out is outside mimalloc's heap: something other
+  /// than mimalloc serves malloc.
+  kBlockOutsideHeap,
+};
+
+/// Whether mimalloc serves the process, from facts: nothing when it does, else
+/// why not. Redirection is judged first: without it no block can be
+/// mimalloc's.
+[[nodiscard]] std::expected<void, MimallocError> CheckMimalloc(const MimallocFacts& facts);
+
+/// The one line main() writes to stderr for error before it exits nonzero,
+/// with no log and no Run: executable (e.g. "augustad") and why mimalloc does
+/// not serve it.
+[[nodiscard]] std::string DescribeMimallocError(std::string_view executable, MimallocError error);
+
 /// The event Conclude writes for a failure, `event=<name>`. What reads a log
 /// back for how its Run ended (the client's run_files.h) matches it.
 inline constexpr std::string_view kTerminalFailureEvent = "terminal_failure";

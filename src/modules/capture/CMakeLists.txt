@@ -15,5 +15,9 @@ augusta_set_module_scope(augusta_capture_records SHARED)
 # checks/core_boundary.cmake).
 add_library(augusta_capture STATIC capture.cpp)
 target_include_directories(augusta_capture PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(augusta_capture PUBLIC augusta_capture_records augusta_failure PRIVATE augusta_link_messages)
+target_link_libraries(
+  augusta_capture
+  PUBLIC augusta_capture_records augusta_failure
+  PRIVATE augusta_limits augusta_link_messages
+)
 augusta_set_module_scope(augusta_capture SHARED)

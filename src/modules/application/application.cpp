@@ -1,5 +1,6 @@
 #include "augusta/application.h"
 
+#include <expected>
 #include <filesystem>
 #include <format>
 #include <optional>
@@ -23,6 +24,18 @@ namespace {
 constexpr UINT kTimerPeriodMs = 1;
 #endif
 
+// Why mimalloc does not serve the process, for DescribeMimallocError's line.
+std::string_view MimallocReason(MimallocError error) {
+  switch (error) {
+    case MimallocError::kNotRedirected:
+      return "malloc is not redirected to it (mimalloc.dll must be the first DLL it loads, with "
+             "mimalloc-redirect.dll beside it)";
+    case MimallocError::kBlockOutsideHeap:
+      return "a block malloc handed out is outside mimalloc's heap";
+  }
+  return "unknown reason";
+}
+
 }  // namespace
 
 #ifdef _WIN32
@@ -42,6 +55,20 @@ TimerResolution::TimerResolution() = default;
 
 TimerResolution::~TimerResolution() = default;
 #endif
+
+std::expected<void, MimallocError> CheckMimalloc(const MimallocFacts& facts) {
+  if (!facts.redirected) {
+    return std::unexpected(MimallocError::kNotRedirected);
+  }
+  if (!facts.block_in_heap) {
+    return std::unexpected(MimallocError::kBlockOutsideHeap);
+  }
+  return {};
+}
+
+std::string DescribeMimallocError(std::string_view executable, MimallocError error) {
+  return std::format("{}: mimalloc does not serve this process: {}", executable, MimallocReason(error));
+}
 
 int Conclude(std::string_view executable, const Outcome& outcome, const std::optional<std::filesystem::path>& run_log) {
   if (!outcome.has_value()) {

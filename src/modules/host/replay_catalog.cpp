@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <expected>
 #include <filesystem>
 #include <fstream>
 #include <ios>
@@ -21,13 +22,9 @@ namespace augusta::host {
 
 namespace {
 
-std::optional<capture::Capture> ReadCaptureAt(const std::filesystem::path& path) {
+std::expected<capture::Capture, capture::ReadError> ReadCaptureAt(const std::filesystem::path& path) {
   std::ifstream in(path, std::ios::binary);
-  auto capture = capture::ReadCapture(in);
-  if (!capture.has_value()) {
-    return std::nullopt;
-  }
-  return *std::move(capture);
+  return capture::ReadCapture(in);
 }
 
 }  // namespace
@@ -84,7 +81,12 @@ std::vector<ReplayListing> ReplayCatalog::List() {
     if (!error && known != read_.end() && known->second.size == size && known->second.written == written) {
       read = std::move(known->second);
     } else {
-      const std::optional<capture::Capture> capture = ReadCaptureAt(entry.path());
+      const auto capture = ReadCaptureAt(entry.path());
+      if (!capture.has_value()) {
+        // read_ keeps the failure until the file changes, so it is logged once.
+        LOG_WARN("subsystem=replay event=capture_unreadable capture={} reason=\"{}\"", name,
+                 capture::DescribeReadError(capture.error()));
+      }
       read = Read{.size = size,
                   .written = written,
                   .listing = capture.has_value() ? ListingOf(name, *capture, terms_) : std::nullopt};
@@ -109,11 +111,11 @@ std::optional<capture::Capture> ReplayCatalog::Find(std::string_view name) const
     if (listed != name) {
       continue;
     }
-    std::optional<capture::Capture> capture = ReadCaptureAt(entry.path());
+    auto capture = ReadCaptureAt(entry.path());
     if (!capture.has_value() || !ListingOf(listed, *capture, terms_).has_value()) {
       return std::nullopt;
     }
-    return capture;
+    return *std::move(capture);
   }
   return std::nullopt;
 }

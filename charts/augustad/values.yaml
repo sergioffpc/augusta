@@ -94,8 +94,9 @@ captures:
   # What each server keeps its capture directory within, oldest Match first,
   # rendered as simulation.capture_retention (config/augustad.example.yaml):
   # maxFiles captures and maxMiB MiB in all, either alone, each an integer of
-  # at least 1. Left unset, nothing is deleted. Every server's maxMiB summed
-  # must fit the filesystem the directories share.
+  # at least 1. Rendered only with hostPath: with no capture directory, the
+  # server refuses it. Left unset, nothing is deleted. Every server's maxMiB
+  # summed must fit the filesystem the directories share.
   #   retention:
   #     maxFiles: 200
   #     maxMiB: 2048

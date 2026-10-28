@@ -21,20 +21,23 @@ non-string values and a section that is not a mapping are errors, so a
 misspelled optional key never silently falls back to its default. A value that
 is a number (the server's tick rate) is read from its string, and one that is
 not a number in its range (for the tick rate, a whole number of Hz from 1
-to 255) is an error like any other. Relative paths start from a required
-top-level `base_dir` key (itself relative to the config file's directory, so `.`
-means the file's own), never from the working directory: the process starts the
-same from anywhere, and where its content lives is always written down rather
-than implied by where the executable sits. The parsing mechanism lives in the
-shared `augusta_config` module (ADR-0006), using yaml-cpp (ADR-0025), and fails
-startup through `std::expected` rather than throwing (ADR-0033). Each
-executable's keys live on its own side of the split: `augusta_client_config`
-(client-only, since its keymap names client Input's keys and controls) and
-`augusta_server_config` (server-only), so the headless server never links or
-includes client Input. A tool that needs a settings file of its own reads it
-under the same rules through the module's schema functions (`ReadConfigValues`,
-`RequirePath`, ...), but declares its keys and their meaning itself, next to it:
-the module holds no key of a tool.
+to 255) is an error like any other. So is a key that only shapes another left
+unset (the server's `simulation.capture_mode` without `simulation.capture`), and
+a listen address without a port of 1 to 65535: a port left to the OS is one no
+client knows. Relative paths start from a required top-level `base_dir` key
+(itself relative to the config file's directory, so `.` means the file's own),
+never from the working directory: the process starts the same from anywhere, and
+where its content lives is always written down rather than implied by where the
+executable sits. The parsing mechanism lives in the shared `augusta_config`
+module (ADR-0006), using yaml-cpp (ADR-0025), and fails startup through
+`std::expected` rather than throwing (ADR-0033). Each executable's keys live on
+its own side of the split: `augusta_client_config` (client-only, since its
+keymap names client Input's keys and controls) and `augusta_server_config`
+(server-only), so the headless server never links or includes client Input. A
+tool that needs a settings file of its own reads it under the same rules through
+the module's schema functions (`ReadConfigValues`, `RequirePath`, ...), but
+declares its keys and their meaning itself, next to it: the module holds no key
+of a tool.
 
 **Extended by ADR-0050 and ADR-0051**: `augustac` also takes options that say
 what one run is for: `--reenact <capture>` and `--player <n>`, together, make it

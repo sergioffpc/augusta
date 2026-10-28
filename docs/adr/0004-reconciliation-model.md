@@ -97,7 +97,10 @@ it (`presentation::Correction`):
   with a time constant of 47 ms, to 4% of the jump within 9 ticks (150 ms), the
   correction budget of NFR-02.
 - A jump of at least 2 m is shown at once, together with what was still fading:
-  too far to look right sliding, most plausibly a respawn or teleport.
+  too far to look right sliding, most plausibly a respawn or teleport. It is
+  measured on the tick that made it, not on the share of it a frame's blend
+  between two ticks shows, so it is shown in full on the first frame of that
+  tick at any frame rate.
 
 ## Known limits
 

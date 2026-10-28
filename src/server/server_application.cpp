@@ -157,15 +157,20 @@ std::expected<config::ServerConfig, failure::Failure> ReadServerConfig(
       .and_then([](std::expected<config::ServerConfig, failure::Failure> read) { return read; });
 }
 
-application::Program<ServerRuntime> ServerProgram(const config::ServerConfig& file_config, failure::Faults* faults) {
+application::Program<ServerRuntime> ServerProgram(const config::ServerConfig& file_config,
+                                                  const std::optional<application::MimallocFacts>& mimalloc,
+                                                  failure::Faults* faults) {
   return {
       // link::Init() must run once, process-wide, before any Server is
       // constructed - see link.h. What the debug tools start is held by
       // initialize, so it lasts as long as the Program: past the runtime and
       // every World in it.
       .initialize =
-          [faults, start_debug_tools = DebugToolsStart(file_config)] {
-            LOG_INFO("subsystem=server event=hardware {}", hardware::DescribeMachine(hardware::QueryMachine()));
+          [faults, start_debug_tools = DebugToolsStart(file_config),
+           mimalloc_version =
+               mimalloc.transform([](const application::MimallocFacts& facts) { return facts.version; })] {
+            LOG_INFO("subsystem=server event=hardware {} {}", hardware::DescribeMachine(hardware::QueryMachine()),
+                     hardware::DescribeAllocator(mimalloc_version));
             start_debug_tools();
             return link::Init(faults);
           },
