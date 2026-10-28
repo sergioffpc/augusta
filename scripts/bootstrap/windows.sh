@@ -196,6 +196,13 @@ toolchain_release() {
       release_url="${github}/tamasfe/taplo/releases/download/${TAPLO_VERSION}/taplo-windows-x86_64.gz"
       release_sha=550fdc955343f8a196447a05346ecf8827e391726e4ded577bb00a0a36cf220c
       ;;
+    xwin)
+      # Which makes the MSVC sysroot (scripts/bootstrap/toolchain/sysroot.sh).
+      # xwin's tags have no "v".
+      release_url="${github}/Jake-Shadle/xwin/releases/download/${XWIN_VERSION}/xwin-${XWIN_VERSION}-x86_64-pc-windows-msvc.tar.gz"
+      release_sha=96e83665ef5c1406aabd0be603a8d08e67e604f36fda630b6807ee948a614e26
+      release_member=xwin-${XWIN_VERSION}-x86_64-pc-windows-msvc/xwin.exe
+      ;;
     buf)
       release_url="${github}/bufbuild/buf/releases/download/v${BUF_VERSION}/buf-Windows-x86_64.exe"
       release_sha=13542f2892c4f774150ddb525266d6421d457b3e741297056b64427853526e36

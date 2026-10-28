@@ -130,7 +130,8 @@ install_rock() {
 
 # Installs each pinned version the store lacks into its <tool>/<version>/,
 # which a .installed file, written last, marks complete: an install cut short
-# is redone. From the platform's bootstrap script, its release downloads.
+# is redone. From the platform's bootstrap script, its release downloads. Then
+# Windows' MSVC sysroot (sysroot.sh).
 fill_store() {
   local tool dir
   # shellcheck source=/dev/null
@@ -151,6 +152,7 @@ fill_store() {
     fi
     touch "${dir}/.installed"
   done
+  fill_sysroot
 }
 
 # Installs Prettier into a directory with npm ci, from package.json and its

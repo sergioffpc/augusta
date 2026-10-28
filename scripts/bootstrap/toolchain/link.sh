@@ -135,7 +135,8 @@ EOF
 }
 
 # Fills the store and links .toolchain/bin into it, and LLVM's tools to the
-# system's, removing whatever else it holds; installs Prettier and writes
+# system's, removing whatever else it holds; links Windows' .toolchain/sysroot
+# (sysroot.sh); installs Prettier and writes
 # .toolchain/activate. Last, it copies the pins it linked to
 # .toolchain/versions.env, which check compares with the pins, so an install
 # cut short leaves the old ones.
@@ -177,6 +178,7 @@ install() {
       rm -f "${file}" 2>/dev/null || true
     fi
   done
+  link_sysroot
   install_prettier
   write_activate
   cp "${VERSIONS}" "${TOOLCHAIN}/versions.env"
