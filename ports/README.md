@@ -19,3 +19,7 @@ and re-applies the diff.
   `CMakeLists.txt` beside its portfile, in place of upstream's msbuild solution:
   it builds under `cl` and `clang-cl` alike (ADR-0079). Linux and macOS keep
   upstream's make path.
+- `pybind11`: without its `python3` dependency, whose port builds CPython with
+  msbuild on Windows (ADR-0079). The port is headers and CMake files alone, and
+  the tools' modules (tools/agent, tools/pack) are built against the Python
+  `cmake/AugustaToolsPython.cmake` finds, not one vcpkg installs.
