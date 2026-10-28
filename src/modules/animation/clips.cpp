@@ -1,10 +1,12 @@
 #include "augusta/clips.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <format>
+#include <limits>
 #include <optional>
 #include <span>
 #include <string>
@@ -16,7 +18,9 @@
 #include <ozz/animation/runtime/animation.h>
 #include <ozz/animation/runtime/skeleton.h>
 #include <ozz/base/io/archive.h>
+#include <ozz/base/io/archive_traits.h>
 #include <ozz/base/io/stream.h>
+#include <ozz/base/maths/soa_transform.h>
 
 #include "augusta/assets.h"
 #include "augusta/math.h"
@@ -65,9 +69,97 @@ ClipLoadError Counting(ClipPart part, ClipLoadCause cause, std::size_t count, st
   return refusal;
 }
 
+// Whether body, what follows an Object's tag in an archive that input reads
+// from its start, is the version ozz loads and exactly the size its counts
+// give. ozz's Load trusts those counts: it allocates by them and reads them
+// unchecked, so a count the archive does not hold aborts it or sizes its
+// allocation.
+template <typename Object>
+bool Fits(ozz::io::IArchive& input, std::span<const std::byte> body);
+
+template <>
+bool Fits<ozz::animation::Animation>(ozz::io::IArchive& input, std::span<const std::byte> body) {
+  // The version, the duration, the track count, then the name's length and
+  // ten key counts, as Animation::Load reads them.
+  constexpr std::uint64_t kHeader = 14 * sizeof(std::uint32_t);
+  constexpr std::uint64_t kKey = 3 * sizeof(std::uint16_t);
+  constexpr std::size_t kCounts = 12;
+  if (body.size() < kHeader) {
+    return false;
+  }
+  std::uint32_t version = 0;
+  input >> version;
+  float duration = 0.0F;
+  input >> duration;
+  std::array<std::uint32_t, kCounts> counts{};
+  for (std::uint32_t& count : counts) {
+    input >> count;
+  }
+  const auto [tracks, name, timepoints, translations, rotations, scales, translation_entries, translation_offsets,
+              rotation_entries, rotation_offsets, scale_entries, scale_offsets] = counts;
+  if (version != ozz::io::internal::Version<const ozz::animation::Animation>::kValue ||
+      timepoints > std::numeric_limits<std::uint16_t>::max()) {
+    return false;
+  }
+  const std::uint64_t ratio = timepoints > std::numeric_limits<std::uint8_t>::max() ? 2 : 1;
+  // A track kind's keyframe controls: ratios, offsets to the previous
+  // keyframes, the iframe entries and offsets, and the iframe interval.
+  const auto control = [ratio](std::uint64_t keys, std::uint64_t entries, std::uint64_t offsets) {
+    return (keys * (ratio + sizeof(std::uint16_t))) + entries + (offsets * sizeof(std::uint32_t)) + sizeof(float);
+  };
+  const std::uint64_t size = kHeader + name + (std::uint64_t{timepoints} * sizeof(float)) +
+                             control(translations, translation_entries, translation_offsets) +
+                             control(rotations, rotation_entries, rotation_offsets) +
+                             control(scales, scale_entries, scale_offsets) +
+                             ((std::uint64_t{translations} + rotations + scales) * kKey);
+  return size == body.size();
+}
+
+template <>
+bool Fits<ozz::animation::Skeleton>(ozz::io::IArchive& input, std::span<const std::byte> body) {
+  // The version, the joint count, then the names' length, as Skeleton::Load
+  // reads them.
+  constexpr std::uint64_t kHeader = 3 * sizeof(std::uint32_t);
+  if (body.size() < 2 * sizeof(std::uint32_t)) {
+    return false;
+  }
+  std::uint32_t version = 0;
+  input >> version;
+  std::int32_t joints = 0;
+  input >> joints;
+  if (version != ozz::io::internal::Version<const ozz::animation::Skeleton>::kValue || joints < 0 ||
+      joints > ozz::animation::Skeleton::kMaxJoints) {
+    return false;
+  }
+  if (joints == 0) {
+    return body.size() == 2 * sizeof(std::uint32_t);
+  }
+  if (body.size() < kHeader) {
+    return false;
+  }
+  std::int32_t chars = 0;
+  input >> chars;
+  if (chars < 0 || body.size() - kHeader < static_cast<std::uint64_t>(chars)) {
+    return false;
+  }
+  // Load walks joints NUL-terminated names through them.
+  const auto names = body.subspan(kHeader, static_cast<std::size_t>(chars));
+  if (std::ranges::count(names, std::byte{0}) < joints) {
+    return false;
+  }
+  const auto count = static_cast<std::uint64_t>(joints);
+  const std::uint64_t size = kHeader + static_cast<std::uint64_t>(chars) + (count * sizeof(std::int16_t)) +
+                             (((count + 3) / 4) * sizeof(ozz::math::SoaTransform));
+  return size == body.size();
+}
+
 // object out of archive, an ozz-animation archive of one; nullopt when it is none.
 template <typename Object>
 std::optional<Object> Unarchive(std::span<const std::byte> archive) {
+  // The endianness byte, which IArchive reads unchecked on construction.
+  if (archive.empty()) {
+    return std::nullopt;
+  }
   ozz::io::MemoryStream stream;
   stream.Write(archive.data(), archive.size());
   stream.Seek(0, ozz::io::Stream::kSet);
@@ -75,6 +167,12 @@ std::optional<Object> Unarchive(std::span<const std::byte> archive) {
   if (!input.TestTag<Object>()) {
     return std::nullopt;
   }
+  const int tag = stream.Tell();
+  stream.Seek(ozz::io::internal::Tag<const Object>::kTagLength, ozz::io::Stream::kCurrent);
+  if (!Fits<Object>(input, archive.subspan(static_cast<std::size_t>(stream.Tell())))) {
+    return std::nullopt;
+  }
+  stream.Seek(tag, ozz::io::Stream::kSet);
   Object object;
   input >> object;
   return object;

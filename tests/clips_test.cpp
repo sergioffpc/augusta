@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <expected>
 #include <filesystem>
 #include <functional>
@@ -132,6 +133,14 @@ std::vector<std::byte> ClipArchive(std::size_t tracks) {
   const auto animation = ozz::animation::offline::AnimationBuilder()(raw);
   EXPECT_TRUE(animation);
   return ArchiveOf(*animation);
+}
+
+// Overwrites archive's bytes at offset with value's, in this host's endianness,
+// which is the archive's.
+template <typename Value>
+void Overwrite(std::vector<std::byte>& archive, std::size_t offset, Value value) {
+  ASSERT_LE(offset + sizeof(value), archive.size());
+  std::memcpy(archive.data() + offset, &value, sizeof(value));
 }
 
 AssetEntry ClipEntry(std::string_view role, float stride_length, std::vector<std::byte> archive) {
@@ -292,6 +301,55 @@ TEST_F(ClipsTest, AClipThatIsNoAnimationIsRefusedNamingIt) {
 
   ASSERT_FALSE(clips.has_value());
   EXPECT_EQ(clips.error().role, "standing/aim_up");
+  EXPECT_EQ(clips.error().cause, ClipLoadCause::kNotAnArchive);
+}
+
+// Requirements: NFR-12
+TEST_F(ClipsTest, AClipWhoseCountsItsArchiveDoesNotHoldIsRefusedNamingIt) {
+  // Past the endianness byte, the tag, the version, the duration, the track
+  // count and the name's length: the timepoint count, which ozz allocates by.
+  constexpr std::size_t kTimepoints = 1 + sizeof("ozz-animation") + (4 * sizeof(std::uint32_t));
+  auto archive = ClipArchive(Soldier().joints.size());
+  Overwrite(archive, kTimepoints, std::uint32_t{0x10000});
+  Replace("standing/idle", std::move(archive));
+
+  const auto clips = Load();
+
+  ASSERT_FALSE(clips.has_value());
+  EXPECT_EQ(clips.error().role, "standing/idle");
+  EXPECT_EQ(clips.error().cause, ClipLoadCause::kNotAnArchive);
+}
+
+// Requirements: NFR-12
+TEST_F(ClipsTest, ATruncatedClipIsRefusedNamingIt) {
+  auto archive = ClipArchive(Soldier().joints.size());
+  archive.pop_back();
+  Replace("air", std::move(archive));
+
+  const auto clips = Load();
+
+  ASSERT_FALSE(clips.has_value());
+  EXPECT_EQ(clips.error().role, "air");
+  EXPECT_EQ(clips.error().cause, ClipLoadCause::kNotAnArchive);
+}
+
+// Requirements: NFR-12
+TEST_F(ClipsTest, AnAnimationSkeletonWithMoreJointsThanNamesIsRefused) {
+  // Past the endianness byte, the tag and the version: the joint count.
+  constexpr std::size_t kJoints = 1 + sizeof("ozz-skeleton") + sizeof(std::uint32_t);
+  auto archive = SkeletonArchiveOf(Soldier().joints);
+  Overwrite(archive, kJoints, std::int32_t{1024});
+  Remove(augusta::assets::CharacterAnimationSkeletonPath(kCharacter));
+  const auto skeleton = augusta::assets::EncodeAnimationSkeletonBlob(archive);
+  ASSERT_TRUE(skeleton.has_value());
+  entries_.push_back({.type = AssetType::kAnimationSkeleton,
+                      .path = augusta::assets::CharacterAnimationSkeletonPath(kCharacter),
+                      .data = *skeleton});
+
+  const auto clips = Load();
+
+  ASSERT_FALSE(clips.has_value());
+  EXPECT_EQ(clips.error().part, ClipPart::kSkeleton);
   EXPECT_EQ(clips.error().cause, ClipLoadCause::kNotAnArchive);
 }
 
