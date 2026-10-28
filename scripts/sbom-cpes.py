@@ -41,6 +41,7 @@ _NO_CPE = {
     "flecs": "not in the NVD",
     "glm": "not in the NVD",
     "libsodium": "not in the NVD: its CVEs have no CPE assigned",
+    "mimalloc": "not in the NVD",
     "nvtx": "not in the NVD",
     "ozz-animation": "not in the NVD",
     "pffft": "not in the NVD",
@@ -98,7 +99,6 @@ _NO_CPE = {
     "spirv-headers": "the validation layer's, shipped in no package",
     "spirv-reflect": "the validation layer's, shipped in no package",
     "spirv-tools": "the validation layer's, shipped in no package",
-    "mimalloc": "the validation layer's, shipped in no package",
     "parallel-hashmap": "the validation layer's, shipped in no package",
     # The manifest's lavapipe feature: Mesa's software Vulkan driver, which the
     # renderer smoke test draws on, the ports it pulls in, and a Vulkan loader

@@ -68,22 +68,29 @@ if(CMAKE_HOST_WIN32)
   endif()
 endif()
 
+# Whether the preset's sanitizer brings its own allocator (linux-san,
+# linux-tsan, linux-fuzz; see the operator new override in
+# tests/protocol_test.cpp). Then it alone serves malloc: augustac and augustad
+# link no mimalloc (ADR-0078) and the allocator benchmarks are not built. Not an
+# option: no configure turns mimalloc off by hand.
+if(CMAKE_CXX_FLAGS_INIT MATCHES "-fsanitize=")
+  set(AUGUSTA_SANITIZER_ALLOCATOR ON)
+else()
+  set(AUGUSTA_SANITIZER_ALLOCATOR OFF)
+endif()
+
 # The allocator benchmarks (tests/CMakeLists.txt): off unless a configure asks
 # for them, as `make test TAGS="allocator"` does, and then for that configure
 # alone. The request leaves the cache as soon as it is read, so the next
-# configure, a plain `make test`'s or CMake's own re-run, installs no mimalloc
-# for them (the manifest's allocators feature) and builds none of their
-# executables. Never under a sanitizer, which brings its own allocator (see the
-# operator new override in tests/protocol_test.cpp). Before project(), as
-# AUGUSTA_TOOLS is.
+# configure, a plain `make test`'s or CMake's own re-run, builds none of their
+# executables. mimalloc, the one allocator they measure against the platform's,
+# is a base dependency (ADR-0078), so they install nothing of their own. Never
+# under a sanitizer's own allocator.
 set(AUGUSTA_ALLOCATOR_BENCHMARKS "${AUGUSTA_ALLOCATOR_BENCHMARKS}")
 unset(AUGUSTA_ALLOCATOR_BENCHMARKS CACHE)
-if(AUGUSTA_ALLOCATOR_BENCHMARKS AND CMAKE_CXX_FLAGS_INIT MATCHES "-fsanitize=")
+if(AUGUSTA_ALLOCATOR_BENCHMARKS AND AUGUSTA_SANITIZER_ALLOCATOR)
   message(STATUS "Allocator benchmarks: not built under a sanitizer, which brings its own allocator")
   set(AUGUSTA_ALLOCATOR_BENCHMARKS OFF)
-endif()
-if(AUGUSTA_ALLOCATOR_BENCHMARKS)
-  list(APPEND VCPKG_MANIFEST_FEATURES allocators)
 endif()
 
 project(augusta LANGUAGES CXX)
@@ -173,6 +180,8 @@ find_package(GameNetworkingSockets CONFIG REQUIRED)
 find_package(unofficial-omniverse-physx-sdk CONFIG REQUIRED)
 # OmniPVD's runtime, staged beside the executables whose PhysX can record.
 include(cmake/PvdRuntime.cmake)
+# mimalloc, which replaces the platform's malloc in the executables (ADR-0078).
+include(cmake/Mimalloc.cmake)
 # Protocol Buffers: the Networking Protocol's wire (ADR-0007). The full runtime
 # GameNetworkingSockets already links, and protoc with protobuf_generate, which
 # vcpkg builds for the host, so every preset generates the protocol's C++.

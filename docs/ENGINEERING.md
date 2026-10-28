@@ -789,8 +789,9 @@ no self-hosted GitHub Actions runner in this pipeline).
 - **No formal client frame-rate target.** Deliberately not turned into an NFR —
   frame rate is judged subjectively while playing/testing, not automated or
   gated in CI.
-- **Memory strategy:** rely on Flecs' and PhysX's built-in allocators; no custom
-  arena/pool allocators until profiling shows a concrete need.
+- **Memory strategy:** mimalloc replaces the platform's malloc in both
+  executables (ADR-0078); rely on Flecs' and PhysX's built-in allocators on top
+  of it; no custom arena/pool allocators until profiling shows a concrete need.
 - Google Benchmark is used for targeted micro-benchmarks of hot-path code (the
   server tick and its capture, replication, a PresentationWorld frame,
   ballistics, serialization, pack loading) — not a blanket requirement for every

@@ -19,9 +19,10 @@ endpoint is tapped with, one file per run (ADR-0076).
 
 ## Not its responsibility
 
-- What augustad's entry point (`main.cpp`) does: install the crash handler, read
-  the command line, install the signal handlers, then run the Program and
-  conclude its outcome - Glue, tested only end to end (ADR-0060).
+- What augustad's entry point (`main.cpp`) does: read mimalloc's facts and
+  refuse to run unless mimalloc serves the process (ADR-0078), install the crash
+  handler, read the command line, install the signal handlers, then run the
+  Program and conclude its outcome - Glue, tested only end to end (ADR-0060).
 - Admitting clients, screening their commands, ticking and replicating a Match:
   host, which the Runtime only runs.
 - The lock-free counters it counts with: metrics.
@@ -34,4 +35,5 @@ endpoint is tapped with, one file per run (ADR-0076).
 [ADR-0033](../../docs/adr/0033-error-handling.md),
 [ADR-0049](../../docs/adr/0049-metrics-and-liveness.md),
 [ADR-0051](../../docs/adr/0051-replay.md),
-[ADR-0060](../../docs/adr/0060-executables-are-glue.md).
+[ADR-0060](../../docs/adr/0060-executables-are-glue.md),
+[ADR-0078](../../docs/adr/0078-mimalloc-replaces-the-platform-malloc.md).

@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <expected>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -49,7 +50,7 @@ ServerConfig ExampleConfig() {
 Outcome ServedOnce(const ServerConfig& config) {
   Faults faults;
   faults.Arm(Site::kWorkerExecution, "injected");
-  auto program = ServerProgram(config, &faults);
+  auto program = ServerProgram(config, std::nullopt, &faults);
   program.initialize = []() -> std::expected<void, Failure> { return {}; };
   return Execute(program);
 }
