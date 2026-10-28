@@ -24,7 +24,8 @@ namespace augusta::simulation {
 /// Authoritative State posed them: where the Hitbox pose put its root, and each
 /// Joint that carries a Hitbox, or is an ancestor of one, relative to its
 /// parent. No other Joint is kept, so a tick costs at most assets::kMaxJoints
-/// of them.
+/// of them. A bullet that passes no nearer its root at a moment than
+/// ReachInAnyPose is culled by RootAt alone, before At composes a Joint.
 class PoseHistory {
  public:
   /// A history that keeps the poses of the newest capacity ticks of a
@@ -38,6 +39,18 @@ class PoseHistory {
   /// capacity, the oldest goes. posed is the character's Skeleton posed, every
   /// Joint of it: only those kept are read.
   void Record(tick::Tick tick, const animation::SkeletonPose& posed);
+
+  /// Where the Hitbox pose put the root at time, as At gives it, without
+  /// composing a Joint. nullopt while no tick is kept.
+  [[nodiscard]] std::optional<hitbox::Pose> RootAt(double time) const;
+
+  /// How far from its root, as RootAt puts it, the character's hitboxes reach
+  /// at any moment this history gives, plus a margin: never less than
+  /// Reach::Of any pose At gives, so a bullet that passes farther crosses none
+  /// of them. A bound over the poses ever kept: each kept Joint held as far
+  /// from its parent as any tick has held it, and stretched by its Skeleton's
+  /// scales as far as they stretch anything.
+  [[nodiscard]] float ReachInAnyPose() const { return reach_; }
 
   /// The Hitbox pose at time, a moment between ticks counted in ticks, with
   /// joints set to each kept Joint's world transform then, index for index with
@@ -60,6 +73,41 @@ class PoseHistory {
     math::Vec3 scale{1.0F, 1.0F, 1.0F};
   };
 
+  static constexpr std::size_t kNoKeptParent = static_cast<std::size_t>(-1);
+
+  // What ReachInAnyPose is bounded by, for one kept Joint: its parent's place
+  // in kept_ (or kNoKeptParent); the farthest any tick has held it from its
+  // parent, and so from the root; how far its world transform's linear part
+  // stretches a length at most (the product of its and its ancestors' largest
+  // scales), and bounds that part's Frobenius norm, the stretch Reach::Of
+  // takes (its parent's stretch times its own scale's length); and how far the
+  // hitboxes bound to it reach from its origin, in its own space (0 for one
+  // that carries none).
+  struct JointBound {
+    std::size_t parent = kNoKeptParent;
+    float from_parent = 0.0F;
+    float from_root = 0.0F;
+    float stretch = 1.0F;
+    float frobenius = 1.0F;
+    float extent = 0.0F;
+  };
+
+  // Where time falls among the kept ticks, a non-empty history's: the slots
+  // of the two ticks around it, how far it is from the earlier to the later,
+  // and the root interpolated there.
+  struct Moment {
+    std::size_t earlier = 0;
+    std::size_t later = 0;
+    float fraction = 0.0F;
+    hitbox::Pose root{};
+  };
+
+  [[nodiscard]] Moment Around(double time) const;
+
+  // Recomputes each Joint's from_root and reach_ from bounds_, as a new
+  // farthest from_parent leaves them.
+  void BoundReach();
+
   // The tick count'th oldest of those kept is at, in a ring of capacity_.
   [[nodiscard]] std::size_t SlotOf(std::size_t count) const { return (oldest_slot_ + count) % capacity_; }
 
@@ -67,6 +115,9 @@ class PoseHistory {
   std::size_t joint_count_ = 0;
   // Parents before children, as in the Skeleton.
   std::vector<KeptJoint> kept_;
+  // Index for index with kept_.
+  std::vector<JointBound> bounds_;
+  float reach_ = 0.0F;
   // A ring of capacity_ ticks, from oldest_slot_: each one's root, and its
   // kept_.size() kept Joints, in kept_'s order.
   std::vector<hitbox::Pose> roots_;
