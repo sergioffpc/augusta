@@ -384,6 +384,11 @@ struct PeerStats {
   ConnectionStats stats;
 };
 
+/// The most bytes one message a Server receives may hold unless it is told
+/// fewer: the transport's own default (GameNetworkingSockets'
+/// k_ESteamNetworkingConfig_RecvMaxMessageSize), the largest message it sends.
+inline constexpr std::size_t kDefaultMaxReceiveSize = std::size_t{512} * 1024;
+
 /// One received message plus which peer sent it.
 struct PeerMessage {
   PeerId from;
@@ -404,12 +409,17 @@ class Server {
   /// poll group (e.g. the address can't be bound). faults, when given, is
   /// asked at listener setup and at every send and receive
   /// (failure::Site::kListenerSetup, kTransportSend, kTransportReceive); it
-  /// must outlive the Server.
-  explicit Server(const Endpoint& local_endpoint, failure::Faults* faults = nullptr);
+  /// must outlive the Server. A peer that sends a message of more than
+  /// max_receive_size bytes (held to kDefaultMaxReceiveSize at most) has its
+  /// connection closed by the transport, reported as its kDisconnected, and
+  /// the message never arrives.
+  explicit Server(const Endpoint& local_endpoint, failure::Faults* faults = nullptr,
+                  std::size_t max_receive_size = kDefaultMaxReceiveSize);
 #if AUGUSTA_DEBUG_TOOLS
   /// As above, reporting every message to tap when it is not null; tap must
   /// outlive the Server.
-  Server(const Endpoint& local_endpoint, failure::Faults* faults, Tap* tap);
+  Server(const Endpoint& local_endpoint, failure::Faults* faults, Tap* tap,
+         std::size_t max_receive_size = kDefaultMaxReceiveSize);
 #endif
 
   /// Closes the listen socket and every connected peer's connection.

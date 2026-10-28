@@ -10,13 +10,15 @@ Wraps GameNetworkingSockets for direct client-server connections over UDP: a
 Client dials one server, a Server listens for a handful of peers. It moves raw
 framed payloads, each send naming its Reliability, and every send and receive
 says whether the transport accepted it, dropped it for its peer or failed
-locally. Safe from any thread. It also imposes simulated network conditions on
-the whole process, through the transport's own fake-packet settings: latency,
-jitter, loss and reorder on what the process sends or, when asked, on what it
-receives as well. In a Development build a Client or Server given a Tap reports
-to it every send the transport accepted and every message received, before it is
-decoded, with its endpoints and wall-clock time; the tap is called on the
-sending or receiving thread and must not block.
+locally. A Server bounds the message a peer may send, and the transport closes
+the connection of a peer that sends a larger one. Safe from any thread. It also
+imposes simulated network conditions on the whole process, through the
+transport's own fake-packet settings: latency, jitter, loss and reorder on what
+the process sends or, when asked, on what it receives as well. In a Development
+build a Client or Server given a Tap reports to it every send the transport
+accepted and every message received, before it is decoded, with its endpoints
+and wall-clock time; the tap is called on the sending or receiving thread and
+must not block.
 
 ## Not its responsibility
 
