@@ -463,8 +463,9 @@ no self-hosted GitHub Actions runner in this pipeline).
   of the `augustac.exe` in the `augustac-windows-x64.zip` beside it, which reads
   a crash of that client or its Aftermath `.nv-gpudmp`. Rename it
   `augustac.pdb`, the name the `.exe`'s debug directory gives it; the two match
-  by GUID and age (`dumpbin /headers`, ADR-0055). The Linux client's is
-  `augustac-linux-x64.debug`, matched by build ID, as `augustad`'s is.
+  by GUID and age (`llvm-readobj --coff-debug-directory`, ADR-0055). The Linux
+  client's is `augustac-linux-x64.debug`, matched by build ID, as `augustad`'s
+  is.
 - **Server pod:** runs as UID/GID 65532 in a user namespace of its own, with no
   privilege escalation, every capability dropped, augustad's own seccomp profile
   and a read-only root filesystem; augustad writes only to its capture volume,

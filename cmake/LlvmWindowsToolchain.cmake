@@ -67,6 +67,10 @@ set(ENV{AUGUSTA_WINSYSROOT_VERSION} "${augusta_winsysroot_version}")
 # The debug CRT's DLLs, which no Windows has without a Visual Studio: what a
 # Debug build's executables load, tests/CMakeLists.txt copies beside its tests.
 file(GLOB AUGUSTA_WINSYSROOT_DEBUG_RUNTIME "${AUGUSTA_WINSYSROOT}/VCR/*/bin/x86_64")
+list(LENGTH AUGUSTA_WINSYSROOT_DEBUG_RUNTIME augusta_debug_runtimes)
+if(NOT augusta_debug_runtimes EQUAL 1)
+  message(FATAL_ERROR "${AUGUSTA_WINSYSROOT} holds no single debug CRT (VCR/*/bin/x86_64): run `make toolchain`")
+endif()
 
 file(GLOB augusta_rc_includes "${AUGUSTA_WINSYSROOT}/VC/Tools/MSVC/*/include")
 file(GLOB augusta_sdk_include "${AUGUSTA_WINSYSROOT}/Windows Kits/10/Include/*")
@@ -76,6 +80,7 @@ list(TRANSFORM augusta_sdk_include APPEND "/ucrt" OUTPUT_VARIABLE augusta_sdk_uc
 list(APPEND augusta_rc_includes ${augusta_sdk_um} ${augusta_sdk_shared} ${augusta_sdk_ucrt})
 set(CMAKE_RC_STANDARD_INCLUDE_DIRECTORIES ${augusta_rc_includes})
 
+# lld-link spells it /winsysroot:<path>, clang-cl /winsysroot<path>.
 foreach(kind EXE SHARED MODULE)
   string(APPEND CMAKE_${kind}_LINKER_FLAGS_INIT " /winsysroot:${AUGUSTA_WINSYSROOT} /lldignoreenv")
 endforeach()

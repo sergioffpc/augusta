@@ -37,7 +37,7 @@ age and the path it was written to. The PDB holds the same GUID and age, and a
 debugger loads a PDB only when both match. The `.exe`'s:
 
 ```text
-dumpbin /headers augustac.exe   # Debug Directories: Format: RSDS, {GUID}, age, path
+llvm-readobj --coff-debug-directory augustac.exe   # PDBGUID, PDBAge, PDBFileName
 ```
 
 The PDB's (`llvm-pdbutil`, from LLVM):

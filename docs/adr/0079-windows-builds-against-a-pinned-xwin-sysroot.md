@@ -15,9 +15,10 @@ cross-compiled.
 at the sysroot under `.toolchain/` (`llvm-rc`, which takes none, gets its
 include directories). The sysroot's version passes into each port's ABI, so a
 bump rebuilds them. A ctest check reads the build's header dependencies and
-fails on any header from outside the sysroot, vcpkg's tree, the repository and
-LLVM, as one from a Visual Studio installed beside them. The `windows*` presets
-and `triplets/x64-windows.cmake` chainload it, as `LlvmToolchain.cmake` and
+fails on any header from outside the sysroot, vcpkg's tree, the repository, the
+build directory and LLVM, or the Python and the Aftermath SDK the build found,
+as one from a Visual Studio installed beside them. The `windows*` presets and
+`triplets/x64-windows.cmake` chainload it, as `LlvmToolchain.cmake` and
 `LlvmMacosToolchain.cmake` are chainloaded on Linux and macOS. The presets keep
 their `hostSystemName == Windows` condition.
 
@@ -27,11 +28,11 @@ versions it fetches are in `scripts/bootstrap/versions.env` (ADR-0077).
 (which vcpkg's `llvm` port needs), in the store, with the debug CRT's libraries,
 which every Debug build links, and its DLLs, which a Debug build's tests load
 where no Visual Studio is installed. The bootstrap installs no Build Tools, and
-`scripts/vcenv.cmd` and `.github/actions/setup-windows-msvc` go. The repository
-is public and the sysroot is Microsoft's, under the license xwin accepts on each
-download: it is downloaded on each machine and kept in CI's cache, and never
-committed, put in an image (the `Dockerfile` included) or put in a release
-asset.
+no build, local or CI's, loads a Visual Studio developer environment. The
+repository is public and the sysroot is Microsoft's, under the license xwin
+accepts on each download: it is downloaded on each machine and kept in CI's
+cache, and never committed, put in an image (the `Dockerfile` included) or put
+in a release asset.
 
 **Every port compiles with `clang-cl`, Mesa and LLVM included.** Some ports
 needed msbuild or nmake, which ship only with Visual Studio. Four of them
