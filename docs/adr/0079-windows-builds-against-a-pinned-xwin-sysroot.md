@@ -61,7 +61,10 @@ So the client zip no longer bundles `vcruntime140*` and `msvcp140*` (amending
 ADR-0058):
 
 - The README and each release's notes name the minimum VC++ redistributable,
-  that of the pinned sysroot's STL.
+  that of the pinned sysroot's STL: the file version of the `msvcp140.dll` its
+  toolset's redistributable ships, which `versions.env` pins
+  (`MSVC_REDIST_VERSION`) beside the toolset, as it cannot be derived from the
+  toolset's version, and which is bumped with it.
 - `augustac` checks at startup that the `msvcp140.dll` it loaded is at least
   that version, and exits naming the version to install. Without the check it
   would crash later; the `std::mutex` change of the 17.10 STL is the known case.

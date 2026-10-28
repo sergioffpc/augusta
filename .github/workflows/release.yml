@@ -93,14 +93,12 @@ jobs:
           # the zipped augustac.exe's debug directory names (ADR-0055).
           cp build/x64-windows-shipping/src/client/augustac.pdb dist/augustac-windows-x64.pdb
       # NVTX is a submodule, not a vcpkg port, so it is named by its commit.
-      # The MSVC runtime the zip ships is named too (ADR-0058), at the version
-      # of the staged vcruntime140.dll.
+      # The zip ships no MSVC runtime, which the player installs (ADR-0079).
       - name: SBOM
         run: |
           python scripts/vcpkg-sbom.py --name augustac --version "$GITHUB_REF_NAME" \
             --repo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --commit "$GITHUB_SHA" \
             --git-package third_party/nvtx \
-            --msvc-runtime "$RUNNER_TEMP/augustac/bin/vcruntime140.dll" \
             build/x64-windows-shipping/vcpkg_installed/x64-windows > dist/augustac-windows-x64.spdx.json
       - name: Attest provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
@@ -331,10 +329,17 @@ jobs:
           persist-credentials: false
       # The tag's CHANGELOG.md section, cut on its release/* or hotfix/* branch
       # (docs/ENGINEERING.md, Git Workflow); a tag without one publishes nothing.
-      # The Linux client's baseline follows them, as the README states it.
+      # Each client's baseline follows them, as the README states it: the
+      # Windows client's is the VC++ redistributable versions.env pins
+      # (MSVC_REDIST_VERSION), the oldest augustac starts on (ADR-0079).
       - name: Release notes
         run: |
+          # shellcheck source=/dev/null
+          . scripts/bootstrap/versions.env
           scripts/changelog.sh "${{ github.ref_name }}" --notes > "$RUNNER_TEMP/notes.md"
+          printf '\n%s %s\n' \
+            "The Windows client (augustac-windows-x64.zip) needs the Microsoft Visual C++ Redistributable (x64) $MSVC_REDIST_VERSION or newer:" \
+            "https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist" >> "$RUNNER_TEMP/notes.md"
           printf '\n%s\n' "The Linux client (augustac-linux-x64.tar.gz) runs on the glibc of Ubuntu 26.04 or newer." >> "$RUNNER_TEMP/notes.md"
       # Every artifact of the run, the nightly jobs' reports among them: only
       # the files named below are attached.

@@ -83,9 +83,14 @@ endforeach()
 # A port's build (vcpkg passes it the triplet's architecture) also gets what
 # vcpkg's own Windows toolchain, which this one stands in for, sets up: the
 # CRT, the MSVC flags and the triplet's. It leaves out /MP, which clang-cl does
-# not take, as the compiler's path ends in clang-cl.exe. It caches the compile
-# flags it makes, which an _INIT would never reach, from the triplet's.
+# not take, as the compiler's path ends in clang-cl.exe. Its resource flags,
+# /c65001 /DWIN32, are cached first without the code page: CMake passes
+# CMAKE_RC_FLAGS to clang-cl, which preprocesses a resource script for llvm-rc,
+# as well as to llvm-rc, and clang-cl reads /c65001 as a file to compile.
+# It caches the compile flags it makes, which an _INIT would never reach,
+# from the triplet's.
 if(DEFINED VCPKG_TARGET_ARCHITECTURE)
+  set(CMAKE_RC_FLAGS "/DWIN32" CACHE STRING "")
   string(APPEND VCPKG_C_FLAGS " /winsysroot${AUGUSTA_WINSYSROOT}")
   string(APPEND VCPKG_CXX_FLAGS " /winsysroot${AUGUSTA_WINSYSROOT}")
   include("${CMAKE_CURRENT_LIST_DIR}/../third_party/vcpkg/scripts/toolchains/windows.cmake")

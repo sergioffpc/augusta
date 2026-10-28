@@ -45,10 +45,11 @@ how the previous Run ended, which a launch reports when it was a crash.
 
 ## Not its responsibility
 
-- What augustac's entry point (`main.cpp`) does: read mimalloc's facts and
-  refuse to run unless mimalloc serves the process (ADR-0078), read the command
-  line, then run the Program and conclude its outcome - Glue, tested only end to
-  end (ADR-0060).
+- What augustac's entry point (`main.cpp`) does: on Windows, read the version of
+  the `msvcp140.dll` it loaded and refuse an older one than `versions.env` pins
+  (ADR-0079), read mimalloc's facts and refuse to run unless mimalloc serves the
+  process (ADR-0078), read the command line, then run the Program and conclude
+  its outcome - Glue, tested only end to end (ADR-0060).
 - Playing: the Harness sends commands, receives the server's state and predicts.
 - The window, drawing, input, audio and what the HUD's lines say: window,
   renderer, input, audio and hud, which the Runtime only wires together.
@@ -66,4 +67,5 @@ how the previous Run ended, which a launch reports when it was a crash.
 [ADR-0060](../../docs/adr/0060-executables-are-glue.md),
 [ADR-0074](../../docs/adr/0074-debug-tools-compiled-out-of-shipping-builds.md),
 [ADR-0075](../../docs/adr/0075-debug-overlays-and-panels-are-values.md),
-[ADR-0078](../../docs/adr/0078-mimalloc-replaces-the-platform-malloc.md).
+[ADR-0078](../../docs/adr/0078-mimalloc-replaces-the-platform-malloc.md),
+[ADR-0079](../../docs/adr/0079-windows-builds-against-a-pinned-xwin-sysroot.md).

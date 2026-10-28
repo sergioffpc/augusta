@@ -12,9 +12,10 @@
 # LD_LIBRARY_PATH or LD_PRELOAD. So a library augustac links that is missing
 # from the folder fails it rather than being found elsewhere. --version exits
 # before the Renderer starts, so a library loaded only once it runs is not
-# checked. The folder must also hold none of the development-only libraries the
-# client never ships (ADR-0059): a Vulkan loader, which is the system's, the
-# Vulkan validation layer, lavapipe, DXC or Slang.
+# checked. The folder must also hold none of the libraries the client never
+# ships: a Vulkan loader, which is the system's, the Vulkan validation layer,
+# lavapipe, DXC or Slang, which are development-only (ADR-0059), or the MSVC
+# runtime, which the player installs (ADR-0079).
 #
 # On Linux it also checks that every library each file in the folder links
 # (its ELF NEEDED entries) is in the folder or on ALLOWED_SYSTEM_LIBRARIES, and
@@ -116,7 +117,7 @@ check_runs() {
 # Exits 1 if a folder holds a library the client never ships.
 # Arguments:
 #   The folder augustac is in.
-check_no_dev_libraries() {
+check_never_shipped() {
   local folder="$1"
   local found
   found="$(find "${folder}" \( -type f -o -type l \) \( \
@@ -125,7 +126,9 @@ check_no_dev_libraries() {
     -o -iname 'vulkan_lvp.dll' -o -name 'libvulkan_lvp.so*' \
     -o -iname 'dxcompiler.dll' -o -iname 'dxil.dll' \
     -o -name 'libdxcompiler.so*' \
-    -o -iname 'slang*.dll' -o -name 'libslang*.so*' \))"
+    -o -iname 'slang*.dll' -o -name 'libslang*.so*' \
+    -o -iname 'msvcp140*.dll' -o -iname 'vcruntime140*.dll' \
+    -o -iname 'concrt140*.dll' -o -iname 'vccorlib140*.dll' \))"
   if [[ -n "${found}" ]]; then
     echo "$0: ${folder} holds libraries the client never ships:" >&2
     echo "${found}" >&2
@@ -230,7 +233,7 @@ check_folder() {
   local build_dir="$1"
   local folder="$2"
   local version="${3:-}"
-  check_no_dev_libraries "${folder}"
+  check_never_shipped "${folder}"
   if [[ "${platform}" = linux ]]; then
     check_needed "${folder}"
     check_debug_info "${folder}" "${build_dir}/src/client/augustac.debug"

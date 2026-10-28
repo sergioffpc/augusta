@@ -180,6 +180,22 @@ jobs:
       - name: Check Protocol Buffers formatting and lint
         if: needs.changes.outputs.run_lint == 'true'
         run: make format-check/buf
+      - name: Check the README's VC++ redistributable
+        # The README names the oldest VC++ redistributable the Windows client
+        # starts on, as versions.env pins it (MSVC_REDIST_VERSION, ADR-0079),
+        # which release.yml's notes take from the pin itself. The check joins
+        # the README's lines, however Prettier wraps them.
+        if: needs.changes.outputs.run_lint == 'true'
+        run: |
+          # shellcheck source=/dev/null
+          . scripts/bootstrap/versions.env
+          minimum="latest-supported-vc-redist) $MSVC_REDIST_VERSION or newer"
+          if ! tr -s '\n' ' ' < README.md | grep -qF "$minimum"; then
+            echo "::error file=README.md::the README does not name the" \
+              "VC++ redistributable versions.env pins," \
+              "$MSVC_REDIST_VERSION or newer"
+            exit 1
+          fi
   # Requirements: NFR-04
   client-x64-windows:
     needs: [changes, format]
@@ -271,7 +287,6 @@ jobs:
           python scripts/vcpkg-sbom.py --name augustac --version "$GITHUB_SHA" \
             --repo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --commit "$GITHUB_SHA" \
             --git-package third_party/nvtx \
-            --msvc-runtime "$RUNNER_TEMP/augustac/bin/vcruntime140.dll" \
             build/x64-windows/vcpkg_installed/x64-windows > "$RUNNER_TEMP/augustac.spdx.json"
           python scripts/sbom-cpes.py "$RUNNER_TEMP/augustac.spdx.json" > /dev/null
       - name: Lint

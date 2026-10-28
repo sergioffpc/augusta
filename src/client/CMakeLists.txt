@@ -261,20 +261,37 @@ augusta_stage_pvd_runtime(augustac)
 # What each platform's augustac needs beyond its code: its debug info, and its
 # runtime folder, which a release archives (ADR-0055, ADR-0058).
 if(WIN32)
+  # The oldest msvcp140.dll augustac starts on (ADR-0079), as versions.env pins
+  # it, so one bump moves the startup check with the sysroot: main.cpp reads the
+  # loaded one's file version (version.lib) and refuses an older one.
+  set(versions_env "${CMAKE_SOURCE_DIR}/scripts/bootstrap/versions.env")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${versions_env}")
+  file(STRINGS "${versions_env}" msvc_redist REGEX "^MSVC_REDIST_VERSION=")
+  if(NOT msvc_redist MATCHES "^MSVC_REDIST_VERSION=([0-9]+)\\.([0-9]+)\\.([0-9]+)\\.([0-9]+)$")
+    message(FATAL_ERROR "${versions_env} pins no MSVC_REDIST_VERSION=<major>.<minor>.<build>.<revision>")
+  endif()
+  target_compile_definitions(
+    augustac
+    PRIVATE
+      "AUGUSTA_MSVC_REDIST_VERSION={.major=${CMAKE_MATCH_1},.minor=${CMAKE_MATCH_2},.build=${CMAKE_MATCH_3},.revision=${CMAKE_MATCH_4}}"
+  )
+  target_link_libraries(augustac PRIVATE version)
+
   # Release writes augustac.pdb beside augustac.exe, what a released client's
   # crash or GPU crash dump is read with (ADR-0055). /DEBUG turns /OPT:REF and
   # /OPT:ICF off unless they are named, so they are: the code is Release's own.
   target_link_options(augustac PRIVATE "$<$<CONFIG:Release>:/DEBUG:FULL;/OPT:REF;/OPT:ICF>")
 
   # `cmake --install --component client` stages the client's whole runtime folder,
-  # which a release zips (scripts/stage-client.sh): augustac.exe, the DLLs it
-  # loads, and the MSVC runtime, so it starts on a Windows with no Visual C++
-  # redistributable. CMake resolves the DLLs itself, as for augustad: vcpkg's,
+  # which a release zips (scripts/stage-client.sh): augustac.exe and the DLLs it
+  # loads. CMake resolves the DLLs itself, as for augustad: vcpkg's,
   # mimalloc's (mimalloc-debug.dll in a Debug build) and the
   # mimalloc-redirect.dll it imports among them (ADR-0078), and Aftermath's when
   # the build has it (cmake/Aftermath.cmake). The renderer's
   # shaders are in augustac.exe, and the Vulkan loader is the system's, which
-  # augustac loads at runtime rather than imports (ADR-0059).
+  # augustac loads at runtime rather than imports (ADR-0059). The MSVC runtime
+  # is the player's, from the VC++ redistributable (ADR-0079): wherever CMake
+  # would find it, the folder never bundles it.
   # EXCLUDE_FROM_ALL: a plain `cmake --install`, augustad's (Dockerfile,
   # `make install`), leaves it out.
   install(
@@ -288,18 +305,10 @@ if(WIN32)
   endif()
   install(
     RUNTIME_DEPENDENCY_SET augustac_dlls
-    PRE_EXCLUDE_REGEXES "^api-ms-" "^ext-ms-"
+    PRE_EXCLUDE_REGEXES "^api-ms-" "^ext-ms-" "^(msvcp|vcruntime|concrt|vccorlib)140"
     POST_EXCLUDE_REGEXES "[/\\][Ss]ystem32[/\\]"
     DIRECTORIES ${dll_directories}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client EXCLUDE_FROM_ALL
-  )
-  set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
-  include(InstallRequiredSystemLibraries)
-  install(
-    PROGRAMS ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS}
-    DESTINATION ${CMAKE_INSTALL_BINDIR}
-    COMPONENT client
-    EXCLUDE_FROM_ALL
   )
 else()
   # Release's debug info split off into augustac.debug, as augustad's is
