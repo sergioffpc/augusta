@@ -31,6 +31,20 @@ vcpkg_from_github(
     PATCHES ${physx_patches}
 )
 
+# augusta: PhysX's Windows platform files are written for cl and set the
+# compile flags whole, dropping the toolchain's. Under clang-cl
+# (cmake/LlvmWindowsToolchain.cmake) they lose /MP, which clang-cl does not
+# take and which their /WX would make an error, and /d2Zi+, which it ignores;
+# and they take the triplet's flags after their own, as their Linux ones do, so
+# the clang warnings triplets/x64-windows.cmake turns off stay off.
+if(VCPKG_TARGET_IS_WINDOWS)
+  vcpkg_replace_string(
+    "${SOURCE_PATH}/physx/source/compiler/cmake/windows/CMakeLists.txt"
+    [[SET(PHYSX_COMMON_FLAGS "/d2Zi+ /MP /WX /W4 /GF /GS- /Gd ${PHYSX_FP_MODE} /Oy ${PHYSX_WARNING_DISABLES}")]]
+    [[SET(PHYSX_COMMON_FLAGS "/WX /W4 /GF /GS- /Gd ${PHYSX_FP_MODE} /Oy ${PHYSX_WARNING_DISABLES} ${VCPKG_CXX_FLAGS}")]]
+  )
+endif()
+
 if(VCPKG_LIBRARY_LINKAGE STREQUAL "static")
   set(VCPKG_BUILD_STATIC_LIBS TRUE)
 else()
