@@ -16,9 +16,6 @@ it; this index says which one to look at.
   (`make toolchain`, `make toolchain-check`).
 - [`dev-container.sh`](dev-container.sh) runs a command, or a shell, in this
   checkout's Linux dev container, for a Linux build on a host that has its own.
-- [`vcenv.cmd`](vcenv.cmd) runs a command inside the Visual Studio Build Tools
-  x64 developer environment, so Ninja, clang-cl and vcpkg work from a plain
-  terminal on Windows.
 - [`worktree.sh`](worktree.sh) adds or removes a worktree under
   `augusta-wt/<name>`, with the submodules a build needs linked in and its
   `.toolchain/` made.

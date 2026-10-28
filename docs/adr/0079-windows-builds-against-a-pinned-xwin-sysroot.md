@@ -11,21 +11,27 @@ platform builds on its own OS, Linux on Linux and macOS on macOS, and nothing is
 cross-compiled.
 
 **One toolchain file.** `cmake/LlvmWindowsToolchain.cmake` names `clang-cl`,
-`lld-link`, `llvm-lib`, `llvm-rc` and `llvm-mt`, with `/winsysroot` at the
-sysroot under `.toolchain/`. The `windows*` presets and
-`triplets/x64-windows.cmake` chainload it, as `LlvmToolchain.cmake` and
+`lld-link`, `llvm-lib`, `llvm-rc`, `llvm-mt` and `llvm-ml64`, with `/winsysroot`
+at the sysroot under `.toolchain/` (`llvm-rc`, which takes none, gets its
+include directories). The sysroot's version passes into each port's ABI, so a
+bump rebuilds them. A ctest check reads the build's header dependencies and
+fails on any header from outside the sysroot, vcpkg's tree, the repository and
+LLVM, as one from a Visual Studio installed beside them. The `windows*` presets
+and `triplets/x64-windows.cmake` chainload it, as `LlvmToolchain.cmake` and
 `LlvmMacosToolchain.cmake` are chainloaded on Linux and macOS. The presets keep
 their `hostSystemName == Windows` condition.
 
 **The sysroot is a pinned tool.** xwin's version and the MSVC and SDK manifest
 versions it fetches are in `scripts/bootstrap/versions.env` (ADR-0077).
 `make toolchain` puts the sysroot, the STL, the CRT, the Windows SDK and ATL
-(which vcpkg's `llvm` port needs), in the store. The bootstrap installs no Build
-Tools, and `scripts/vcenv.cmd` and `.github/actions/setup-windows-msvc` go. The
-repository is public and the sysroot is Microsoft's, under the license xwin
-accepts on each download: it is downloaded on each machine and kept in CI's
-cache, and never committed, put in an image (the `Dockerfile` included) or put
-in a release asset.
+(which vcpkg's `llvm` port needs), in the store, with the debug CRT's libraries,
+which every Debug build links, and its DLLs, which a Debug build's tests load
+where no Visual Studio is installed. The bootstrap installs no Build Tools, and
+`scripts/vcenv.cmd` and `.github/actions/setup-windows-msvc` go. The repository
+is public and the sysroot is Microsoft's, under the license xwin accepts on each
+download: it is downloaded on each machine and kept in CI's cache, and never
+committed, put in an image (the `Dockerfile` included) or put in a release
+asset.
 
 **Every port compiles with `clang-cl`, Mesa and LLVM included.** Some ports
 needed msbuild or nmake, which ship only with Visual Studio. Four of them
@@ -43,6 +49,11 @@ change:
 - **pybind11** is overlaid without its `python3` dependency, whose port builds
   CPython with msbuild. The tools' Python modules compile against the headers
   and the `pythonXY.lib` of the Python that `augusta_find_tools_python` finds.
+
+MASM is LLVM's `llvm-ml64`, which assembles what Visual Studio's `ml64` does but
+`PROC ... EXPORT`. Boost.Context, which boost-asio's default `spawn` feature
+pulls in and none of our code calls, switches contexts in such MASM, so on
+Windows the triplet builds it on Windows' fibers (`winfib`), with no assembly.
 
 **The player installs the MSVC runtime.** The sysroot has no redistributable
 DLLs, and the only redistributable Microsoft publishes moves under a permalink.

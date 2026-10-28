@@ -113,8 +113,7 @@ Which test kind runs at which CI stage is ADR-0013; the CI jobs are in
   reading.
 - **Impaired-link netcode:** the `linux-netcode` preset.
 - **Coverage:** the `linux-coverage` preset, a report rather than a gate.
-- **Static analysis:** `clang-tidy` through `make tidy`; on Windows through
-  `scripts/vcenv.cmd`.
+- **Static analysis:** `clang-tidy` through `make tidy`.
 - **Benchmarks:** `tests/*_benchmark.cpp` (Google Benchmark); the nightly keeps
   their history.
 - **Requirements traceability:** `scripts/requirements-matrix.py` maps tests to

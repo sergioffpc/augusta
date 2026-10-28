@@ -73,6 +73,7 @@ which rules the formatters and linters enforce and which are written by hand.
 
 ### Windows debugging tools
 
-Profiling (Nsight Systems), GPU debugging and crash dumps (Nsight Graphics,
-Aftermath), and content authoring/physics debugging (Omniverse, OmniPVD): see
+Native debugging without Visual Studio (WinDbg, `lldb-dap`), profiling (Nsight
+Systems), GPU debugging and crash dumps (Nsight Graphics, Aftermath), and
+content authoring/physics debugging (Omniverse, OmniPVD): see
 `docs/agents/tooling.md`.

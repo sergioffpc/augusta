@@ -55,19 +55,18 @@ Windows compiles our code and every vcpkg port with `clang-cl` and links them
 with `lld-link`, from LLVM 21.1.8, the version that already gives `clang-format`
 and `clang-tidy` on both platforms: one LLVM version to bump, `LLVM_VERSION` in
 `scripts/bootstrap/versions.env`. `cmake/LlvmWindowsToolchain.cmake` names them,
-with `llvm-lib`, `llvm-rc` and `llvm-mt`, and vcpkg's toolchain chainloads it
-twice, as on Linux: from the windows presets for the project, and from the
-overlay `triplets/x64-windows.cmake` for every port, whose build it also gives
-vcpkg's own Windows toolchain, the CRT and MSVC flags vcpkg's stock triplet
-builds with. vcpkg builds a port in an environment of its own, whose PATH is not
-the user's, so the project's configure names the directory it found `clang-cl`
-in (`AUGUSTA_LLVM_BIN`) and the triplet passes it through to the ports. The
-Windows bootstrap installs that LLVM, and CI's and the release's Windows client
-jobs install it through `.github/actions/setup-windows-llvm`. The Visual Studio
-Build Tools and their developer environment (`scripts/vcenv.cmd`, CI's
-`.github/actions/setup-windows-msvc`, and vcpkg's own for a port's build, which
-the triplet keeps on) stay for now: `clang-cl` takes the MSVC STL, the CRT and
-the Windows SDK from them, until a pinned sysroot replaces them (ADR-0079).
+with `llvm-lib`, `llvm-rc`, `llvm-mt` and `llvm-ml64`, and vcpkg's toolchain
+chainloads it twice, as on Linux: from the windows presets for the project, and
+from the overlay `triplets/x64-windows.cmake` for every port, whose build it
+also gives vcpkg's own Windows toolchain, the CRT and MSVC flags vcpkg's stock
+triplet builds with. vcpkg builds a port in an environment of its own, whose
+PATH is not the user's, so the project's configure names the directory it found
+`clang-cl` in (`AUGUSTA_LLVM_BIN`) and the triplet passes it through to the
+ports. The Windows bootstrap installs that LLVM, and CI's and the release's
+Windows client jobs install it through `.github/actions/setup-windows-llvm`.
+They compile and link against the MSVC sysroot (the STL, the CRT, ATL and the
+Windows SDK) that `make toolchain` links into `.toolchain/sysroot`, named with
+`/winsysroot`, and no Visual Studio or developer environment is used (ADR-0079).
 `clang-cl` sets CMake's `MSVC`, so the MSVC build settings apply to it
 unchanged. Its `/W4 /WX` is clang's `-Wall -Wextra -Werror`, Linux's warning
 set; `/Wall` would be `-Weverything`. The triplet otherwise keeps vcpkg's stock

@@ -116,6 +116,37 @@ if(CMAKE_GENERATOR MATCHES "Ninja")
   set_tests_properties(augusta_header_origin PROPERTIES LABELS check)
 endif()
 
+# And the check against this build, on Windows, where clang-cl would find a
+# Visual Studio installed beside the MSVC sysroot (ADR-0079): every header it
+# compiled with comes from the sysroot, vcpkg's tree, the repository, the build
+# itself, LLVM's own headers, or the Python and the Aftermath SDK the build
+# found. Of every target built before ctest runs, so it takes no check label:
+# `make check` runs that label on a build only configured.
+if(DEFINED AUGUSTA_WINSYSROOT)
+  cmake_path(GET AUGUSTA_CLANG_CL PARENT_PATH llvm_root)
+  cmake_path(GET llvm_root PARENT_PATH llvm_root)
+  set(
+    roots
+    "${AUGUSTA_WINSYSROOT}"
+    "${VCPKG_INSTALLED_DIR}"
+    "${CMAKE_SOURCE_DIR}"
+    "${CMAKE_BINARY_DIR}"
+    "${llvm_root}"
+  )
+  if(PYTHON_INCLUDE_DIRS)
+    list(APPEND roots ${PYTHON_INCLUDE_DIRS})
+  endif()
+  if(AUGUSTA_AFTERMATH_DIR)
+    list(APPEND roots "${AUGUSTA_AFTERMATH_DIR}/include")
+  endif()
+  add_test(
+    NAME augusta_header_origin_build
+    COMMAND
+      ${CMAKE_COMMAND} -DBUILD_DIR=${CMAKE_BINARY_DIR} -DMAKE_PROGRAM=${CMAKE_MAKE_PROGRAM} -P
+      ${CMAKE_CURRENT_SOURCE_DIR}/header_origin.cmake ${roots}
+  )
+endif()
+
 # `make check` runs these alone: ctest's check label.
 set_tests_properties(
   augusta_protocol_boundary

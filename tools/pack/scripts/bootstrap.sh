@@ -101,8 +101,7 @@ main() {
   # What differs between the two platforms: the assets root's form, the venv's
   # interpreter, the extension module's suffix, an executable's, and the
   # compiler and linker the platform's preset builds with, beyond the common
-  # commands below (on Windows, the Makefile runs them in the Visual Studio
-  # Build Tools environment, scripts/vcenv.cmd).
+  # commands below.
   local assets_root venv_python module_suffix exe_suffix
   local -a compiler=()
   if on_windows; then

@@ -9,15 +9,18 @@ set(VCPKG_PROVIDED_FORTRAN ON)
 
 set(VCPKG_CHAINLOAD_TOOLCHAIN_FILE "${CMAKE_CURRENT_LIST_DIR}/../cmake/LlvmWindowsToolchain.cmake")
 
-# A chainloaded toolchain turns off the Visual Studio developer environment
-# vcpkg builds a port in, whose MSVC STL, CRT and Windows SDK clang-cl still
-# compiles against (ADR-0079).
-set(VCPKG_LOAD_VCVARS_ENV ON)
+# No Visual Studio developer environment, the default of a chainload, said
+# here: a port builds against the MSVC sysroot the toolchain names (ADR-0079),
+# and vcpkg then looks for no Visual Studio either.
+set(VCPKG_LOAD_VCVARS_ENV OFF)
 
 # The LLVM the project's configure found (cmake/LlvmWindowsToolchain.cmake),
 # through the clean environment vcpkg builds a port in. Its path is no part of
 # a port's ABI: vcpkg hashes the compiler itself.
 set(VCPKG_ENV_PASSTHROUGH_UNTRACKED AUGUSTA_LLVM_BIN)
+# The sysroot's version, which the toolchain sets, is: vcpkg hashes neither
+# the sysroot nor .toolchain/, so only this rebuilds the ports on a bump.
+set(VCPKG_ENV_PASSTHROUGH AUGUSTA_WINSYSROOT_VERSION)
 
 # Mesa is loaded only as a Vulkan ICD, lavapipe, from its own DLL, so a release
 # Mesa serves a debug augusta with no two CRTs in one image; LLVM is there only
@@ -33,4 +36,12 @@ endif()
 if(PORT STREQUAL "physx")
   set(VCPKG_C_FLAGS "-Wno-missing-include-dirs -Wno-unique-object-duplication -Wno-nrvo -Wno-error=format")
   set(VCPKG_CXX_FLAGS "${VCPKG_C_FLAGS}")
+endif()
+
+# Boost.Context, which boost-asio's default spawn feature pulls in and nothing
+# of ours calls, switches contexts in MASM that only Visual Studio's ml64
+# assembles (llvm-ml64 takes no PROC ... EXPORT): on Windows' fibers instead,
+# with no assembly.
+if(PORT STREQUAL "boost-context")
+  set(VCPKG_CMAKE_CONFIGURE_OPTIONS -DBOOST_CONTEXT_IMPLEMENTATION=winfib)
 endif()

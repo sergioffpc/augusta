@@ -7,9 +7,9 @@ description: >
   clang-format and clang-tidy. The version the Windows
   bootstrap pins and the Linux runner's distro package gives, so every platform
   has one LLVM. Downloaded and checked like the format job's tools, as the image
-  has no winget, the bootstrap's package manager. Run after setup-windows-msvc,
-  whose Visual Studio developer environment clang-cl and lld-link take the MSVC
-  STL, the CRT and the Windows SDK from.
+  has no winget, the bootstrap's package manager. clang-cl and lld-link take the
+  MSVC STL, the CRT and the Windows SDK from the sysroot setup-toolchain
+  installs (ADR-0079), never from the image's Visual Studio.
 runs:
   using: composite
   steps:

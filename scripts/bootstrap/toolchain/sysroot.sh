@@ -9,9 +9,11 @@
 # caches, and never in the repository, an image or a release.
 
 # The sysroot's name, of every pin that changes what xwin makes, short as
-# Windows' paths are: its longest file is 119 characters below it.
+# Windows' paths are: its longest file is 119 characters below it. The last
+# part names what fill_sysroot asks xwin for beyond its default, the debug
+# CRT's libraries and DLLs: a sysroot without them keeps another name.
 SYSROOT_VERSION="${MSVC_CRT_VERSION}-${WINDOWS_SDK_VERSION}"
-readonly SYSROOT_VERSION+="-${VS_MANIFEST_VERSION}-${XWIN_VERSION}"
+readonly SYSROOT_VERSION+="-${VS_MANIFEST_VERSION}-${XWIN_VERSION}-d"
 readonly SYSROOT_STORE="${STORE}/sysroot/${SYSROOT_VERSION}"
 # Where the checkout's build finds it.
 readonly SYSROOT_LINK="${TOOLCHAIN}/sysroot"
@@ -60,12 +62,15 @@ fill_sysroot() {
     "url": "${VS_MANIFEST_URL}"}]}]}
 EOF
   # By accepting Microsoft's license, as each machine's download does. ATL is
-  # vcpkg's llvm port's.
+  # vcpkg's llvm port's. The debug CRT's libraries link every Debug build,
+  # vcpkg's debug ports among them, and its DLLs run the windows-debug
+  # preset's tests; neither may be redistributed, and neither leaves the store.
   "${STORE}/xwin/${XWIN_VERSION}/bin/xwin.exe" --accept-license \
     --log-level warn --cache-dir "$(native_path "${cache}")" \
     --manifest "$(native_path "${cache}/channel.json")" \
     --crt-version "${MSVC_CRT_VERSION}" --sdk-version "${WINDOWS_SDK_VERSION}" \
-    --include-atl splat --use-winsysroot-style --preserve-ms-arch-notation \
+    --include-atl --include-debug-runtime splat --include-debug-libs \
+    --use-winsysroot-style --preserve-ms-arch-notation \
     --disable-symlinks --output "$(native_path "${dir}")"
   rm -rf "${cache}"
   echo "${SYSROOT_VERSION}" >"${dir}/.installed"

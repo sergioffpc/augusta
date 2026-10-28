@@ -11,6 +11,22 @@ the debug tools compiled in, whatever its optimisation; `windows-shipping` and
 (ADR-0074). The tools below work on either, but a Shipping client carries no
 Debug HUD, and a Shipping build joins only a Shipping server.
 
+## Native debugging
+
+The build needs no Visual Studio (ADR-0079), and the debuggers do not either:
+
+- WinDbg (`winget install Microsoft.WinDbg`) attaches to or launches
+  `augustac.exe` and `augustad.exe`, and opens a crash dump, with the PDBs the
+  build leaves beside them.
+- The pinned LLVM's `lldb-dap` (`C:\Program Files\LLVM\bin`) is the debug
+  adapter VS Code's "LLDB DAP" extension runs, as on Linux and macOS.
+
+Visual Studio stays optional as an IDE or a debugger; the build ignores it. A
+Debug build's executables load the debug CRT, which a machine without Visual
+Studio has only in the MSVC sysroot: run them with
+`.toolchain\sysroot\VCR\<version>\bin\x86_64` on PATH (its tests get a copy
+beside them).
+
 ## Profiling
 
 To use nsys refer to 'C:\Program Files\NVIDIA Corporation\Nsight Systems

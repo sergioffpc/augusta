@@ -1,8 +1,8 @@
 # shellcheck shell=bash
 # The Windows client half of scripts/bootstrap.sh (sourced by it), run in Git
-# Bash as Administrator: VS Build Tools system-wide (default install location,
-# no --installPath) plus the rest of the client's system packages,
-# winget-driven.
+# Bash as Administrator: the client's system packages, winget-driven. No
+# Visual Studio: the build takes the MSVC STL, the CRT and the Windows SDK
+# from the sysroot `make toolchain` installs (ADR-0079).
 
 # Prints a Windows environment variable's directory as a Git Bash path. Through
 # cmd, which reads the names case-insensitively, as Windows does: Git Bash
@@ -49,8 +49,8 @@ remove_from_path() {
 # Fails unless this Git Bash runs as Administrator.
 require_administrator() {
   if ! net session >/dev/null 2>&1; then
-    echo "bootstrap: run Git Bash as Administrator (VS Build Tools and the" \
-      "Machine PATH need it)." >&2
+    echo "bootstrap: run Git Bash as Administrator (the system-wide" \
+      "packages and the Machine PATH need it)." >&2
     exit 1
   fi
 }
@@ -96,6 +96,7 @@ undo_entry() {
       winget uninstall --id "$2" --exact --silent --accept-source-agreements
       ;;
     winget-pin) winget pin remove --id "$2" --exact ;;
+    # Recorded only by a bootstrap that still installed the Build Tools.
     vs-components)
       local args=(modify --installPath "$2" --quiet --norestart) component
       for component in "${@:3}"; do
@@ -284,56 +285,9 @@ start_podman_machine() {
   fi
 }
 
-# Adds Visual Studio components to the latest Build Tools install that lacks
-# any of them: winget_install skips an existing install, so a component added
-# here after a machine was bootstrapped would otherwise never reach it.
-# Arguments:
-#   The component and workload ids.
-add_build_tools_components() {
-  local installer vs_install
-  installer="$(windows_dir 'ProgramFiles(x86)')/Microsoft Visual Studio/Installer"
-  if [[ -n "$("${installer}/vswhere.exe" -latest -products '*' -requires "$@" \
-    -property installationPath | tr -d '\r')" ]]; then
-    return
-  fi
-  vs_install="$("${installer}/vswhere.exe" -latest -products '*' \
-    -property installationPath | tr -d '\r')"
-  echo "Adding $* to ${vs_install}..."
-  # No --wait: that is the bootstrapper's (winget's vs_buildtools.exe);
-  # the installer's own setup.exe rejects it, and returns once it is done.
-  local args=(modify --installPath "${vs_install}" --quiet --norestart
-    --includeRecommended)
-  # Only those it lacks, which are also the ones the manifest takes.
-  local component missing=()
-  for component in "$@"; do
-    [[ -n "$("${installer}/vswhere.exe" -latest -products '*' \
-      -requires "${component}" -property installationPath | tr -d '\r')" ]] \
-      || missing+=("${component}")
-  done
-  for component in "${missing[@]}"; do
-    args+=(--add "${component}")
-  done
-  manifest_add vs-components "${vs_install}" "${missing[@]}"
-  # Its output is silenced: it logs the channel refreshes --quiet cancels as
-  # errors, which they are not. Its real logs are dd_setup_* in %TEMP%.
-  if ! "${installer}/setup.exe" "${args[@]}" >/dev/null; then
-    echo "bootstrap: the Visual Studio Installer failed; see its" \
-      "dd_setup_*.log files in $(windows_dir TEMP)." >&2
-    exit 1
-  fi
-}
-
 install_platform() {
   require_administrator
 
-  # ATL: vcpkg's llvm port, which Mesa's lavapipe (the renderer smoke test's
-  # Vulkan driver) builds on, needs it.
-  local vs_components=(Microsoft.VisualStudio.Workload.VCTools
-    Microsoft.VisualStudio.Component.VC.ATL)
-  winget_install Microsoft.VisualStudio.BuildTools --override \
-    "--wait --quiet --add ${vs_components[0]} --add ${vs_components[1]} --includeRecommended"
-  add_build_tools_components "${vs_components[@]}"
-  winget_install Microsoft.WindowsSDK.10.0.26100
   winget_install Kitware.CMake
   winget_install Ninja-build.Ninja
   # GNU make, for the top-level Makefile (a wrapper over the CMake presets).
@@ -341,17 +295,12 @@ install_platform() {
   winget_install Git.Git
   winget_install Mozilla.sccache
   winget_install astral-sh.uv
-  # The cooker's (tools/pack/scripts/bootstrap.sh): usd-optimize's USD runtime
-  # DLLs import MSVCP140.dll/VCRUNTIME140*.dll, not bundled in its wheel (see
-  # usd-optimize's own PyPI README). Here, so that bootstrap needs no
-  # Administrator.
-  winget_install Microsoft.VCRedist.2015+.x64
   # Doxygen builds the documentation site's C++ API reference (`make docs`,
   # ADR-0046), as the docs workflow does with the runner's own.
   winget_install DimitriVanHeesch.Doxygen
   # LLVM: clang-cl and lld-link, which the windows presets compile and link
-  # with (ADR-0008), taking the MSVC STL, the CRT and the Windows SDK from the
-  # Build Tools above, and clang-format and clang-tidy, see docs/ENGINEERING.md,
+  # with (ADR-0008), against the MSVC sysroot of `make toolchain` (ADR-0079),
+  # and clang-format and clang-tidy, see docs/ENGINEERING.md,
   # Code Quality, which back the .githooks/pre-commit and .githooks/pre-push
   # hooks. Pinned to the clang CI runs, LLVM_VERSION
   # (scripts/bootstrap/versions.env): another version compiles, formats and
@@ -400,28 +349,6 @@ install_platform() {
   # local commit unformatted. Check now, once, instead.
   require_commands cmake ninja make git sccache uv clang-cl lld-link \
     clang-format clang-tidy doxygen kubectl helm jq podman tshark
-
-  local program_files_x86 vs_install
-  program_files_x86="$(windows_dir 'ProgramFiles(x86)')"
-  vs_install="$("${program_files_x86}/Microsoft Visual Studio/Installer/vswhere.exe" \
-    -latest -products '*' \
-    -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 \
-    Microsoft.VisualStudio.Component.VC.ATL \
-    -property installationPath | tr -d '\r')"
-  if [[ -z "${vs_install}" ]]; then
-    echo "bootstrap: Visual Studio Build Tools is installed, but its VC C++" \
-      "toolset or ATL is missing. Add the" \
-      "Microsoft.VisualStudio.Workload.VCTools workload and the" \
-      "Microsoft.VisualStudio.Component.VC.ATL component and re-run this" \
-      "script." >&2
-    exit 1
-  fi
-  local sdk_include="${program_files_x86}/Windows Kits/10/Include/10.0.26100.0"
-  if [[ ! -d "${sdk_include}" ]]; then
-    echo "bootstrap: Windows SDK 10.0.26100 headers are missing at" \
-      "${sdk_include}." >&2
-    exit 1
-  fi
 }
 
 # vcpkg and NVTX are pinned git submodules (ADR-0025 - plain upstream, no

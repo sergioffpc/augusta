@@ -1432,6 +1432,18 @@ foreach(directory IN LISTS test_directories)
         -DDESTINATION=${binary_directory} -P ${CMAKE_SOURCE_DIR}/cmake/CopyDlls.cmake
       VERBATIM
     )
+    # A Debug build's tests load the debug CRT, which only the MSVC sysroot has
+    # where no Visual Studio is installed (cmake/LlvmWindowsToolchain.cmake).
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+      add_custom_command(
+        TARGET augusta_test_dlls
+        POST_BUILD
+        COMMAND
+          ${CMAKE_COMMAND} "-DBIN_DIR=${AUGUSTA_WINSYSROOT_DEBUG_RUNTIME}" -DDESTINATION=${binary_directory} -P
+          ${CMAKE_SOURCE_DIR}/cmake/CopyDlls.cmake
+        VERBATIM
+      )
+    endif()
   endif()
   get_property(directory_targets DIRECTORY ${directory} PROPERTY BUILDSYSTEM_TARGETS)
   foreach(target IN LISTS directory_targets)

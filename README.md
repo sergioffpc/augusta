@@ -168,9 +168,9 @@ winget install --id Git.Git --exact --source winget --accept-package-agreements 
 ```
 
 It installs Git for Windows, then runs the bootstrap in its Git Bash, which
-installs Visual Studio Build Tools, LLVM, GNU make and the rest, and Podman with
-its WSL 2 machine. Open a new terminal afterwards: the Makefile loads the Build
-Tools' environment for each command.
+installs LLVM, GNU make and the rest, and Podman with its WSL 2 machine, and
+`make toolchain` downloads the MSVC sysroot the build compiles against. No
+Visual Studio is needed. Open a new terminal afterwards.
 
 #### Linux (server and shared core, Ubuntu 26.04)
 
@@ -221,8 +221,8 @@ record of what it installed keeps what it installed then.
 
 ### Build and Run
 
-The [Makefile](Makefile) wraps the build presets. On Windows it loads the Visual
-Studio Build Tools environment through [scripts/vcenv.cmd](scripts/vcenv.cmd).
+The [Makefile](Makefile) wraps the build presets, from a plain shell on every
+platform.
 
 Build and start the Linux server in the dev container first. Leave it running,
 listening on the configured address (the default client connects to

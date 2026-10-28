@@ -208,9 +208,12 @@ jobs:
       - name: Fetch the submodules
         # vcpkg and NVTX, the only submodules.
         run: git submodule update --init --depth 1 third_party/vcpkg third_party/nvtx
-      - uses: ./.github/actions/setup-windows-msvc
       # clang-cl and lld-link, which the windows preset builds with (ADR-0008),
-      # and the clang-tidy the Lint step runs.
+      # and the clang-tidy the Lint step runs. No Visual Studio developer
+      # environment: the build takes the STL, the CRT and the Windows SDK from
+      # the MSVC sysroot setup-toolchain installs (ADR-0079), and the header
+      # origin check (ctest's augusta_header_origin_build) fails if the image's
+      # Visual Studio gives it a header.
       - uses: ./.github/actions/setup-windows-llvm
       - uses: ./.github/actions/restore-sccache-cache
       - uses: ./.github/actions/setup-windows-vcpkg
@@ -249,11 +252,11 @@ jobs:
       - uses: ./.github/actions/save-sccache-cache
       - name: Check augustac's PDB
         # Each release publishes it (ADR-0055): the build leaves it beside
-        # augustac.exe, whose debug directory names it. -headers rather than
-        # /headers, which Git Bash would rewrite as a path.
+        # augustac.exe, whose debug directory names it, as LLVM's llvm-readobj
+        # reads it.
         run: |
           test -f build/x64-windows/src/client/augustac.pdb
-          dumpbin -nologo -headers build/x64-windows/src/client/augustac.exe | grep -E 'Format: RSDS, .*augustac\.pdb'
+          llvm-readobj --coff-debug-directory build/x64-windows/src/client/augustac.exe | grep -E 'PDBFileName: .*augustac\.pdb'
       - name: Check the client's zip
         # What each release publishes (release.yml): the folder the client's
         # install rules stage, zipped, with augustac started from its unzipped

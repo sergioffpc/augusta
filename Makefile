@@ -9,9 +9,9 @@
 # (CMake's default when unset) and DESTDIR, e.g.
 #   make install prefix=/opt/augusta DESTDIR=/tmp/stage
 #
-# On Windows every command runs through scripts\vcenv.cmd, which loads the
-# Visual Studio Build Tools environment first (clang-cl needs it, see README).
-# GNU make for Windows: `winget install ezwinports.make`.
+# On Windows the commands need no Visual Studio developer environment: the
+# build names the MSVC sysroot of .toolchain/ itself (ADR-0079). GNU make for
+# Windows: `winget install ezwinports.make`.
 
 # The host's system, as uname names it; Windows has no uname.
 ifeq ($(OS),Windows_NT)
@@ -24,13 +24,10 @@ ifeq ($(HOST_OS),Windows_NT)
 SHELL := cmd.exe
 .SHELLFLAGS := /c
 PRESET ?= windows
-RUN := scripts\vcenv.cmd
 else ifeq ($(HOST_OS),Darwin)
 PRESET ?= macos
-RUN :=
 else
 PRESET ?= linux
-RUN :=
 endif
 
 # Every preset's binaryDir is build/x64-<preset>, the macOS ones'
@@ -192,12 +189,12 @@ help:
 # (tests/CMakeLists.txt), and for that configure alone: the next one without it
 # has none of them again.
 configure:
-	$(RUN) cmake --preset $(PRESET) $(if $(filter allocator,$(TAGS)),-DAUGUSTA_ALLOCATOR_BENCHMARKS=ON)
+	cmake --preset $(PRESET) $(if $(filter allocator,$(TAGS)),-DAUGUSTA_ALLOCATOR_BENCHMARKS=ON)
 
 # TARGETS narrows the build to those CMake targets, as the VS Code launch
 # configs' tasks (.vscode/tasks.json) build only the executable they debug.
 build: configure
-	$(RUN) cmake --build --preset $(PRESET) $(if $(TARGETS),--target $(TARGETS))
+	cmake --build --preset $(PRESET) $(if $(TARGETS),--target $(TARGETS))
 
 # TAGS="a b ..." narrows the run to the tests with any of those ctest labels,
 # as one anchored regex; a label no test has fails the run rather than passing
@@ -220,8 +217,8 @@ TEST_TARGETS = $(if $(and $(strip $(TAGS)),$(if $(filter-out $(TEST_AREAS),$(TAG
 # The tests are not part of build (ADR-0008): augusta_tests builds them, or
 # TAGS=<area> that area's alone.
 test: build
-	$(RUN) cmake --build --preset $(PRESET) --target $(TEST_TARGETS)
-	$(RUN) ctest --preset $(PRESET) --parallel $(JOBS) $(if $(strip $(TAGS)),--label-regex $(TAGS_REGEX) $(NO_EXCLUSION) --no-tests=error)
+	cmake --build --preset $(PRESET) --target $(TEST_TARGETS)
+	ctest --preset $(PRESET) --parallel $(JOBS) $(if $(strip $(TAGS)),--label-regex $(TAGS_REGEX) $(NO_EXCLUSION) --no-tests=error)
 
 # The labels TAGS picks from: first the test areas, read from what configure
 # wrote, so they show before any test is built; then the labels ctest knows in
@@ -231,14 +228,14 @@ test: build
 labels: configure
 	$(info Test areas, each of which TAGS=<area> builds alone:)
 	$(foreach area,$(sort $(TEST_AREAS)),$(info $()  $(area)))
-	$(RUN) ctest --preset $(PRESET) --print-labels $(NO_EXCLUSION)
+	ctest --preset $(PRESET) --print-labels $(NO_EXCLUSION)
 
 # The structural checks (checks/CMakeLists.txt) build nothing: configuring
 # registers them, and ctest's check label picks them alone. Then the pytest of
 # the scripts they cover, as CI runs it.
 check: configure
-	$(RUN) ctest --preset $(PRESET) --parallel $(JOBS) --label-regex check --no-tests=error
-	$(RUN) uv run --locked --project tools --no-default-groups --group checks pytest checks
+	ctest --preset $(PRESET) --parallel $(JOBS) --label-regex check --no-tests=error
+	uv run --locked --project tools --no-default-groups --group checks pytest checks
 
 # The tests' coverage (ADR-0013), whatever PRESET says: the linux-coverage
 # preset's tests, then their llvm-cov report. The last run's profiles go first,
@@ -280,14 +277,14 @@ profile:
 # against, the tools environment's by default (cmake/AugustaToolsPython.cmake).
 TOOLS_BUILD_DIR := $(BUILD_DIR)-tools
 tools:
-	$(RUN) cmake --preset $(PRESET) -B $(TOOLS_BUILD_DIR) -DAUGUSTA_CLIENT=OFF $(if $(PYTHON_EXECUTABLE),"-DPYTHON_EXECUTABLE=$(PYTHON_EXECUTABLE)")
-	$(RUN) cmake --build $(TOOLS_BUILD_DIR) --target augusta_tools
+	cmake --preset $(PRESET) -B $(TOOLS_BUILD_DIR) -DAUGUSTA_CLIENT=OFF $(if $(PYTHON_EXECUTABLE),"-DPYTHON_EXECUTABLE=$(PYTHON_EXECUTABLE)")
+	cmake --build $(TOOLS_BUILD_DIR) --target augusta_tools
 
 # DESTDIR reaches cmake --install through the environment: make exports a
 # variable set on its command line. PREFIX is taken for the GNU prefix too.
 prefix ?= $(PREFIX)
 install: build
-	$(RUN) cmake --install $(BUILD_DIR) $(if $(prefix),--prefix $(prefix))
+	cmake --install $(BUILD_DIR) $(if $(prefix),--prefix $(prefix))
 
 # CMake has no uninstall; cmake/Uninstall.cmake removes what the install
 # manifest lists. A staged install needs the same DESTDIR here.
@@ -297,7 +294,7 @@ uninstall:
 # Nothing to clean before the first configure (or after distclean): the clean
 # target only exists inside a configured build tree.
 clean:
-	$(if $(wildcard $(BUILD_DIR)),$(RUN) cmake --build --preset $(PRESET) --target clean,@echo Nothing to clean: $(BUILD_DIR) does not exist.)
+	$(if $(wildcard $(BUILD_DIR)),cmake --build --preset $(PRESET) --target clean,@echo Nothing to clean: $(BUILD_DIR) does not exist.)
 
 distclean:
 	cmake -E rm -rf $(BUILD_DIR)
@@ -391,7 +388,7 @@ RUN_CHECKS = $(MAKE) --no-print-directory -j $(JOBS) -k -Otarget "FILES=$(FILES)
 # sources include.
 tidy-prepare: $(if $(FILES),,configure)
 	$(if $(TIDY_RUN),$(if $(wildcard $(BUILD_DIR)/compile_commands.json),,$(error $(BUILD_DIR)/compile_commands.json not found: configure a build first (make configure PRESET=$(PRESET)))))
-	$(if $(filter tidy/src/modules/protocol/%,$(TIDY_RUN)),$(RUN) cmake --build --preset $(PRESET) --target augusta_protocol_generated,@:)
+	$(if $(filter tidy/src/modules/protocol/%,$(TIDY_RUN)),cmake --build --preset $(PRESET) --target augusta_protocol_generated,@:)
 
 tidy: tidy-prepare
 	$(if $(TIDY_RUN),$(RUN_CHECKS) $(TIDY_RUN),@:)
@@ -416,10 +413,10 @@ CTCACHE_DIR = $(abspath build/ctcache)/$(firstword $(filter 1% 2% 3% 4% 5% 6% 7%
 
 .PHONY: $(TIDY_CHECKS) $(INCLUDE_CHECKS)
 $(TIDY_CHECKS): tidy/%:
-	$(RUN) $(CLANG_TIDY) -p=$(BUILD_DIR) $*
+	$(CLANG_TIDY) -p=$(BUILD_DIR) $*
 
 $(INCLUDE_CHECKS): include-cleaner/%:
-	$(RUN) $(CLANG_TIDY) --quiet -p=$(BUILD_DIR) --checks=-*,misc-include-cleaner --extra-arg=-w $*
+	$(CLANG_TIDY) --quiet -p=$(BUILD_DIR) --checks=-*,misc-include-cleaner --extra-arg=-w $*
 
 # The toolchain (ADR-0077), by scripts/bootstrap/toolchain.sh, which says how:
 # toolchain installs what versions.env pins and links .toolchain/bin to it;
