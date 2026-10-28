@@ -34,6 +34,22 @@ keeps game policy separate from mechanism code.
   below would bound it and a finalizer that loops would hang the Simulation
   thread. Lua marks an object for finalization only as its metatable is set, so
   a `__gc` added afterwards finalizes nothing.
+- **The library surface** is what is left of those four libraries. From base:
+  `assert`, `error`, `getmetatable`, `ipairs`, `next`, `pairs`, `rawequal`,
+  `rawget`, `rawlen`, `rawset`, `select`, `setmetatable`, `tonumber`,
+  `tostring`, `type`, `_G` and `_VERSION`. All of math but `random` and
+  `randomseed`. From string: `byte`, `char`, `dump`, `format`, `len`, `lower`,
+  `pack`, `packsize`, `rep`, `reverse`, `sub`, `unpack` and `upper`, also a
+  string's methods. From table: `concat`, `create`, `insert`, `pack`, `remove`,
+  `sort` and `unpack`. The instruction limit counts Lua VM instructions, and a
+  library function runs within one, so a function whose work the memory limit or
+  the instruction count does not bound is left out: `table.move` (any number of
+  moves for one call) and the pattern functions `string.find`, `string.match`,
+  `string.gmatch` and `string.gsub` (a pattern can backtrack for ever).
+  `string.rep`, `string.format` and `table.concat` stay because the memory limit
+  bounds what they build. sol2's default message handler, which it keeps in a
+  global, is taken out, and no call takes its handler from that global, so one a
+  script puts there never runs.
 - **No address reaches a script.** Where an object is allocated differs from one
   Lua state to the next, so a script that read it could decide one way in a
   Match and another in its Replay (ADR-0051). `tostring` of a table, function or
@@ -90,7 +106,14 @@ keeps game policy separate from mechanism code.
   returns nil.
 - **Each call has an instruction limit** of 100 000 Lua instructions, counted
   afresh per call, so a hook takes well under a millisecond of the tick
-  (NFR-01). A top level has ADR-0039's limit of 1 000 000.
+  (NFR-01). A top level has ADR-0039's limit of 1 000 000. Once spent, the limit
+  stays spent until the call returns: every Lua instruction and every function
+  call after it, a `__close` handler that runs as the stop unwinds among them,
+  fails at once, so neither to-be-closed variables nor a C function as their
+  `__close` buy a script a budget of its own. A call runs with no message
+  handler (sol2's adds a stack traceback, and Lua runs a message handler with
+  debug hooks off, so one a script installed would be unbounded), so the error a
+  failed call reports is Lua's message alone, one line in the log.
 - **Each Lua state has a memory limit** of 32 MiB, beside the instruction limit
   and for the life of the state: an allocation past it is refused and raises
   "not enough memory", which fails the call or the load as any error does. A

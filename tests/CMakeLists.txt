@@ -318,13 +318,16 @@ target_link_libraries(augusta_replication_tests PRIVATE augusta_simulation GTest
 # Links PhysX, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_replication_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS simulation)
 
-add_executable(augusta_simulation_tests simulation_test.cpp)
+add_executable(augusta_simulation_tests simulation_test.cpp hitbox_history_test.cpp)
 # Links augusta_animation and ozz-animation's offline libraries for the Clips it
 # authors (clips_fixture.h).
 target_link_libraries(
   augusta_simulation_tests
   PRIVATE augusta_simulation augusta_animation ozz::animation_offline GTest::gtest GTest::gtest_main
 )
+# The Hitbox history is private to the simulation module: its test reaches its
+# header there.
+target_include_directories(augusta_simulation_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/simulation)
 # Links PhysX, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_simulation_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS simulation)
 
@@ -695,6 +698,15 @@ target_compile_definitions(
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_server_application_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS server)
 
+# augustad as built runs on mimalloc (ADR-0078): it checks the allocator before
+# it reads its command line, so its --version exits 0 only when mimalloc serves
+# it, a broken link or redirect failing it. Not under a sanitizer, whose own
+# allocator serves.
+if(NOT AUGUSTA_SANITIZER_ALLOCATOR)
+  add_test(NAME augustad_version COMMAND augustad --version)
+  set_tests_properties(augustad_version PROPERTIES LABELS server)
+endif()
+
 # A Match capture's file (ADR-0050) through the capture module alone: written,
 # read back and refused, with no server; its framing reached through frame.h,
 # and the protocol linked only to build malformed files.
@@ -1045,6 +1057,15 @@ if(AUGUSTA_CLIENT)
   )
   gtest_discover_tests(augusta_client_run_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS client)
 
+  # augustac as built runs on mimalloc (ADR-0078), as augustad does: it checks
+  # the allocator before it reads its command line, so its --version exits 0
+  # only when mimalloc serves it, a broken link or redirect failing it. Not
+  # under a sanitizer, whose own allocator serves.
+  if(NOT AUGUSTA_SANITIZER_ALLOCATOR)
+    add_test(NAME augustac_version COMMAND augustac --version)
+    set_tests_properties(augustac_version PROPERTIES LABELS client)
+  endif()
+
   add_executable(augusta_client_phases_tests client_phases_test.cpp)
   target_link_libraries(
     augusta_client_phases_tests
@@ -1334,6 +1355,32 @@ target_link_libraries(
   augusta_shipping_config_tests
   PRIVATE augusta_client_config augusta_server_config GTest::gtest GTest::gtest_main
 )
+
+# augustad's and augustac's binary hardening (the root CMakeLists.txt, NFR-12),
+# read off the executables the build made with LLVM's binary tools, on Linux and
+# Windows; macOS's, libc++'s hardening mode alone, leaves nothing in the binary
+# to read. A script, so it builds nothing. Each test is in its executable's
+# area. LLVM's tools sit beside clang-cl on Windows, and on PATH beside the ones
+# cmake/LlvmToolchain.cmake finds on Linux.
+if(CMAKE_SYSTEM_NAME MATCHES "^(Linux|Windows)$")
+  get_filename_component(compiler_directory ${CMAKE_CXX_COMPILER} DIRECTORY)
+  find_program(AUGUSTA_LLVM_READOBJ llvm-readobj HINTS ${compiler_directory} REQUIRED)
+  find_program(AUGUSTA_LLVM_NM llvm-nm HINTS ${compiler_directory} REQUIRED)
+  function(augusta_binary_hardening_test executable area)
+    add_test(
+      NAME ${executable}_binary_hardening
+      COMMAND
+        ${CMAKE_COMMAND} -DBINARY=$<TARGET_FILE:${executable}> -DREADOBJ=${AUGUSTA_LLVM_READOBJ} -DNM=${AUGUSTA_LLVM_NM}
+        -DSYSTEM=${CMAKE_SYSTEM_NAME} -DOPTIMISED=$<NOT:$<CONFIG:Debug>> -P
+        ${CMAKE_CURRENT_SOURCE_DIR}/binary_hardening.cmake
+    )
+    set_tests_properties(${executable}_binary_hardening PROPERTIES LABELS ${area})
+  endfunction()
+  augusta_binary_hardening_test(augustad server)
+  if(AUGUSTA_CLIENT)
+    augusta_binary_hardening_test(augustac client)
+  endif()
+endif()
 
 # Every executable here and in fuzz/, and in each tool's tests/ (kept next to
 # the tool) when AUGUSTA_TOOLS builds the tools: what ctest, the benchmarks and

@@ -18,6 +18,7 @@
 #include "augusta/tick.h"
 #include "connection_stats.h"
 #include "peer_message.h"
+#include "protobuf_bytes.h"
 #include "raw_link.h"
 #include "reliability.h"
 
@@ -135,6 +136,54 @@ TEST(ReadFromTest, AClientsMessageIsWhatItSaysUnderItsOwnType) {
   EXPECT_EQ(message.type, MessageType::kReenactRequest);
   ASSERT_TRUE(message.message.has_value());
   EXPECT_EQ(std::get<augusta::link::JoinRequest>(*message.message).character, "soldier");
+}
+
+// A Ready message grown to size bytes by a field no build knows ahead of it,
+// which a decoder ignores (ADR-0038): a payload that decodes as a Ready
+// whatever its size.
+augusta::protocol::BytesWire ReadyOfSize(std::size_t size) {
+  using augusta::protobuf_bytes::Cat;
+  using augusta::protobuf_bytes::LengthField;
+  constexpr int kUnknownField = 999;
+  const augusta::protocol::BytesWire ready =
+      augusta::protocol::Encode(augusta::link::ToWire(augusta::link::Ready{.version = 3})).value();
+  // The padding's own length prefix grows with it, so try each length until
+  // the whole comes out at size.
+  for (std::size_t padding = 0; padding < size; ++padding) {
+    augusta::protocol::BytesWire payload =
+        Cat({LengthField(kUnknownField, augusta::protocol::BytesWire(padding)), ready});
+    if (payload.size() == size) {
+      return payload;
+    }
+  }
+  ADD_FAILURE() << "no padding makes a Ready of " << size << " bytes";
+  return {};
+}
+
+// A payload of the most bytes a client message may take decodes as any other.
+// Requirements: NFR-05
+TEST(ReadFromTest, APayloadAtTheClientBoundIsDecoded) {
+  const auto payload = ReadyOfSize(augusta::protocol::kMaxClientPayloadSize);
+  const augusta::link::PeerMessage message = augusta::link::ReadFrom(kPeer, payload);
+  EXPECT_EQ(message.bytes, augusta::protocol::kMaxClientPayloadSize);
+  EXPECT_EQ(message.type, MessageType::kReady);
+  EXPECT_TRUE(message.message.has_value());
+}
+
+// One byte more is refused before it is decoded: the same Ready, which decodes
+// a byte shorter, is no message, and says why.
+// Requirements: NFR-05
+TEST(ReadFromTest, APayloadOverTheClientBoundIsRefusedUndecoded) {
+  const auto payload = ReadyOfSize(augusta::protocol::kMaxClientPayloadSize + 1);
+  ASSERT_TRUE(augusta::protocol::Decode(payload).has_value());
+
+  const augusta::link::PeerMessage message = augusta::link::ReadFrom(kPeer, payload);
+
+  EXPECT_EQ(message.bytes, augusta::protocol::kMaxClientPayloadSize + 1);
+  ASSERT_FALSE(message.type.has_value());
+  EXPECT_EQ(message.type.error(),
+            augusta::protocol::DescribeDecodeError(augusta::protocol::DecodeError::kPayloadTooLarge));
+  EXPECT_FALSE(message.message.has_value());
 }
 
 // A server's message is encoded once, as the protocol has it, under its type,

@@ -2,6 +2,7 @@
 #define AUGUSTA_SERVER_APPLICATION_H_
 
 #include <expected>
+#include <optional>
 
 #include "augusta/application.h"
 #include "augusta/config.h"
@@ -28,7 +29,9 @@ namespace augusta::server {
 [[nodiscard]] std::expected<config::ServerConfig, failure::Failure> ReadServerConfig(
     const std::expected<config::CommandLine, config::ConfigError>& command_line);
 
-/// augustad's Program for file_config: initialize starts the transport
+/// augustad's Program for file_config: initialize logs the machine and the
+/// allocator, mimalloc as main() read it or the platform's when it read none (a
+/// sanitizer build, ADR-0078), then starts the transport
 /// (failure::Code::kTransportInitFailed), after the physics recording
 /// `debug.physics_recording` asks for in a Development build, which the
 /// Program holds until it goes (physics::StartRecording); construct verifies the pack and loads
@@ -39,8 +42,9 @@ namespace augusta::server {
 /// only, is asked at the transport's initialization, by the server at each of
 /// its sites (host.h) and by the runtime's supervisor, and must outlive the
 /// Program's run.
-[[nodiscard]] application::Program<ServerRuntime> ServerProgram(const config::ServerConfig& file_config,
-                                                                failure::Faults* faults = nullptr);
+[[nodiscard]] application::Program<ServerRuntime> ServerProgram(
+    const config::ServerConfig& file_config, const std::optional<application::MimallocFacts>& mimalloc,
+    failure::Faults* faults = nullptr);
 
 }  // namespace augusta::server
 

@@ -20,6 +20,7 @@
 
 #include "augusta/capture_records.h"
 #include "augusta/failure.h"
+#include "augusta/limits.h"
 #include "augusta/link_messages.h"
 #include "frame.h"
 
@@ -108,9 +109,9 @@ std::expected<Header, ReadError> ReadHeader(std::istream& in) {
 }
 
 // Decision: whether each record may follow those before it (ADR-0050): every
-// Join first, numbered from 1 in order and at offset 0, then the events in
-// offset order, each naming a player a Join did, and nothing after the Match
-// end.
+// Join first, numbered from 1 in order and at offset 0, no more of them than a
+// Match holds, then the events in offset order, each naming a player a Join
+// did, and nothing after the Match end.
 class RecordOrder {
  public:
   bool Admits(const link::CaptureRecord& record) { return std::visit(*this, record); }
@@ -118,7 +119,7 @@ class RecordOrder {
   bool operator()(const Header& /*header*/) const { return false; }
 
   bool operator()(const link::CapturedJoin& join) {
-    if (events_ || join.offset != 0 || join.player != joins_ + 1U) {
+    if (events_ || join.offset != 0 || join.player != joins_ + 1U || joins_ == limits::kMaxPlayers) {
       return false;
     }
     ++joins_;
@@ -227,7 +228,8 @@ std::string DescribeReadError(const ReadError& error) {
       }
       return "the capture has no format version or no header";
     case ReadErrorCode::kMalformed:
-      return "a record of the capture does not decode or is out of order";
+      return "a record of the capture does not decode, is out of order, or is a Join past the most players a Match "
+             "holds";
   }
   return "unknown capture error";
 }

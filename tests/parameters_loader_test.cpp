@@ -1,5 +1,6 @@
 #include "parameters_loader.h"
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -361,10 +362,22 @@ TEST(ParametersLoaderTest, TheForcedWalkThresholdIsAtLeastZeroAndBelowOne) {
 }
 
 // Every name below is something the sandbox does not give a script (ADR-0039):
-// the filesystem, the process, the clock, randomness, and loading more code.
+// the filesystem, the process, the clock, randomness, and loading more code;
+// what the instruction limit cannot bound (a library function that does its
+// work in one instruction, sol2's message handler, run with debug hooks off).
+// sol2 keeps that handler in a global named "sol." and a nut and bolt emoji.
+constexpr std::string_view kSolsMessageHandler = R"(_G["sol.\240\159\148\169"])";
 constexpr std::string_view kUnavailable[] = {
-    "io",   "os",    "package",  "debug",       "coroutine",       "require", "dofile",
-    "load", "print", "loadfile", "math.random", "math.randomseed", "pcall",   "xpcall",
+    "io",           "os",
+    "package",      "debug",
+    "coroutine",    "require",
+    "dofile",       "load",
+    "print",        "loadfile",
+    "math.random",  "math.randomseed",
+    "pcall",        "xpcall",
+    "table.move",   "string.find",
+    "string.match", "string.gmatch",
+    "string.gsub",  kSolsMessageHandler,
 };
 
 // Requirements: US-22
@@ -379,7 +392,9 @@ TEST(ParametersLoaderSandboxTest, NothingThatReachesOutsideTheScriptIsVisible) {
 TEST(ParametersLoaderSandboxTest, AScriptThatCallsWhatTheSandboxLacksFailsToLoad) {
   for (const std::string_view call :
        {"io.open('parameters.txt')", "os.execute('echo')", "os.time()", "os.clock()", "math.random()",
-        "package.loadlib('x', 'y')", "dofile('other.lua')", "load('return 1')()", "require('other')"}) {
+        "package.loadlib('x', 'y')", "dofile('other.lua')", "load('return 1')()", "require('other')",
+        "table.move({1}, 1, 1, 2)", "string.find('a', 'a')", "string.match('a', 'a')", "string.gmatch('a', 'a')",
+        "string.gsub('a', 'a', 'b')", "('a'):find('a')"}) {
     const auto loaded = Load("local unused = " + std::string(call) + "\n" + std::string(kValid));
 
     ASSERT_FALSE(loaded.has_value()) << call;
@@ -407,6 +422,37 @@ TEST(ParametersLoaderSandboxTest, AScriptCannotCatchTheInstructionLimitAndRunOn)
 
     ASSERT_FALSE(loaded.has_value()) << loop;
     EXPECT_EQ(loaded.error().code, ParametersLoadErrorCode::kScriptError) << loop;
+  }
+}
+
+// Lua runs a message handler with debug hooks off, so one the script put in
+// sol2's default-handler global would loop for ever; each pending __close runs
+// as the stop unwinds, so 15 000 of them, in Lua or a C function over a long
+// list, would each get a budget of their own.
+// Requirements: US-22
+TEST(ParametersLoaderSandboxTest, NothingAScriptSetsUpEscapesTheInstructionLimit) {
+  constexpr std::string_view kNestsClosers = R"(
+    local function nest(depth)
+      local guard <close> = closer
+      if depth > 0 then nest(depth - 1) end
+      while true do end
+    end
+    nest(15000)
+  )";
+  for (const std::string& escape : {
+           std::string(kSolsMessageHandler) + " = function() while true do end end while true do end",
+           "closer = setmetatable({}, {__close = function() local sum = 0 for i = 1, 90000 do sum = sum + i end end})" +
+               std::string(kNestsClosers),
+           "closer = setmetatable({}, {__close = table.concat}) for i = 1, 50000 do closer[i] = 'x' end" +
+               std::string(kNestsClosers),
+       }) {
+    const auto start = std::chrono::steady_clock::now();
+    const auto loaded = Load(escape + "\n" + std::string(kValid));
+    const auto took = std::chrono::steady_clock::now() - start;
+
+    ASSERT_FALSE(loaded.has_value()) << escape;
+    EXPECT_NE(loaded.error().subject.find("instruction limit"), std::string::npos) << loaded.error().subject;
+    EXPECT_LT(took, std::chrono::seconds(1)) << escape;
   }
 }
 

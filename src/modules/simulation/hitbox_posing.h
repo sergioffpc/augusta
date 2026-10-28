@@ -33,6 +33,15 @@ namespace augusta::simulation {
 /// Surface, reserved for it, so a strike on it is never read as anything else.
 inline constexpr physics::SurfaceId kMapSurface{0};
 
+/// What Reach::Of adds to how far a pose holds a character's hitboxes: far above
+/// the rounding of posing them, or of Reaches, anywhere on the position grid, so
+/// culling by it never drops a hitbox a bullet crosses.
+inline constexpr float kReachMargin = 0.1F;
+
+/// How far hitbox's farthest point is from the origin of its Joint, in the
+/// Joint's own space.
+[[nodiscard]] float ExtentOf(const hitbox::CharacterHitbox& hitbox);
+
 /// How far from its root a character's hitboxes reach in a pose (ADR-0061): a
 /// bullet that passes farther from where the pose puts its root crosses none of
 /// them. Each Hitbox's farthest point from its Joint is measured once, when the
@@ -87,6 +96,10 @@ class HitboxPosing {
   /// Starts the hitboxes one bullet is tested against, judged at time, a
   /// moment counted in ticks, along segment, its path this tick.
   void BeginBullet(double time, const ballistics::Segment& segment);
+
+  /// Whether the bullet's segment passes within reach of center: a target
+  /// whose hitboxes reach no farther from center is crossed by none of them.
+  [[nodiscard]] bool Reaches(const math::Vec3& center, float reach) const;
 
   /// Adds target's hitboxes, each in the space of its Joint and reaching reach
   /// from its root at pose, placed by joints, each Joint's world transform at

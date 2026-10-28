@@ -1201,7 +1201,10 @@ Measure:     Any startup or runtime failure ends the process with one terminal
              event naming its classified cause, and a non-zero exit; a stop
              that was asked for exits 0; the first failure stops every worker
              and is kept; every thread is joined; a local transport failure is
-             the runtime's failure, but a peer that leaves or misbehaves is not
+             the runtime's failure, but a peer that leaves or misbehaves is not;
+             an executable its allocator does not serve exits non-zero before
+             it reads its command line, with one stderr line naming why, as
+             there is no log yet
 ```
 
 ADR-0033 classifies each failure into the scope it is recovered at, and ADR-0005
@@ -1235,7 +1238,8 @@ Measure:     Every line is a UTC timestamp, the level and the message; only a
              its Match's lines; the Match start line names every player's
              Session; a launch after a crashed Run warns once and names that
              Run's files; only the newest Runs' files are kept; the host's
-             OS, CPU, memory, container limits and GPU are logged at startup
+             OS, CPU, memory, container limits and GPU, and the allocator
+             serving the process, are logged at startup
 ```
 
 ADR-0027 and ADR-0029 define the logger, the line and its levels; ADR-0038 the

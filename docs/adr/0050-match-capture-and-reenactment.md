@@ -24,7 +24,9 @@ made it:
   Session ID, the UUID's 16 bytes as Match start carries it (ADR-0038), its
   Character, by its name in the scenario's manifest (ADR-0042), and where the
   Match start spawned it, on the position grid. A player's place in this order
-  is its number in the capture, from 1.
+  is its number in the capture, from 1. A Match holds at most
+  `limits::kMaxPlayers` players, so a capture holds no more Joins: a reader
+  refuses one with more as malformed, as it does records out of order.
 - **Commands**: each Command a player sent, at the offset of the tick the
   server's command queue handed it to SimulationWorld, its Seen time's tick
   turned into an offset the same way. Only what the client sent: the movement
@@ -88,21 +90,23 @@ before it. A server that stops abruptly leaves every whole record written by
 then; a record cut short is dropped when read, and reported.
 
 **Optional or strict (#398).** `simulation.capture_mode` says what losing a
-record costs the run, ADR-0033's dispositions. A record too long, one that finds
-the queue full or one past the retention budget is a loss as much as a failed
-create, write or flush, since the capture misses it all the same. `optional`,
-the default, is the debugging aid above: the run's first loss is logged once at
-`ERR` as `event=capture_degraded`, a failure of the `subsystem` named for what
-went wrong (`capture_write_failed` for a create or write,
-`capture_flush_failed`, `capture_queue_full` for a disk that fell behind,
-`capture_record_too_long`, `capture_retention_budget`), the captures are
-`degraded` from then on, and the next Match is still captured afresh; the
-Match's authority never changes. A playtest whose point is the capture runs
-`strict`: any loss is `strict_capture_failed`, a `runtime` failure, nothing more
-is captured, and the Simulation thread stops the runtime on it before its next
-tick, the supervisor writing the one `ERR` line. A capture that loses nothing is
-written the same in either mode, and neither mode makes a tick wait for the
-disk: a stalled disk fails a strict run only once its queue is full.
+record costs the run, ADR-0033's dispositions; like the retention below, it is
+set only with `simulation.capture`, and the config refuses it alone, since it
+would shape nothing. A record too long, one that finds the queue full or one
+past the retention budget is a loss as much as a failed create, write or flush,
+since the capture misses it all the same. `optional`, the default, is the
+debugging aid above: the run's first loss is logged once at `ERR` as
+`event=capture_degraded`, a failure of the `subsystem` named for what went wrong
+(`capture_write_failed` for a create or write, `capture_flush_failed`,
+`capture_queue_full` for a disk that fell behind, `capture_record_too_long`,
+`capture_retention_budget`), the captures are `degraded` from then on, and the
+next Match is still captured afresh; the Match's authority never changes. A
+playtest whose point is the capture runs `strict`: any loss is
+`strict_capture_failed`, a `runtime` failure, nothing more is captured, and the
+Simulation thread stops the runtime on it before its next tick, the supervisor
+writing the one `ERR` line. A capture that loses nothing is written the same in
+either mode, and neither mode makes a tick wait for the disk: a stalled disk
+fails a strict run only once its queue is full.
 
 **The captures' health is one-way: `enabled`, then `degraded`, then `stopped`.**
 It is the `augustad_capture_health` metric (ADR-0049), and each change of it a

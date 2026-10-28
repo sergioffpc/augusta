@@ -31,8 +31,9 @@
 /// record of the engine's types (augusta/capture_records.h) into its payload and
 /// back, so this module names no protocol type (ADR-0038). Reading checks the
 /// magic, then the format version before any record, then the records' order
-/// (every Join first, numbered from 1, then the events in offset order, each
-/// naming a player a Join did, nothing after the Match end). Pure stream I/O, on
+/// (every Join first, numbered from 1, no more of them than a Match holds,
+/// limits::kMaxPlayers, then the events in offset order, each naming a player a
+/// Join did, nothing after the Match end). Pure stream I/O, on
 /// whichever thread holds the stream.
 namespace augusta::capture {
 
@@ -48,7 +49,8 @@ enum class ReadErrorCode : std::uint8_t {
   kNotACapture,
   /// It is of a format version this engine does not read, or its header is missing.
   kUnsupported,
-  /// A record does not decode, comes out of order, or names a player no Join did.
+  /// A record does not decode, comes out of order, names a player no Join did,
+  /// or is a Join past the most players a Match holds.
   kMalformed,
 };
 

@@ -22,7 +22,13 @@ MemoryBudget& BudgetOf(lua_State* lua) {
   return *static_cast<MemoryBudget*>(budget);
 }
 
+// Stops what runs, and leaves itself behind to stop every instruction and every
+// call after it until LimitInstructions arms a fresh count. As the stop
+// unwinds, Lua calls each pending __close with hooks on and the count started
+// over, so without that each would get a budget of its own; the call mask
+// stops a C function as __close too, which runs no instruction to count.
 void StopAtTheInstructionLimit(lua_State* state, lua_Debug* /*debug*/) {
+  lua_sethook(state, StopAtTheInstructionLimit, LUA_MASKCALL | LUA_MASKCOUNT, 1);
   luaL_error(state, "instruction limit exceeded");
 }
 
@@ -159,6 +165,15 @@ sol::state MakeSandbox() {
   for (const char* name : {"random", "randomseed"}) {
     lua["math"][name] = sol::lua_nil;
   }
+  // Each does its work within one VM instruction, which the count never
+  // bounds: any number of moves, or a pattern that backtracks for ever.
+  lua["table"]["move"] = sol::lua_nil;
+  for (const char* name : {"find", "match", "gmatch", "gsub"}) {
+    lua["string"][name] = sol::lua_nil;
+  }
+  // sol2 keeps its default message handler in a global, where a script could
+  // replace it, and Lua runs a message handler with hooks off.
+  sol::protected_function::set_default_handler(sol::object(lua.lua_state(), sol::lua_nil));
   lua_State* state = lua.lua_state();
   lua_getglobal(state, "setmetatable");
   lua_pushcclosure(state, SetMetatableWithoutFinalizers, 1);

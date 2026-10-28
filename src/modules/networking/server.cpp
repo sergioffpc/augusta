@@ -1,5 +1,7 @@
+#include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <expected>
 #include <memory>
 #include <mutex>
@@ -88,24 +90,29 @@ struct Server::Impl {
       [this](SteamNetConnectionStatusChangedCallback_t* info) { transport_events.Publish(ToTransportEvent(*info)); }};
 };
 
-Server::Server(const Endpoint& local_endpoint, failure::Faults* faults) : impl_(std::make_unique<Impl>(faults)) {
+Server::Server(const Endpoint& local_endpoint, failure::Faults* faults, std::size_t max_receive_size)
+    : impl_(std::make_unique<Impl>(faults)) {
   SteamNetworkingIPAddr addr;
   addr.Clear();
   if (!addr.ParseString(local_endpoint.address.c_str())) {
     throw UnparsedAddress(local_endpoint.address);
   }
 
-  // Two config values applied to every connection accepted through this
-  // listen socket: the status-changed callback, and a default user data
-  // value carrying this server's handler registration - set here, before
-  // any connection exists, so OnStatusChanged can already resolve it on
-  // that connection's very first (Connecting) callback. Client::Connect
-  // passes the same two values to ConnectByIPAddress instead, since it has
-  // only one connection to tag and no listen socket to inherit them from.
-  std::array<SteamNetworkingConfigValue_t, 2> options;
+  // Three config values applied to every connection accepted through this
+  // listen socket. First the status-changed callback, and a default user
+  // data value carrying this server's handler registration - set here,
+  // before any connection exists, so OnStatusChanged can already resolve it
+  // on that connection's very first (Connecting) callback. Client::Connect
+  // passes these two to ConnectByIPAddress instead, since it has only one
+  // connection to tag and no listen socket to inherit them from. Last, the
+  // largest message a peer may send, past which the transport closes its
+  // connection.
+  std::array<SteamNetworkingConfigValue_t, 3> options;
   options[0].SetPtr(k_ESteamNetworkingConfig_Callback_ConnectionStatusChanged,
                     reinterpret_cast<void*>(&OnStatusChanged));
   options[1].SetInt64(k_ESteamNetworkingConfig_ConnectionUserData, impl_->registration.Id());
+  options[2].SetInt32(k_ESteamNetworkingConfig_RecvMaxMessageSize,
+                      static_cast<std::int32_t>(std::min<std::size_t>(max_receive_size, kDefaultMaxReceiveSize)));
 
   const auto listener_failure = [&](std::string detail) {
     return failure::ClassifiedFailure(LocalFailure(
@@ -134,7 +141,8 @@ Server::Server(const Endpoint& local_endpoint, failure::Faults* faults) : impl_(
 }
 
 #if AUGUSTA_DEBUG_TOOLS
-Server::Server(const Endpoint& local_endpoint, failure::Faults* faults, Tap* tap) : Server(local_endpoint, faults) {
+Server::Server(const Endpoint& local_endpoint, failure::Faults* faults, Tap* tap, std::size_t max_receive_size)
+    : Server(local_endpoint, faults, max_receive_size) {
   impl_->tap = tap;
 }
 #endif
