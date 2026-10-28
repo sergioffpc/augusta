@@ -25,6 +25,8 @@ on:
     paths:
       - scripts/prune-packages.py
       - checks/test_prune_packages.py
+      - tools/pyproject.toml
+      - tools/uv.lock
       - .github/workflows/prune-packages.yml
 permissions: {}
 # One run at a time: an apply must not race a plan, nor another apply.
@@ -44,10 +46,11 @@ jobs:
       # develop's history, main and the v* tags: the roots come from them.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
       - name: Test the script
-        run: uv run --no-project --with pytest==9.1.1 pytest checks/test_prune_packages.py
+        run: uv run --locked --project tools --no-default-groups --group checks pytest checks/test_prune_packages.py
       - name: Print the plan
         env:
           GH_TOKEN: ${{ github.token }}
@@ -70,6 +73,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - name: Delete what the plan deletes
         env:

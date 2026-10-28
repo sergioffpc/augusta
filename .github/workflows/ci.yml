@@ -10,11 +10,9 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}${{ github.event_name == 'push' && format('-{0}', github.sha) || '' }}
   cancel-in-progress: true
+# Read-only: a job that needs more declares it, and only it holds it.
 permissions:
   contents: read
-  packages: write
-  # Deleting superseded cache entries (.github/actions/prune-cache).
-  actions: write
 env:
   VCPKG_BINARY_SOURCES: "clear;nuget,GitHubPackages,readwrite"
 jobs:
@@ -31,6 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - id: filter
         run: |
@@ -92,9 +91,10 @@ jobs:
           # What Flux applies to the cluster: its own manifests, the chart the
           # HelmReleases there install, and the Kyverno policies (and their
           # negative fixtures) both are checked against, all under clusters/;
-          # and the k3s release they run on.
+          # and the k3s release they run on. And the tools' lock, which the
+          # schema conversion runs from.
           set_output run_manifests \
-            "^(${charts}|clusters/|scripts/bootstrap-node\.sh$|${ci_workflow}|${toolchain})"
+            "^(${charts}|clusters/|scripts/bootstrap-node\.sh$|tools/(pyproject\.toml|uv\.lock)$|${ci_workflow}|${toolchain})"
 
           set_output run_yaml \
             '(^\.(yamlfmt|yamllint|yamlignore|gitignore)$|^scripts/bootstrap/versions\.env$|(^|/)[^/]+\.ya?ml$)'
@@ -119,6 +119,8 @@ jobs:
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
@@ -132,8 +134,8 @@ jobs:
         # the check itself runs it.
         if: needs.changes.outputs.run_build == 'true' || needs.changes.outputs.run_yaml == 'true' || needs.changes.outputs.run_lint == 'true'
         run: |
-          uv run --no-project --with pyyaml==6.0.3 --with pytest==9.1.1 pytest checks/test_check_pack_formats.py
-          uv run --no-project --with pyyaml==6.0.3 python scripts/check-pack-formats.py
+          uv run --locked --project tools --no-default-groups --group checks pytest checks/test_check_pack_formats.py
+          uv run --locked --project tools --no-default-groups --group checks python scripts/check-pack-formats.py
       - name: Check C++ formatting
         if: needs.changes.outputs.run_build == 'true'
         run: make format-check/clang-format
@@ -179,6 +181,13 @@ jobs:
     # Pinned rather than windows-latest, so the toolchain doesn't shift
     # underneath us when GitHub migrates the "latest" runner image.
     runs-on: windows-2025
+    permissions:
+      contents: read
+      # Pushing the vcpkg binaries it builds to the GitHub Packages NuGet feed
+      # (VCPKG_BINARY_SOURCES above, setup-windows-vcpkg).
+      packages: write
+      # Deleting superseded cache entries (.github/actions/prune-cache).
+      actions: write
     # Git Bash, as everywhere else: no PowerShell in the repository.
     defaults:
       run:
@@ -186,6 +195,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           # The cooker's test fixtures and the example scenario's sounds, which
           # its pytest cooks.
           lfs: true
@@ -317,9 +327,14 @@ jobs:
     # recommended replacement.
     env:
       VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
+    permissions:
+      contents: read
+      # Deleting superseded cache entries (.github/actions/prune-cache).
+      actions: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           submodules: true
           # As the client-x64-windows job does, for the cooker's pytest.
           lfs: true
@@ -449,9 +464,14 @@ jobs:
     # workflow-level NuGet default.
     env:
       VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
+    permissions:
+      contents: read
+      # Deleting superseded cache entries (.github/actions/prune-cache).
+      actions: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           submodules: true
       - uses: ./.github/actions/setup-linux-build
       - name: Configure (ASan + UBSan)
@@ -474,9 +494,14 @@ jobs:
     # workflow-level NuGet default.
     env:
       VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
+    permissions:
+      contents: read
+      # Deleting superseded cache entries (.github/actions/prune-cache).
+      actions: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           submodules: true
           # libFuzzer ships with the clang package this installs.
       - uses: ./.github/actions/setup-linux-build
@@ -534,6 +559,8 @@ jobs:
            "metadata": {"name": "network-policies"}, "spec": {"resources": .}}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Check the cluster's k3s release
         # The Node's k3s (K3S_VERSION, scripts/bootstrap-node.sh) runs the
         # Kubernetes version the manifests are validated against.
@@ -595,7 +622,7 @@ jobs:
             --version "$(yq --no-doc "$stack_release | .spec.chart.spec.version" "$stack")" \
             > "$schemas/crds.yaml"
           (cd "$schemas" && FILENAME_FORMAT='{fullgroup}_{kind}_{version}' \
-            uv run --no-project --with pyyaml python "$RUNNER_TEMP/kubeconform/openapi2jsonschema.py" \
+            uv run --locked --project "$GITHUB_WORKSPACE/tools" --no-default-groups --group checks python "$RUNNER_TEMP/kubeconform/openapi2jsonschema.py" \
             crds.yaml >/dev/null)
           mkdir -p "$RUNNER_TEMP/rendered"
           for release in clusters/onprem/apps/*.yaml; do
@@ -682,7 +709,7 @@ jobs:
             --version "$(yq --no-doc 'select(.kind == "HelmRelease") | .spec.chart.spec.version' "$kyverno")" \
             | yq 'select(.kind == "CustomResourceDefinition")' > "$schemas/kyverno-crds.yaml"
           (cd "$schemas" && FILENAME_FORMAT='{fullgroup}_{kind}_{version}' \
-            uv run --no-project --with pyyaml python "$RUNNER_TEMP/kubeconform/openapi2jsonschema.py" \
+            uv run --locked --project "$GITHUB_WORKSPACE/tools" --no-default-groups --group checks python "$RUNNER_TEMP/kubeconform/openapi2jsonschema.py" \
             "$GITHUB_WORKSPACE/clusters/onprem/flux-system/gotk-components.yaml" kyverno-crds.yaml >/dev/null)
           mkdir -p "$RUNNER_TEMP/rendered"
           for path in $(yq --no-doc 'select(.kind == "Kustomization") | .spec.path' clusters/onprem/flux-system/gotk-sync.yaml); do
@@ -824,6 +851,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           submodules: true
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
       - name: Lint Helm chart
@@ -914,6 +942,8 @@ jobs:
       AUGUSTA_CONTAINER_ENGINE: docker
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
@@ -982,6 +1012,7 @@ jobs:
       # syft they run, and the branch's head, alone: it builds nothing.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           sparse-checkout: |
             .github/actions/setup-toolchain
             .github/actions/sign-and-attest-server-image
@@ -1066,6 +1097,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           submodules: true
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Log in to GHCR
@@ -1131,6 +1163,7 @@ jobs:
       # For the signing action, and the toolchain whose cosign it runs, alone.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           sparse-checkout: |
             .github/actions/setup-toolchain
             .github/actions/sign-artifact
@@ -1203,6 +1236,8 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
       # oras, cosign and yq.
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2

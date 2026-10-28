@@ -290,6 +290,13 @@ decisions already made in ARCHITECTURE.md:
   on a high or critical CVE; the image only on one with a fix available, the
   executables on any, since the NVD gives most of its ranges with no fixed
   version.
+- **Workflow tokens:** no workflow grants a write scope at workflow level; a job
+  that writes declares exactly the scopes it uses, beside the reason, and every
+  other job's `GITHUB_TOKEN` reads alone. A checkout keeps its credentials only
+  when a later step of its job pushes with git. The Python packages CI runs
+  through `uv run` come from `tools/uv.lock` (`--locked`), and a tool run
+  through `uvx` names its exact version, so no dependency's version is chosen at
+  run time.
 - **Package retention:** GitHub Packages keeps every version CI pushes, so the
   `prune-packages` workflow (`scripts/prune-packages.py`) deletes the ones
   nothing needs. `augustad` keeps `buildcache`, `buildcache-arm64`,
