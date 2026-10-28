@@ -27,7 +27,8 @@
 #
 # Each operation in a part of its own, in scripts/bootstrap/toolchain/:
 # store.sh, link.sh (install) and check.sh, with the tools they share in
-# tools.sh. Beside the bootstrap scripts, not in the Makefile, as the dev
+# tools.sh, and Windows' MSVC sysroot, which each of them makes, links or
+# checks too, in sysroot.sh. Beside the bootstrap scripts, not in the Makefile, as the dev
 # container's image build copies only scripts/.
 set -euo pipefail
 
@@ -103,6 +104,8 @@ exists_exactly() {
 . "${SCRIPT_DIR}/toolchain/link.sh"
 # shellcheck source=/dev/null
 . "${SCRIPT_DIR}/toolchain/check.sh"
+# shellcheck source=/dev/null
+. "${SCRIPT_DIR}/toolchain/sysroot.sh"
 
 main() {
   case "${1:-}" in

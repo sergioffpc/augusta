@@ -6,11 +6,11 @@ folder, never as a lone `augustac.exe`. The folder holds:
 - `augustac.exe`, with the renderer's shaders and the debug HUD's font in it
   (ADR-0059);
 - the DLLs CMake resolves for it: vcpkg's, and Aftermath's when the build has
-  it;
-- the MSVC runtime.
+  it.
 
-Unzipped anywhere, the client runs with no install step and no Visual C++
-redistributable.
+Unzipped anywhere, the client runs with no install step of its own. The MSVC
+runtime is the one thing it takes from the system beyond Windows itself (see The
+MSVC Runtime below).
 
 **Why not a static `.exe`.** Steam Audio and Aftermath ship only as DLLs, so a
 static build would still need the folder beside it. vcpkg's other ports could be
@@ -24,6 +24,28 @@ Windows' own folders on `PATH`. CI's `client-x64-windows` job runs it on every
 pull request. The release workflow publishes the zip only once that copy prints
 the tag's version. The zip has the release's provenance and SBOM attestations.
 The PDB stays a separate asset (ADR-0055).
+
+## The MSVC Runtime
+
+The zip bundles no `vcruntime140*`, `msvcp140*` or other MSVC runtime DLL. The
+build's sysroot has no redistributable DLLs to bundle (ADR-0079), so the player
+installs the Microsoft Visual C++ Redistributable (x64).
+
+- **The minimum version.** `MSVC_REDIST_VERSION` in
+  `scripts/bootstrap/versions.env`: the file version of the `msvcp140.dll` that
+  the pinned toolset's redistributable ships, bumped with the sysroot. An older
+  runtime can crash the client with no useful error: the 17.10 STL's
+  `std::mutex` against an older `msvcp140.dll` is the known case.
+- **Where it is stated.** The README and each release's notes name it. The
+  release workflow writes the notes' line from the pin, and CI fails when the
+  README names another version.
+- **The startup check.** `augustac` reads the version of the `msvcp140.dll` it
+  loaded before it parses its command line, and exits naming the version to
+  install when it is older or cannot be read. So `augustac --version`, the
+  staging check's run, fails on such a runtime too.
+- **How it stays out of the folder.** The install rules exclude the runtime's
+  DLLs wherever CMake would resolve them, and `scripts/stage-client.sh` fails a
+  folder that holds one.
 
 ## The Linux Tarball
 
@@ -66,6 +88,10 @@ no launcher script.
   nothing on a machine without a build tree.
 - **A static `.exe`**: rejected, as above. The DLL-only dependencies need the
   folder anyway.
+- **Bundling the MSVC runtime**: rejected. The build's sysroot has no
+  redistributable DLLs to bundle (ADR-0079), and ADR-0079 says why neither way
+  left, extracting them from a pinned `vc_redist.x64.exe` or a static CRT, is
+  taken.
 - **A Linux launcher script setting `LD_LIBRARY_PATH`**: rejected. `$ORIGIN`
   finds the bundled libraries without one, and the variable would leak into
   every process the client starts.
@@ -79,10 +105,11 @@ no launcher script.
 
 - The client asset is about 18 MB zipped (45 MB unzipped).
 - `augustac --version` exits before the Renderer starts, so the check catches a
-  missing DLL that `augustac` imports, not one loaded only once it runs. A
-  hosted runner has the VC++ redistributable in `System32`, so the check does
-  not show that the bundled MSVC runtime is complete either.
+  missing DLL that `augustac` imports, not one loaded only once it runs.
+- A player installs the VC++ redistributable before the first run, and again
+  when a release raises its minimum version. A hosted runner has a recent one in
+  `System32`, which the staging check's run loads.
 - The SBOM is made from the repository's vcpkg tree alone, with NVTX's commit
-  and the MSVC runtime the zip ships (`scripts/vcpkg-sbom.py`). Like every SBOM
-  made from that tree, it lists all the manifest's ports for the triplet, test
-  and build-tool ports included.
+  (`scripts/vcpkg-sbom.py`). It lists no MSVC runtime, which the zip does not
+  ship. Like every SBOM made from that tree, it lists all the manifest's ports
+  for the triplet, test and build-tool ports included.

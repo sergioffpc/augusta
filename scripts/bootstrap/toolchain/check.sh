@@ -191,6 +191,7 @@ check() {
   check_llvm_tools
   check_prettier
   check_editor
+  check_sysroot
   if ((${#failures[@]} > 0)); then
     printf 'toolchain: %s\n' "${failures[@]}" >&2
     return 1

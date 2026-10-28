@@ -1202,9 +1202,10 @@ Measure:     Any startup or runtime failure ends the process with one terminal
              that was asked for exits 0; the first failure stops every worker
              and is kept; every thread is joined; a local transport failure is
              the runtime's failure, but a peer that leaves or misbehaves is not;
-             an executable its allocator does not serve exits non-zero before
-             it reads its command line, with one stderr line naming why, as
-             there is no log yet
+             an executable its allocator does not serve, or the client on
+             Windows whose MSVC runtime is older than the pinned one or of a
+             version it cannot read, exits non-zero before it reads its command
+             line, with one stderr line naming why, as there is no log yet
 ```
 
 ADR-0033 classifies each failure into the scope it is recovered at, and ADR-0005

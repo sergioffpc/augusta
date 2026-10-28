@@ -210,14 +210,17 @@ decisions already made in ARCHITECTURE.md:
   (`gh workflow run release.yml --ref <branch>`). The client ships as
   `augustac-windows-x64.zip`, its whole runtime folder, never as a lone `.exe`:
   some of its dependencies ship only as DLLs, so the client cannot be linked
-  statically, and it carries the MSVC runtime so it needs no redistributable. A
-  release is published only once its unzipped client runs `augustac --version`
-  and prints the tag's version exactly (`scripts/stage-client.sh`, ADR-0058), so
-  a Development build, whose version ends in `+dev`, fails it. That catches a
-  DLL it imports that is missing, not one loaded only once it runs. The Linux
-  client ships as `augustac-linux-x64.tar.gz`, one `augustac/` folder checked
-  the same way, and for linking nothing from the system beyond an allowlist; it
-  runs on the glibc of Ubuntu 26.04 or newer (ADR-0058).
+  statically. It carries no MSVC runtime: the player installs the VC++
+  redistributable, at least the version `scripts/bootstrap/versions.env` pins
+  (`MSVC_REDIST_VERSION`), which the README and each release's notes name and
+  `augustac` checks at startup (ADR-0079). A release is published only once its
+  unzipped client runs `augustac --version` and prints the tag's version exactly
+  (`scripts/stage-client.sh`, ADR-0058), so a Development build, whose version
+  ends in `+dev`, fails it. That catches a DLL it imports that is missing, not
+  one loaded only once it runs. The Linux client ships as
+  `augustac-linux-x64.tar.gz`, one `augustac/` folder checked the same way, and
+  for linking nothing from the system beyond an allowlist; it runs on the glibc
+  of Ubuntu 26.04 or newer (ADR-0058).
 - **Documentation site:** the `docs` workflow builds the site (MkDocs Material
   for `docs/`, `README.md` and `GLOSSARY.md`, Doxygen for the C++ API) on every
   pull request, and publishes `main`'s on GitHub Pages (ADR-0046). `make docs`
@@ -604,31 +607,32 @@ no self-hosted GitHub Actions runner in this pipeline).
   that breaks it fails a night and gates the next release, though no pull
   request builds it; Aftermath and Nsight do not exist there.
 - **Client (Windows, native):** built and run natively — never cross-compiled
-  from Linux: vcpkg's dependencies build with MSVC `cl`. The client, the server
-  and their tests compile with `clang-cl` and links with `lld-link`, from the
-  same pinned LLVM as the hooks' `clang-format` and `clang-tidy`, inside the
-  Build Tools' developer environment (`scripts/vcenv.cmd`, which the Makefile
-  runs every command through), whose MSVC STL, CRT and Windows SDK they build
-  against; the dependencies stay on `cl` under vcpkg's `x64-windows` triplet
-  (ADR-0008). The same `scripts/bootstrap.sh`, run in Git Bash as Administrator
-  (its Windows half, `scripts/bootstrap/windows.sh`, winget-driven; one entry
-  point and one `checkout` step and toolchain for every platform, and no
-  PowerShell: Git for Windows is the one prerequisite, which cloning needs
-  anyway) installs Visual Studio Build Tools system-wide (default install
-  location) — simpler than pinning a project-specific path, at the cost of not
-  being able to side-by-side independent Build Tools versions per project — plus
-  the Windows SDK, CMake, Ninja, GNU make, vcpkg, Git, uv (which installs the
-  toolchain's PyPI tools), and LLVM (`clang-cl` and `lld-link` for the build,
-  and the `clangd`, `clang-format` and `clang-tidy` `.toolchain/bin` links),
-  pinned to the LLVM version CI's Ubuntu runner ships and CI's Windows jobs
-  install, so a local build and the hooks agree with CI's gates, kubectl and
-  helm, for the cluster, and jq and tshark (through Wireshark), as the Linux
-  half's, with Podman and its WSL 2 machine (flux, cosign and the tools CI's own
-  jobs run being the toolchain's there too); auditd, which records a Linux
-  kernel's syscalls, has no Windows counterpart. It also puts Git's `bin`
-  directory on PATH, so `bash scripts/<script>.sh` runs from PowerShell and cmd,
-  and the workspace's VS Code settings point the Kubernetes extension and its
-  terminals at the day-to-day kubeconfig, `~/.kube/augusta.yaml`.
+  from Linux. The client, the server, their tests and vcpkg's dependencies
+  compile with `clang-cl` and link with `lld-link`, from the same pinned LLVM as
+  the hooks' `clang-format` and `clang-tidy`, inside the Build Tools' developer
+  environment (`scripts/vcenv.cmd`, which the Makefile runs every command
+  through), whose MSVC STL, CRT and Windows SDK they build against, through
+  `cmake/LlvmWindowsToolchain.cmake`, which the windows presets and vcpkg's
+  `x64-windows` overlay triplet both chainload (ADR-0008, ADR-0079). The same
+  `scripts/bootstrap.sh`, run in Git Bash as Administrator (its Windows half,
+  `scripts/bootstrap/windows.sh`, winget-driven; one entry point and one
+  `checkout` step and toolchain for every platform, and no PowerShell: Git for
+  Windows is the one prerequisite, which cloning needs anyway) installs Visual
+  Studio Build Tools system-wide (default install location) — simpler than
+  pinning a project-specific path, at the cost of not being able to side-by-side
+  independent Build Tools versions per project — plus the Windows SDK, CMake,
+  Ninja, GNU make, vcpkg, Git, uv (which installs the toolchain's PyPI tools),
+  and LLVM (`clang-cl` and `lld-link` for the build, and the `clangd`,
+  `clang-format` and `clang-tidy` `.toolchain/bin` links), pinned to the LLVM
+  version CI's Ubuntu runner ships and CI's Windows jobs install, so a local
+  build and the hooks agree with CI's gates, kubectl and helm, for the cluster,
+  and jq and tshark (through Wireshark), as the Linux half's, with Podman and
+  its WSL 2 machine (flux, cosign and the tools CI's own jobs run being the
+  toolchain's there too); auditd, which records a Linux kernel's syscalls, has
+  no Windows counterpart. It also puts Git's `bin` directory on PATH, so
+  `bash scripts/<script>.sh` runs from PowerShell and cmd, and the workspace's
+  VS Code settings point the Kubernetes extension and its terminals at the
+  day-to-day kubeconfig, `~/.kube/augusta.yaml`.
 - **Uninstall:** `scripts/bootstrap.sh uninstall` undoes a bootstrap on every
   platform: what its `platform` step installed that was not there before, which
   it records in a manifest of the machine's (each package, file, PATH entry,

@@ -180,6 +180,22 @@ jobs:
       - name: Check Protocol Buffers formatting and lint
         if: needs.changes.outputs.run_lint == 'true'
         run: make format-check/buf
+      - name: Check the README's VC++ redistributable
+        # The README names the oldest VC++ redistributable the Windows client
+        # starts on, as versions.env pins it (MSVC_REDIST_VERSION, ADR-0079),
+        # which release.yml's notes take from the pin itself. The check joins
+        # the README's lines, however Prettier wraps them.
+        if: needs.changes.outputs.run_lint == 'true'
+        run: |
+          # shellcheck source=/dev/null
+          . scripts/bootstrap/versions.env
+          minimum="latest-supported-vc-redist) $MSVC_REDIST_VERSION or newer"
+          if ! tr -s '\n' ' ' < README.md | grep -qF "$minimum"; then
+            echo "::error file=README.md::the README does not name the" \
+              "VC++ redistributable versions.env pins," \
+              "$MSVC_REDIST_VERSION or newer"
+            exit 1
+          fi
   # Requirements: NFR-04
   client-x64-windows:
     needs: [changes, format]
@@ -233,6 +249,15 @@ jobs:
         # AUGUSTA_LAVAPIPE: the renderer smoke test's software Vulkan, which a
         # release's build leaves out (CMakeLists.txt).
         run: cmake --preset windows -DAUGUSTA_LAVAPIPE=ON "-DPYTHON_EXECUTABLE=$(cygpath -m "$PWD/tools/.venv/Scripts/python.exe")"
+      - name: Check the ports' compiler
+        # Every vcpkg port builds with the project's clang-cl
+        # (cmake/LlvmWindowsToolchain.cmake, ADR-0079), never MSVC's cl: the
+        # compiler vcpkg found for the triplet, whose hash each port's ABI
+        # holds, as the configure's install logged it. A log without one fails.
+        run: |
+          found="$(grep -F 'Compiler found:' build/x64-windows/vcpkg-manifest-install.log)"
+          echo "$found"
+          if grep -viF 'clang-cl.exe' <<<"$found"; then exit 1; fi
       - name: Build
         # all includes augustad: this job is the build matrix's Windows x64
         # server, the development-only one (NFR-04, cmake/AugustaPlatform.cmake).
@@ -259,7 +284,6 @@ jobs:
           python scripts/vcpkg-sbom.py --name augustac --version "$GITHUB_SHA" \
             --repo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --commit "$GITHUB_SHA" \
             --git-package third_party/nvtx \
-            --msvc-runtime "$RUNNER_TEMP/augustac/bin/vcruntime140.dll" \
             build/x64-windows/vcpkg_installed/x64-windows > "$RUNNER_TEMP/augustac.spdx.json"
           python scripts/sbom-cpes.py "$RUNNER_TEMP/augustac.spdx.json" > /dev/null
       - name: Lint

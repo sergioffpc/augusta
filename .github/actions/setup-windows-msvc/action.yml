@@ -3,7 +3,7 @@ description: >
   Loads the Visual Studio x64 developer environment for every later step of the
   job, as scripts/vcenv.cmd does for a local build: INCLUDE, LIB and PATH, the
   MSVC STL, the CRT and the Windows SDK that clang-cl and lld-link build against
-  (ADR-0008), and the cl.exe vcpkg's ports build with.
+  (ADR-0008), our code and vcpkg's ports alike.
 runs:
   using: composite
   steps:

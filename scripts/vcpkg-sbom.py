@@ -8,14 +8,13 @@ their port packages, each with its vcpkg purl, under one package for the
 executable. It lists every port the manifest installed for the triplet, test
 and build-tool ports included - the manifest has one dependency list for
 every target. A dependency vcpkg doesn't provide (a submodule: NVTX) is named
-with --git-package, at its checked-out commit. --msvc-runtime names the MSVC
-runtime the client bundles (ADR-0058), at the version of its vcruntime140.dll.
+with --git-package, at its checked-out commit. The client ships no MSVC
+runtime, which the player installs (ADR-0079), so none is listed.
 
   scripts/vcpkg-sbom.py --name augustad --version v1.0.0 \
       --repo https://github.com/owner/augusta --commit <commit> \
       build/x64-linux/vcpkg_installed/x64-linux > augustad.spdx.json
   scripts/vcpkg-sbom.py --name augustac ... --git-package third_party/nvtx \
-      --msvc-runtime <staged>/bin/vcruntime140.dll \
       build/x64-windows/vcpkg_installed/x64-windows > augustac.spdx.json
 """
 
@@ -88,42 +87,6 @@ def git_package(path):
     }
 
 
-def file_version(dll):
-    """The file version in a Windows DLL's version resource."""
-    # Windows' own version.dll reads it: only the client's SBOM, made on
-    # Windows, asks for it.
-    import ctypes  # noqa: PLC0415
-
-    version = ctypes.windll.version
-    size = version.GetFileVersionInfoSizeW(str(dll), None)
-    if not size:
-        sys.exit(f"{dll}: no version resource")
-    data = ctypes.create_string_buffer(size)
-    info = ctypes.c_void_p()
-    length = ctypes.c_uint()
-    if not version.GetFileVersionInfoW(
-        str(dll), 0, size, data
-    ) or not version.VerQueryValueW(
-        data, "\\", ctypes.byref(info), ctypes.byref(length)
-    ):
-        sys.exit(f"{dll}: its version resource can't be read")
-    # VS_FIXEDFILEINFO's dwFileVersionMS and dwFileVersionLS, after its
-    # dwSignature and dwStrucVersion.
-    most, least = ctypes.cast(info, ctypes.POINTER(ctypes.c_uint32))[2:4]
-    return f"{most >> 16}.{most & 0xFFFF}.{least >> 16}.{least & 0xFFFF}"
-
-
-def msvc_runtime_package(vcruntime):
-    """The MSVC runtime, at the version of its vcruntime140.dll."""
-    return {
-        "name": "msvc-runtime",
-        "SPDXID": "SPDXRef-msvc-runtime",
-        "versionInfo": file_version(vcruntime),
-        "downloadLocation": _NOASSERTION,
-        **_UNASSERTED,
-    }
-
-
 def spdx_document(name, version, repo, commit, dependencies):
     """The SPDX document for executable name, depending on dependencies."""
     root = {
@@ -182,19 +145,12 @@ def main():
         help="a dependency checked out with git rather than installed by vcpkg",
     )
     parser.add_argument(
-        "--msvc-runtime",
-        type=pathlib.Path,
-        help="the vcruntime140.dll the executable ships with",
-    )
-    parser.add_argument(
         "installed", type=pathlib.Path, help="vcpkg_installed/<triplet>"
     )
     args = parser.parse_args()
     dependencies = port_packages(args.installed) + [
         git_package(p) for p in args.git_package
     ]
-    if args.msvc_runtime:
-        dependencies.append(msvc_runtime_package(args.msvc_runtime))
     json.dump(
         spdx_document(
             args.name, args.version, args.repo, args.commit, dependencies
