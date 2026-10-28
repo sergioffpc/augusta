@@ -14,3 +14,7 @@ and re-applies the diff.
   (`portfile.cmake` lists what it changes).
 - `nvrhi`: macOS arm64 among its `supports`, for its Vulkan backend on Mesa's
   KosmicKrisp (docs/ENGINEERING.md).
+- `libsodium`: Windows built by CMake and Ninja, statically, from the
+  `CMakeLists.txt` beside its portfile, in place of upstream's msbuild solution:
+  it builds under `cl` and `clang-cl` alike (ADR-0079). Linux and macOS keep
+  upstream's make path.
