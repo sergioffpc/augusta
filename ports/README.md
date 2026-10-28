@@ -23,3 +23,6 @@ and re-applies the diff.
   msbuild on Windows (ADR-0079). The port is headers and CMake files alone, and
   the tools' modules (tools/agent, tools/pack) are built against the Python
   `cmake/AugustaToolsPython.cmake` finds, not one vcpkg installs.
+- `gamenetworkingsockets`: Windows' own BCrypt for its crypto on Windows
+  (`USE_CRYPTO=BCrypt`), so OpenSSL, whose port builds with nmake, leaves the
+  Windows graph (ADR-0079); Linux and macOS keep OpenSSL.
