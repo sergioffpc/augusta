@@ -18,8 +18,10 @@
 /// running it. Each phase classifies its own failure - an unusable config,
 /// content that does not verify or load, a transport that does not start - so
 /// main() only concludes the one Outcome. The runtime's own failures are its
-/// supervisor's first cause (server.h), passed on as they are. main.cpp adds
-/// only what a test cannot: the signal handlers, and the exit.
+/// supervisor's first cause (server.h), passed on as they are. The runtime it
+/// constructs watches the process's shutdown request (shutdown_signal.h).
+/// main.cpp adds only what a test cannot: installing the signal handlers, and
+/// the exit.
 namespace augusta::server {
 
 /// The config file command_line names, read, or the
@@ -38,7 +40,8 @@ namespace augusta::server {
 /// its content (kInvalidContent), then constructs the ServerRuntime, which
 /// throws its failure already classified (a rejected map mesh, a listen address
 /// that can't be parsed or bound, a capture directory that can't be created;
-/// see host.h); run runs it until Stop() or its first cause. faults, for tests
+/// see host.h); run runs it until Stop(), the process's shutdown request
+/// (shutdown_signal.h) or its first cause. faults, for tests
 /// only, is asked at the transport's initialization, by the server at each of
 /// its sites (host.h) and by the runtime's supervisor, and must outlive the
 /// Program's run.

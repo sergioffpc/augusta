@@ -78,6 +78,8 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
   // 60 Hz, no missed ticks).
   std::uint8_t tick_rate_hz;
   std::uint16_t metrics_port;
+  // The process's shutdown request, if the runtime watches one.
+  const std::atomic<bool>* shutdown_request;
 #if AUGUSTA_DEBUG_TOOLS
   // This run's pcapng, if asked for: declared before served, whose transport
   // reports to it until it goes.
@@ -104,6 +106,7 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
   Running(const Config& config, scenario::Scenario scenario, Policy policy, const RuntimeOptions& options)
       : tick_rate_hz(config.tick_rate_hz),
         metrics_port(options.metrics_port),
+        shutdown_request(options.shutdown_request),
 #if AUGUSTA_DEBUG_TOOLS
         pcapng(pcapng::RunWriter(options.network_pcapng, "augustad", EngineVersion())),
         served(Tapped(config, pcapng.get()), std::move(scenario), std::move(policy)),
@@ -131,6 +134,16 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
     LOG_INFO("subsystem=serverruntime event=metrics_serving port={}", metrics_port);
   }
 
+  // Turns a set shutdown request into the supervisor's stop, then says whether
+  // the loops are to stop. Both loops poll it before each tick or round, so
+  // neither runs one once the request is set.
+  bool PollStop() {
+    if (shutdown_request != nullptr && shutdown_request->load()) {
+      workers.RequestStop();
+    }
+    return workers.StopRequested();
+  }
+
   // The runtime failure the server met on either thread, if any, for the
   // worker that takes it to stop on (ADR-0033): its local transport's, without
   // which the runtime cannot go on, or a message or record it could not
@@ -154,7 +167,7 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
   supervisor::WorkerResult NetworkThreadMain() {
     constexpr auto kNetworkRoundWait = std::chrono::milliseconds(1);
     std::chrono::steady_clock::time_point next_sample = std::chrono::steady_clock::now() + host::kHeartbeatInterval;
-    while (!workers.StopRequested()) {
+    while (!PollStop()) {
       const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
       served.PumpNetwork(now);
       if (supervisor::WorkerResult failed = ServedResult(); !failed.has_value()) {
@@ -179,7 +192,7 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
     const auto tick_duration = std::chrono::duration_cast<tick::Clock::duration>(delta_time);
     LOG_INFO("subsystem=serverruntime event=loop_starting loop=simulation");
     tick::Clock::time_point deadline = tick::Clock::now();
-    while (!workers.StopRequested()) {
+    while (!PollStop()) {
       if (std::optional<failure::Failure> lost = CaptureFailureOf(served)) {
         return std::unexpected(*std::move(lost));
       }

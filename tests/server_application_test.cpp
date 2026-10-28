@@ -1,14 +1,20 @@
 #include "server_application.h"
 
+#include <atomic>
+#include <csignal>
 #include <cstddef>
+#include <cstdlib>
 #include <expected>
 #include <filesystem>
 #include <fstream>
 #include <ios>
 #include <iterator>
 #include <optional>
+#include <stop_token>
 #include <string>
 #include <string_view>
+#include <thread>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -22,6 +28,8 @@
 #include "augusta/logging.h"
 #include "augusta/pack_encoder.h"
 #include "augusta/server_config.h"
+#include "server.h"
+#include "shutdown_signal.h"
 
 // augustad's application boundary (ADR-0033), on the example scenario's
 // golden server pack: whatever its startup or its runtime fails with, the
@@ -40,8 +48,10 @@ using augusta::failure::Code;
 using augusta::failure::Failure;
 using augusta::failure::Faults;
 using augusta::failure::Site;
+using augusta::server::InstallShutdownSignalHandlers;
 using augusta::server::ReadServerConfig;
 using augusta::server::ServerProgram;
+using augusta::server::ServerRuntime;
 
 const std::filesystem::path kPacks{AUGUSTA_EXAMPLE_PACKS};
 
@@ -335,6 +345,95 @@ TEST(ServerApplicationTest, AStartupFailureIsLoggedOnceByTheBoundaryThatDecidesI
   EXPECT_EQ(Occurrences(written, "ERROR"), 0U) << written;
   EXPECT_EQ(Occurrences(written, "CRITICAL"), 1U) << written;
   EXPECT_EQ(Occurrences(written, "subsystem=server event=terminal_failure code=invalid_content"), 1U) << written;
+}
+
+// augustad's shutdown signal (ADR-0005): its handler only sets the process's
+// shutdown request, which a running ServerProgram watches, so a SIGTERM at any
+// point either stops the run or does nothing. Each test raises it in a death
+// test's own process, since the request, once set, lasts the process's life.
+
+// How augustad ends with config when a SIGTERM is raised, from a thread beside
+// it as a signal may arrive, once its run has started.
+Outcome ServedUntilSignalled(const ServerConfig& config) {
+  auto program = ServerProgram(config, std::nullopt);
+  program.initialize = []() -> std::expected<void, Failure> { return {}; };
+  std::atomic<bool> running{false};
+  program.run = [&running, run = std::move(program.run)](ServerRuntime& runtime) {
+    running = true;
+    return run(runtime);
+  };
+  const std::jthread signaller([&running](const std::stop_token& stop) {
+    while (!running && !stop.stop_requested()) {
+      std::this_thread::yield();
+    }
+    if (running) {
+      std::raise(SIGTERM);
+    }
+  });
+  return Execute(program);
+}
+
+// The death test's exit status for how augustad ended: 0 if it stopped as asked.
+[[noreturn]] void ExitWith(const Outcome& outcome) { std::exit(outcome.has_value() ? 1 : 0); }
+
+// Each test's process re-runs the test binary rather than forking one whose
+// transport is already initialized.
+class ServerShutdownSignalTest : public ::testing::Test {
+ protected:
+  void SetUp() override { GTEST_FLAG_SET(death_test_style, "threadsafe"); }
+};
+
+// Requirements: NFR-18
+TEST_F(ServerShutdownSignalTest, ASignalBeforeTheRunStopsItAsSoonAsItStarts) {
+  EXPECT_EXIT(
+      {
+        InstallShutdownSignalHandlers();
+        std::raise(SIGTERM);
+        Faults faults;
+        ExitWith(Served(ExampleConfig(), faults));
+      },
+      ::testing::ExitedWithCode(0), "");
+}
+
+// Requirements: NFR-18
+TEST_F(ServerShutdownSignalTest, ASignalDuringTheRunStopsIt) {
+  EXPECT_EXIT(
+      {
+        InstallShutdownSignalHandlers();
+        ExitWith(ServedUntilSignalled(ExampleConfig()));
+      },
+      ::testing::ExitedWithCode(0), "");
+}
+
+// The runtime is released before Execute returns: a signal then only sets the
+// request again, and the process goes on - with a handler that reached the
+// released runtime, linux-san's ASan would end it instead.
+// Requirements: NFR-18
+TEST_F(ServerShutdownSignalTest, ASignalAfterTheRuntimeIsReleasedDoesNothing) {
+  EXPECT_EXIT(
+      {
+        InstallShutdownSignalHandlers();
+        const Outcome outcome = ServedUntilSignalled(ExampleConfig());
+        std::raise(SIGTERM);
+        std::raise(SIGINT);
+        ExitWith(outcome);
+      },
+      ::testing::ExitedWithCode(0), "");
+}
+
+// The control for the test above: the same signals, after the same run, end
+// the process once its handler is gone.
+// Requirements: NFR-18
+TEST_F(ServerShutdownSignalTest, ASignalAfterTheRunEndsTheProcessWithoutTheHandler) {
+  EXPECT_DEATH(
+      {
+        InstallShutdownSignalHandlers();
+        const Outcome outcome = ServedUntilSignalled(ExampleConfig());
+        std::signal(SIGTERM, SIG_DFL);
+        std::raise(SIGTERM);
+        ExitWith(outcome);
+      },
+      "");
 }
 
 }  // namespace

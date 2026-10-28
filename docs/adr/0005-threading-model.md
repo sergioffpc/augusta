@@ -107,11 +107,14 @@ most one tick of work after the stop. The runtime stops and joins every worker
 before it returns, on success, failure or exception, and so before the resources
 they use are released, and returns the first cause for `main` to report and exit
 non-zero — the client among its other failures (refused, unreachable, connection
-lost), the server as its own. A stop requested from outside (the server's
-SIGINT/SIGTERM handler) is a single lock-free atomic operation, safe from a
-signal handler, and is not a failure; a worker that fails after it, with no
-failure before it, is still the first cause, since the runtime did not stop
-cleanly.
+lost), the server as its own. A stop requested from outside is a single
+lock-free atomic operation, safe from a signal handler, and is not a failure; a
+worker that fails after it, with no failure before it, is still the first cause,
+since the runtime did not stop cleanly. The server's SIGINT/SIGTERM handler
+touches no runtime or supervisor, whose lifetime may end while it runs: it sets
+a shutdown request that lives as long as the process, which the running
+runtime's loops check before each tick or round and turn into its supervisor's
+stop, so a signal before, during or after a run either stops it or does nothing.
 
 ## Consequences
 

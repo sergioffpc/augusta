@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_SERVER_H_
 #define AUGUSTA_SERVER_H_
 
+#include <atomic>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -23,8 +24,9 @@
 /// it serves the metrics endpoint (metrics.h, ADR-0049) on a third thread it
 /// does not supervise. Decoding what clients send, admitting them, screening
 /// their commands and replicating each tick is Host's work (host.h);
-/// ServerRuntime only runs it. With no window to close, Stop() ends it, e.g.
-/// from the SIGINT/SIGTERM handler main.cpp installs.
+/// ServerRuntime only runs it. With no window to close, Stop() ends it, or the
+/// process's shutdown request it watches, which augustad's SIGINT/SIGTERM
+/// handler sets (shutdown_signal.h).
 namespace augusta::server {
 
 /// What a ServerRuntime runs its server with, beside the server's own config.
@@ -32,6 +34,11 @@ struct RuntimeOptions {
   /// The TCP port the metrics endpoint serves on (ADR-0049); 0, the default,
   /// takes a free one.
   std::uint16_t metrics_port = 0;
+  /// A stop request that outlives the runtime, e.g. GlobalShutdownRequest
+  /// (shutdown_signal.h): once it is true, Run() stops as if Stop() had been
+  /// called - at once if it already is when Run() starts. Null, the default,
+  /// watches none; must outlive Run().
+  const std::atomic<bool>* shutdown_request = nullptr;
   /// For tests only: asked by its supervisor at each worker's creation and
   /// execution; must outlive Run().
   failure::Faults* faults = nullptr;
@@ -80,20 +87,21 @@ class ServerRuntime {
   /// stop the server (ADR-0049). Spawns the Network I/O thread (ADR-0005), then runs the fixed-rate
   /// Simulation loop on the calling thread - gather this tick's latest
   /// validated commands, SimulationWorld::Tick, hand the resulting
-  /// Authoritative State onward - until Stop() is called or either thread
+  /// Authoritative State onward - until Stop() is called, the shutdown
+  /// request (RuntimeOptions) is set, or either thread
   /// fails, the local transport failing among the ways it can
   /// (Host::TakeTransportFailure), which stops the other (supervisor.h):
   /// neither ticks nor pumps the network again once the stop is requested.
   /// Always stops and joins the Network I/O
   /// thread before returning, and so before Host, which it uses, can go.
-  /// Returns the first cause that stopped it, nullopt if Stop() did:
+  /// Returns the first cause that stopped it, nullopt if a stop asked for did:
   /// the caller reports it and exits. Must not be called more than once.
   [[nodiscard]] std::optional<failure::Failure> Run();
 
   /// Signals Run()'s Simulation loop to stop after its current tick, and the
   /// Network I/O thread after its current round. Safe to call from any thread
-  /// and from a signal handler - e.g. main() installing a SIGINT/SIGTERM handler
-  /// that calls this.
+  /// while the runtime lives; a signal handler, which cannot know that it
+  /// does, sets RuntimeOptions::shutdown_request instead.
   void Stop();
 
  private:
