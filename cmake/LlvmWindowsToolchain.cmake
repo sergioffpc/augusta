@@ -42,7 +42,11 @@ find_program(CMAKE_MT llvm-mt HINTS "${augusta_llvm_bin}" NO_DEFAULT_PATH REQUIR
 # A port's build (vcpkg passes it the triplet's architecture) also gets what
 # vcpkg's own Windows toolchain, which this one stands in for, sets up: the
 # CRT, the MSVC flags and the triplet's. It leaves out /MP, which clang-cl does
-# not take, as the compiler's path ends in clang-cl.exe.
+# not take, as the compiler's path ends in clang-cl.exe. Its resource flags,
+# /c65001 /DWIN32, are cached first without the code page: CMake passes
+# CMAKE_RC_FLAGS to clang-cl, which preprocesses a resource script for llvm-rc,
+# as well as to llvm-rc, and clang-cl reads /c65001 as a file to compile.
 if(DEFINED VCPKG_TARGET_ARCHITECTURE)
+  set(CMAKE_RC_FLAGS "/DWIN32" CACHE STRING "")
   include("${CMAKE_CURRENT_LIST_DIR}/../third_party/vcpkg/scripts/toolchains/windows.cmake")
 endif()
