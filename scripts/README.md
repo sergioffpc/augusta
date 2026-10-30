@@ -7,15 +7,19 @@ it; this index says which one to look at.
 ## Developer environment
 
 - [`bootstrap.sh`](bootstrap.sh) sets up the development environment
-  (`docs/ENGINEERING.md`, Developer Environment): the platform, then the
-  checkout. What differs per platform lives in [`bootstrap/`](bootstrap/):
-  `linux.sh` (Ubuntu 26.04, the server and the dev container), `windows.sh` (the
-  client, in Git Bash as Administrator) and `macos.sh` (Apple silicon, native).
-  Beside them, `versions.env` pins the toolchain's versions and `toolchain.sh`
-  installs them into the shared store and links a checkout's `.toolchain/`
-  (`make toolchain`, `make toolchain-check`).
+  (`docs/ENGINEERING.md`, Developer Environment): with no step, this checkout's
+  dev container, the host needing git and Podman alone; its `platform` and
+  `checkout` steps are the recipe the image and CI's native jobs run. What
+  differs per platform lives in [`bootstrap/`](bootstrap/): `linux.sh` (Ubuntu
+  26.04, the server and the dev container), `windows.sh` (the client, in Git
+  Bash as Administrator) and `macos.sh` (Apple silicon, native). Beside them,
+  `versions.env` pins the toolchain's versions and `toolchain.sh` installs them
+  into the shared store and links a checkout's `.toolchain/` (`make toolchain`,
+  `make toolchain-check`).
 - [`dev-container.sh`](dev-container.sh) runs a command, or a shell, in this
-  checkout's Linux dev container, for a Linux build on a host that has its own.
+  checkout's Linux dev container, where development happens.
+- [`lfs-filter.sh`](lfs-filter.sh) is git's LFS filter on a host without
+  git-lfs, which runs the dev container's.
 - [`vcenv.cmd`](vcenv.cmd) runs a command inside the Visual Studio Build Tools
   x64 developer environment, so Ninja, clang-cl and vcpkg work from a plain
   terminal on Windows.

@@ -20,6 +20,17 @@ main() {
   local push_refs
   push_refs=$(cat)
 
+  # A checkout bootstrapped into the dev container has its toolchain there, and
+  # its git-lfs no credentials: the upload stays here, for a host with git-lfs.
+  if [[ ! -e .toolchain/bin ]]; then
+    printf '%s\n' "${push_refs}" \
+      | PRE_PUSH_CHECKS_ONLY=1 scripts/dev-container.sh "$0" "$@" || exit $?
+    if command -v git-lfs >/dev/null 2>&1; then
+      lfs_pre_push "${push_refs}" "$@"
+    fi
+    exit 0
+  fi
+
   if [[ -z "${PRE_PUSH_CHECKS_ONLY:-}" ]]; then
     command -v git-lfs >/dev/null 2>&1 || {
       echo "pre-push: git-lfs not found on PATH; install Git LFS before" \

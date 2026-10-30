@@ -306,9 +306,3 @@ bootstrap_vcpkg() {
 unbootstrap_vcpkg() {
   rm -f third_party/vcpkg/vcpkg
 }
-
-bootstrap_done() {
-  echo "bootstrap: done. 'make' builds with the macos preset, 'make test" \
-    "PRESET=macos-debug' a Debug build; configure one once (make configure)" \
-    "so the pre-push hook can run clang-tidy."
-}

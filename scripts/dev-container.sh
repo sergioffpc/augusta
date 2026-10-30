@@ -1,8 +1,8 @@
 #!/bin/bash
 # Runs a command in this checkout's Linux dev container (docs/ENGINEERING.md,
 # Developer Environment): the environment of .devcontainer/, from a terminal,
-# for a Linux build on a host with its own (macOS builds natively). git itself
-# (identity, signing, credentials, LFS) stays on the host.
+# and the one a host needs besides git and the engine (ADR-0079). git's identity,
+# signing and credentials stay on the host.
 #
 # One container per checkout, kept running between calls. The checkout is
 # mounted at the path it has on the host, not /workspaces/<name> as
@@ -27,9 +27,10 @@
 #   checkout shares.
 set -euo pipefail
 
-# The git environment a hook runs with, which a command run from one needs
-# too: a commit's index can be a temporary file.
-readonly GIT_ENV=(GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE)
+# The environment a hook runs with, which a command run from one needs too: a
+# commit's index can be a temporary file, and .githooks/pre-push leaves LFS's
+# upload to the host.
+readonly HOOK_ENV=(GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE PRE_PUSH_CHECKS_ONLY)
 # Inside the image (.devcontainer/Dockerfile): its user's home.
 readonly HOME_IN=/home/ubuntu
 readonly VCPKG_CACHE="${HOME_IN}/.cache/augusta-vcpkg"
@@ -75,6 +76,13 @@ checkout_volume() {
 build_image() {
   local engine="$1" tag="$2" top="$3"
   "${engine}" image inspect "${tag}" >/dev/null 2>&1 && return
+  if ! "${engine}" info >/dev/null 2>&1; then
+    echo "dev-container: ${engine} does not work here - see \`${engine}" \
+      "info\`. Rootless Podman needs newuidmap (Ubuntu's uidmap package)" \
+      "on Linux, and a running machine (podman machine init, podman machine" \
+      "start) on macOS." >&2
+    exit 1
+  fi
   echo "dev-container: building ${tag} (once per change to the Dockerfile" \
     "or the Linux bootstrap)..." >&2
   local ignore=()
@@ -93,7 +101,7 @@ build_image() {
 create_container() {
   local engine="$1" name="$2" tag="$3" top="$4" common="$5"
   local args=(
-    run --detach --init --name "${name}" --label "augusta.image=${tag}"
+    run --detach --name "${name}" --label "augusta.image=${tag}"
     --volume "${top}:${top}"
     --volume "$(checkout_volume build "${top}"):${top}/build"
     --volume "$(checkout_volume toolchain "${top}"):${top}/.toolchain"
@@ -104,9 +112,16 @@ create_container() {
   )
   # A worktree's repository lives in its main checkout.
   [[ "${common}" = "${top}"/* ]] || args+=(--volume "${common}:${common}")
-  [[ "${engine}" = podman ]] && args+=("--userns=keep-id:uid=1000,gid=1000")
+  # The host's network: Podman's own takes pasta, a package of the host's, and
+  # augustad's port needs no publishing.
+  [[ "${engine}" = podman ]] \
+    && args+=("--userns=keep-id:uid=1000,gid=1000" --network=host)
   echo "dev-container: creating ${name} for ${top}..." >&2
-  "${engine}" "${args[@]}" "${tag}" sleep infinity >/dev/null
+  # bash as PID 1 reaps what the execs leave behind: --init would take
+  # catatonit, a package of the host's.
+  # shellcheck disable=SC2016 # expanded inside
+  "${engine}" "${args[@]}" "${tag}" bash -c \
+    'trap "exit 0" TERM; while :; do sleep 3600 & wait $!; done' >/dev/null
   # A volume mounts in owned by root where the image has no directory.
   # shellcheck disable=SC2016 # expanded inside, as the image's user
   "${engine}" exec "${name}" bash -c \
@@ -158,7 +173,7 @@ main() {
   local exec_args=(exec --interactive --workdir "${PWD}")
   [[ -t 0 && -t 1 ]] && exec_args+=(--tty)
   local variable
-  for variable in "${GIT_ENV[@]}"; do
+  for variable in "${HOOK_ENV[@]}"; do
     [[ -n "${!variable:-}" ]] && exec_args+=(--env "${variable}=${!variable}")
   done
   (($# > 0)) || set -- bash

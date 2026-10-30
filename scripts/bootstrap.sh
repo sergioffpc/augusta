@@ -1,21 +1,23 @@
 #!/bin/bash
 # Bootstraps the development environment (docs/ENGINEERING.md, Developer
-# Environment): the Linux/server one on Ubuntu 26.04, the Windows client one in
-# Git Bash, and the macOS one on Apple silicon, native as Linux's. The one
-# recipe for each: what differs lives in scripts/bootstrap/<platform>.sh, what
-# they share here. .devcontainer's Dockerfile runs the Linux platform step and
-# its post-create.sh the checkout step; a host runs both.
+# Environment, ADR-0079). With no step, on a host that has git and Podman (on
+# Windows, in WSL), it readies this checkout's dev container, where everything
+# else lives (scripts/dev-container.sh).
 #
-# Usage: scripts/bootstrap.sh [platform|checkout]
+# Usage: scripts/bootstrap.sh
+#        scripts/bootstrap.sh platform|checkout
 #        scripts/bootstrap.sh uninstall [platform|checkout]
 #
-# platform, once per machine, installs the system's packages and fills the
-# toolchain's shared store (scripts/bootstrap/toolchain.sh). checkout readies
-# the checkout, then runs `make toolchain`, which links its .toolchain/ into the
-# store.
+# The two steps are the one recipe for a machine, which .devcontainer's
+# Dockerfile (platform) and post-create.sh (checkout) run in the image, and
+# CI's native jobs run on their runners: what differs lives in
+# scripts/bootstrap/<platform>.sh, what they share here. platform installs the
+# system's packages and fills the toolchain's shared store
+# (scripts/bootstrap/toolchain.sh). checkout readies the checkout, then runs
+# `make toolchain`, which links its .toolchain/ into the store.
 #
-# Piped from curl outside a checkout (README.md, Bootstrap), it first clones
-# the repository into ${AUGUSTA_DIR:-./augusta} and runs that clone's copy.
+# Piped from curl outside a checkout, it first clones the repository into
+# ${AUGUSTA_DIR:-./augusta} and runs that clone's copy.
 #
 # uninstall undoes them: the checkout step's readying (.toolchain/, vcpkg's tool
 # and binary cache, the hooks, the submodules; never the repository's files),
@@ -82,6 +84,30 @@ manifest_add() {
   ) | manifest_append
 }
 
+# Readies this checkout's dev container, which runs the two steps, and fetches
+# the LFS content. Without git-lfs on the host, the checkout's own filters run
+# the container's (scripts/lfs-filter.sh), so git sees that content as it is.
+# The pull names the repository's public URL: the container has no credentials,
+# and the checkout's remote may be an SSH one.
+ready_container() {
+  if [[ "$(platform)" = windows ]]; then
+    echo "bootstrap: run this in WSL, with git and Podman installed there." \
+      "A native Windows client's steps are scripts/bootstrap.sh platform and" \
+      "scripts/bootstrap.sh checkout, as CI runs them." >&2
+    exit 1
+  fi
+  cd "$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+  if ! command -v git-lfs >/dev/null 2>&1; then
+    git config filter.lfs.clean "scripts/lfs-filter.sh clean -- %f"
+    git config filter.lfs.smudge "scripts/lfs-filter.sh smudge -- %f"
+    git config filter.lfs.required true
+  fi
+  scripts/dev-container.sh git -c "lfs.url=${REPOSITORY}/info/lfs" \
+    lfs pull
+  echo "bootstrap: done. Run commands in the dev container with" \
+    "scripts/dev-container.sh [command], such as make test."
+}
+
 # Installs the system's packages, then fills the toolchain's shared store,
 # which the manifest records when it is new, for uninstall to remove.
 ready_platform() {
@@ -145,6 +171,7 @@ unready_checkout() {
   fi
   unbootstrap_vcpkg
   rm -rf .toolchain
+  git config --local --remove-section filter.lfs 2>/dev/null || true
   # Without --force: a submodule with changes of its own stays, and says so.
   if ! git submodule deinit third_party/vcpkg third_party/nvtx; then
     echo "bootstrap: a submodule has changes of its own and was kept; to" \
@@ -160,9 +187,8 @@ unready_checkout() {
 bootstrap_from_pipe() {
   local dir="${AUGUSTA_DIR:-${PWD}/augusta}"
   if ! command -v git >/dev/null 2>&1; then
-    # Only Linux can get here: Git Bash comes with git, macOS with Apple's.
-    sudo apt-get update
-    sudo apt-get install -y --no-install-recommends git
+    echo "bootstrap: git not found - install git and Podman first." >&2
+    exit 1
   fi
   if [[ -d "${dir}/.git" ]]; then
     echo "bootstrap: ${dir} already exists - bootstrapping it as it is." >&2
@@ -170,7 +196,6 @@ bootstrap_from_pipe() {
     git clone --branch develop "${REPOSITORY}" "${dir}"
   fi
   bash "${dir}/scripts/bootstrap.sh" "$@"
-  git -C "${dir}" lfs pull
 }
 
 main() {
@@ -191,16 +216,16 @@ main() {
   case "${1:-}" in
     platform) ready_platform ;;
     checkout) ready_checkout ;;
-    "")
-      ready_platform
-      ready_checkout
-      bootstrap_done
-      ;;
+    "") ready_container ;;
     uninstall)
       case "${2:-}" in
         platform) uninstall_platform ;;
         checkout) unready_checkout ;;
         "")
+          if command -v podman >/dev/null 2>&1 \
+            || command -v docker >/dev/null 2>&1; then
+            scripts/dev-container.sh --remove
+          fi
           unready_checkout
           uninstall_platform
           ;;
