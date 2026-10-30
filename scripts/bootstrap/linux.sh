@@ -389,9 +389,3 @@ bootstrap_vcpkg() {
 unbootstrap_vcpkg() {
   rm -rf third_party/vcpkg/vcpkg .vcpkg-bincache
 }
-
-bootstrap_done() {
-  # The dev container sets this itself (devcontainer.json).
-  echo "bootstrap: done. Builds use CI's Linux binary cache with:" \
-    "export VCPKG_BINARY_SOURCES=\"clear;files,${PWD}/.vcpkg-bincache,readwrite\""
-}

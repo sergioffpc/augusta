@@ -25,10 +25,7 @@ dedicated server.
         - [Standalone](#standalone)
 - [Development Setup](#development-setup)
     - [Development Environment](#development-environment)
-        - [Windows (client)](#windows-client)
-        - [Linux (server and shared core, Ubuntu 26.04)](#linux-server-and-shared-core-ubuntu-2604)
-        - [macOS (client, server and shared core, Apple silicon)](#macos-client-server-and-shared-core-apple-silicon)
-        - [Dev container or Codespaces (server and shared core)](#dev-container-or-codespaces-server-and-shared-core)
+        - [Dev container or Codespaces](#dev-container-or-codespaces)
         - [Uninstall](#uninstall)
     - [Build and Run](#build-and-run)
     - [Tests](#tests)
@@ -146,64 +143,45 @@ It listens on UDP `0.0.0.0:27015` and serves its metrics on TCP `9464`.
 
 ### Development Environment
 
-One command per platform sets up a machine and a checkout ready to build, test
-and commit: it installs the system's packages and the pinned tools (the
-`platform` step, once per machine), clones the repository into `./augusta` (or
-`$AUGUSTA_DIR`) and readies the checkout (the `checkout` step: submodules,
-vcpkg, the git hooks, and `make toolchain`, which links the checkout's
-`.toolchain/` to the pinned tools). In an existing checkout, run
-`scripts/bootstrap.sh` instead, or `scripts/bootstrap.sh checkout` on a machine
-already bootstrapped. Run `make toolchain` after a pull that bumps a tool's
-version; `make toolchain-check` says which tools are stale, and
-`source .toolchain/activate` puts them on a shell's PATH. The reference editor
-is [VS Code](https://code.visualstudio.com): open the checkout's folder in it,
-trust it, and install the extensions it recommends.
-
-#### Windows (client)
-
-In PowerShell as Administrator (Win+X → "Terminal (Admin)"):
-
-```powershell
-winget install --id Git.Git --exact --source winget --accept-package-agreements --accept-source-agreements; & "$env:ProgramFiles\Git\bin\bash.exe" -c "curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap.sh | bash"
-```
-
-It installs Git for Windows, then runs the bootstrap in its Git Bash, which
-installs Visual Studio Build Tools, LLVM, GNU make and the rest, and Podman with
-its WSL 2 machine. Open a new terminal afterwards: the Makefile loads the Build
-Tools' environment for each command.
-
-#### Linux (server and shared core, Ubuntu 26.04)
+A machine needs [git](https://git-scm.com) and [Podman](https://podman.io) and
+nothing else: everything the project builds, tests and lints with lives in a
+Linux dev container, the image of CI's Linux build. On Windows, install both in
+WSL and work there; on macOS, start a Podman machine first
+(`podman machine init && podman machine start`) and keep the checkout under the
+home directory, which is what the machine mounts. On Linux, rootless Podman
+needs `newuidmap` (Ubuntu's `uidmap` package).
 
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap.sh | bash
+git clone --branch develop https://github.com/sergioffpc/augusta.git
+cd augusta
+scripts/bootstrap.sh
 ```
 
-It installs the dev container's packages and pinned tools on the host, the
-packages through sudo.
-
-#### macOS (client, server and shared core, Apple silicon)
-
-With the Command Line Tools (`xcode-select --install`) and
-[Homebrew](https://brew.sh) installed:
+The first run builds the image, creates this checkout's container and readies
+the checkout in it: submodules, vcpkg, the git hooks and `.toolchain/`. Then run
+everything through the container, or from a shell in it:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap.sh | bash
+scripts/dev-container.sh make test
+scripts/dev-container.sh
 ```
 
-Everything builds natively, as on Linux: it installs LLVM 21 (CI's), CMake,
-Ninja and Mesa's Vulkan through Homebrew, and the pinned tools from their
-releases, without sudo; it puts GNU make on PATH in `~/.zprofile` (open a new
-terminal after it). `make` builds the `macos` preset,
-`make test PRESET=macos-debug` a Debug build; configure one once so the
-`pre-push` hook can run clang-tidy. Xcode is not needed.
+The git hooks run in the container by themselves. git's identity, signing and
+credentials stay on the host, so commit and push there. Git LFS's content comes
+through the container too; pushing a new LFS file needs `git-lfs` on the host,
+as the container holds no credentials.
 
-#### Dev container or Codespaces (server and shared core)
+The container compiles and tests the Linux client on Mesa's software Vulkan; it
+does not open a window on the host's display or use its GPU. The native Windows
+and macOS builds live in CI, whose `client-x64-windows` job alone reproduces
+Windows-only failures: `scripts/bootstrap.sh platform` and
+`scripts/bootstrap.sh checkout` remain the recipes for them.
+
+#### Dev container or Codespaces
 
 Open the repository in VS Code's Dev Containers or in GitHub Codespaces: there
-is nothing to run. The container reproduces CI's Linux build environment, so
-`make test` builds and tests the `linux` preset. The first build compiles the
-vcpkg dependencies; later ones reuse them from `.vcpkg-bincache`, and sccache's
-objects from a volume.
+is nothing to run. It is the same image, with `.vcpkg-bincache` for vcpkg's
+binary cache and sccache's objects in a volume.
 
 #### Uninstall
 

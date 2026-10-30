@@ -538,11 +538,14 @@ no self-hosted GitHub Actions runner in this pipeline).
   version, and `pre-commit` runs it. The Makefile, the hooks and CI run
   `.toolchain/bin`; VS Code's terminals put it first on PATH, and sourcing
   `.toolchain/activate` does the same in any other shell.
-- **Bootstrap:** `scripts/bootstrap.sh` has two steps, which it runs in order
-  when given none. `platform`, once per machine, installs the system's packages
+- **Bootstrap:** a host needs git and Podman alone, in WSL on Windows
+  (ADR-0079): `scripts/bootstrap.sh`, given no step, readies the checkout's dev
+  container and fetches LFS's content through it. Its two steps are the recipe
+  the image and CI's native jobs run: `platform` installs the system's packages
   and fills the store; `checkout` readies the checkout (submodules, vcpkg, the
   hooks) and runs `make toolchain`. `scripts/worktree.sh add` runs
-  `make toolchain` in the worktree it makes.
+  `make toolchain` in the worktree it makes, or readies its container where the
+  main checkout has no host toolchain.
 - **Server, shared core and Linux client (Linux, dev container or host):**
   `.devcontainer/` gives this side as a container, for VS Code or Codespaces,
   without mutating a host, and `scripts/bootstrap.sh` installs the same on an
@@ -577,10 +580,13 @@ no self-hosted GitHub Actions runner in this pipeline).
   command (a shell by default) in the dev container's image: one container per
   checkout, kept running, with the checkout mounted at its host path so a git
   worktree's `.git` resolves inside too, `build/` and `.toolchain/` volumes of
-  its own, and sccache's and vcpkg's caches in volumes every checkout shares. No
-  bootstrap creates it; it is for a Linux build on a host that has its own. It
-  bootstraps `third_party/vcpkg/vcpkg` for Linux in the shared checkout, which a
-  native macOS build then cannot run: delete it and the next native configure
+  its own, and sccache's and vcpkg's caches in volumes every checkout shares.
+  The bootstrap creates it. A checkout with no host `.toolchain/bin` runs the
+  `pre-commit` and `pre-push` hooks in it, and on a host without git-lfs its
+  filters too (`scripts/lfs-filter.sh`); uploading a new LFS object takes
+  git-lfs on the host, where the credentials are. It bootstraps
+  `third_party/vcpkg/vcpkg` for Linux in the shared checkout, which a native
+  macOS build then cannot run: delete it and the next native configure
   bootstraps it again.
 - **macOS (arm64, native, development only):** as on Linux, everything builds
   and is checked on the host: `scripts/bootstrap.sh` (its macOS half,

@@ -3,6 +3,9 @@
 # and stages what the formatters changed. CI's format
 # checks remain the actual gate if the hook is bypassed with --no-verify.
 
+# A checkout bootstrapped into the dev container has its toolchain there.
+[[ -e .toolchain/bin ]] || exec scripts/dev-container.sh "$0" "$@"
+
 staged=$(git diff --cached --name-only --diff-filter=ACMR)
 [[ -n "${staged}" ]] || exit 0
 

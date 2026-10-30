@@ -97,7 +97,11 @@ add() {
     cp "${vcpkg}/${tool}" "${wt}/third_party/vcpkg/"
   fi
 
-  make -C "${wt}" toolchain
+  if [[ -e "${main}/.toolchain/bin" ]]; then
+    make -C "${wt}" toolchain
+  else
+    "${wt}/scripts/dev-container.sh" true
+  fi
 
   echo "worktree: ${wt} on ${branch}"
 }
