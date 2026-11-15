@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794649158654,
+  "lastUpdate": 1794737357307,
   "repoUrl": "https://github.com/sergioffpc/augusta",
   "entries": {
     "Hot paths": [
@@ -4390,6 +4390,154 @@ window.BENCHMARK_DATA = {
             "value": 138126.90053709218,
             "unit": "ns/iter",
             "extra": "iterations: 5\ncpu: 138119.30515217976 ns\nthreads: 1"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "Sérgio Carvalho",
+            "username": "sergioffpc",
+            "email": "sergioffpc@users.noreply.github.com"
+          },
+          "committer": {
+            "name": "GitHub",
+            "username": "web-flow",
+            "email": "noreply@github.com"
+          },
+          "id": "f9239b01bc4c3c5bfe7ca41e91ecd79c6be2458a",
+          "message": "Merge pull request #1416 from sergioffpc/feature/1348-pack-fuzz-animation\n\ntest(fuzz): reach the animation blobs, ozz archives and a texture from the pack fuzz target",
+          "timestamp": "2026-10-28T13:54:32Z",
+          "url": "https://github.com/sergioffpc/augusta/commit/f9239b01bc4c3c5bfe7ca41e91ecd79c6be2458a"
+        },
+        "date": 1794737357129,
+        "tool": "googlecpp",
+        "benches": [
+          {
+            "name": "BM_BallisticsStep_median",
+            "value": 294.2918215939182,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 294.2745073000467 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_RemoteInterpolationIngest/8_median",
+            "value": 117.28035418424982,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 117.26394726510982 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_RemoteInterpolationIngest/16_median",
+            "value": 253.99476411946608,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 253.97307349902803 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_RemoteInterpolationIngest/64_median",
+            "value": 988.5048072571517,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 988.4489361521579 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_RemoteInterpolationIngest/256_median",
+            "value": 4364.960757133139,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 4364.4710387269115 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_RemoteInterpolationIngest/1024_median",
+            "value": 17221.107085564792,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 17219.919000962494 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_RemoteInterpolationIngest/2048_median",
+            "value": 35416.32042618227,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 35413.98130518418 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_PackLoad/client_median",
+            "value": 87279.18776476398,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 87249.59780712675 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_PackLoad/server_median",
+            "value": 75534.28113917234,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 75510.75959161753 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_RenderFrame/unchanged_state_median",
+            "value": 1543.9051580064233,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 1543.62038169487 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_RenderFrame/new_state_median",
+            "value": 1944.1412031134878,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 1943.892796727506 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_ProtocolEncode/authoritative_state_median",
+            "value": 499.09442611685665,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 499.0144518641852 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_ProtocolEncode/commands_median",
+            "value": 389.352110542806,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 389.32459356731556 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_ProtocolDecode/authoritative_state_median",
+            "value": 373.157236139069,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 373.1209433245618 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_ProtocolDecode/commands_median",
+            "value": 347.2816572658968,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 347.2653986468673 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_ReplayViewerTick_median",
+            "value": 44630.58370313139,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 44627.4948228181 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_Replication_median",
+            "value": 1879.6175570526811,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 1879.4364454539943 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_SimulationTick_median",
+            "value": 45523.61363784237,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 45516.13715921701 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_SimulationTickBetweenStates_median",
+            "value": 45857.03534426326,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 45853.19278688441 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_SimulationTickOpenRange/12_median",
+            "value": 70852.52106068375,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 70846.59265680754 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_SimulationTickOpenRange/128_median",
+            "value": 138088.9792038033,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 138076.7579718747 ns\nthreads: 1"
           }
         ]
       }
