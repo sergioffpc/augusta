@@ -121,7 +121,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           enable-cache: true
       # The formatters and linters the Makefile's format-check/* targets run.
@@ -216,7 +216,7 @@ jobs:
       - uses: ./.github/actions/setup-windows-vcpkg
         with:
           feed-token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           enable-cache: true
           cache-dependency-glob: tools/uv.lock
@@ -353,7 +353,7 @@ jobs:
           # features: pybind11 and Python, meshoptimizer, ktx and stb), which no
           # other Linux job does and whose saves would drop: a cache of its own.
           vcpkg-cache-prefix: vcpkg-bincache-tools-linux-
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           enable-cache: true
           cache-dependency-glob: tools/uv.lock
@@ -577,7 +577,7 @@ jobs:
             exit 1
           fi
       - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           enable-cache: true
       - uses: ./.github/actions/setup-toolchain
@@ -863,7 +863,7 @@ jobs:
       - name: Lint Helm chart
         run: helm lint charts/augustad
       # hadolint, and the trivy build-server-image scans with.
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
       - uses: ./.github/actions/setup-toolchain
       - name: Lint Dockerfile
         # .hadolint.yaml has the rules it doesn't apply, and why.
@@ -950,7 +950,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           enable-cache: true
           cache-dependency-glob: tools/uv.lock
@@ -1025,7 +1025,7 @@ jobs:
             .github/actions/sign-artifact
             .vscode
             scripts/bootstrap
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
       - uses: ./.github/actions/setup-toolchain
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Log in to GHCR
@@ -1113,7 +1113,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       # trivy, cosign and syft.
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
       - uses: ./.github/actions/setup-toolchain
       - name: Build and scan server image
         id: image
@@ -1175,7 +1175,7 @@ jobs:
             .github/actions/sign-artifact
             .vscode
             scripts/bootstrap
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
       - uses: ./.github/actions/setup-toolchain
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Log in to GHCR
@@ -1246,7 +1246,7 @@ jobs:
           persist-credentials: false
       - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
       # oras, cosign and yq.
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
       - uses: ./.github/actions/setup-toolchain
       # Docker's login, which cosign and oras read, and Helm's own.
       - name: Log in to GHCR
